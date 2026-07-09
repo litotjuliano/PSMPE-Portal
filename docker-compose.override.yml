@@ -1,0 +1,21 @@
+# Local development overrides — hot reload / bind mounts.
+# Applied automatically by `docker compose up` alongside docker-compose.yml.
+services:
+  backend:
+    build:
+      target: build
+    command: ["dotnet", "watch", "run", "--project", "PSMPE.Portal.WebAPI/PSMPE.Portal.WebAPI.csproj", "--urls", "http://+:8080"]
+    volumes:
+      - ./src:/src
+    environment:
+      DOTNET_USE_POLLING_FILE_WATCHER: "true"
+
+  frontend:
+    build:
+      target: build
+    command: ["npm", "run", "dev", "--", "--host", "0.0.0.0"]
+    volumes:
+      - ./apps/web:/app
+      - /app/node_modules
+    ports:
+      - "5173:5173"

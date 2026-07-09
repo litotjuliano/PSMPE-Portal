@@ -1,0 +1,6 @@
+@PSMPE.Portal.WebAPI_HostAddress = http://localhost:5201
+
+GET {{PSMPE.Portal.WebAPI_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###

@@ -1,0 +1,81 @@
+# DigitalOcean App Platform spec for PSMPE Portal.
+#
+# TODO before first deploy:
+#   1. Replace <YOUR_DO_REGISTRY> with your DigitalOcean Container Registry name
+#      (same value as the DO_REGISTRY_NAME GitHub secret used in .github/workflows/cd.yml).
+#   2. Adjust `region` and `instance_size_slug` values to taste.
+#   3. Set the SECRET-type env vars below as actual values (or app-level "Encrypted"
+#      secrets) in the DO dashboard the first time — doctl will not create secret
+#      values for you, only the app resource shape.
+#
+# Deploy/update with:
+#   doctl apps create --spec infra/digitalocean/app.yaml         # first time
+#   doctl apps update <app-id> --spec infra/digitalocean/app.yaml  # subsequent deploys (used by cd.yml)
+
+name: psmpe-portal
+region: nyc
+
+services:
+  - name: backend
+    image:
+      registry_type: DOCR
+      registry: <YOUR_DO_REGISTRY>
+      repository: psmpe-backend
+      tag: latest
+      deploy_on_push:
+        enabled: true
+    instance_size_slug: basic-xxs
+    instance_count: 1
+    http_port: 8080
+    health_check:
+      http_path: /swagger/index.html
+    routes:
+      - path: /api
+      - path: /swagger
+    envs:
+      - key: ASPNETCORE_ENVIRONMENT
+        value: Production
+      - key: ASPNETCORE_URLS
+        value: http://+:8080
+      - key: ConnectionStrings__DefaultConnection
+        value: ${db.DATABASE_URL}
+        type: SECRET
+      - key: Jwt__Key
+        type: SECRET
+      - key: Jwt__Issuer
+        value: PSMPE.Portal
+      - key: Jwt__Audience
+        value: PSMPE.Portal.Client
+      - key: Jwt__ExpiryMinutes
+        value: "60"
+      - key: Seed__Enabled
+        value: "true"
+      - key: SEED_ADMIN_EMAIL
+        type: SECRET
+      - key: SEED_ADMIN_PASSWORD
+        type: SECRET
+      - key: OpenAI__ApiKey
+        type: SECRET
+      - key: OpenAI__Model
+        value: gpt-4o-mini
+
+  - name: frontend
+    image:
+      registry_type: DOCR
+      registry: <YOUR_DO_REGISTRY>
+      repository: psmpe-frontend
+      tag: latest
+      deploy_on_push:
+        enabled: true
+    instance_size_slug: basic-xxs
+    instance_count: 1
+    http_port: 80
+    routes:
+      - path: /
+
+databases:
+  - name: db
+    engine: PG
+    version: "16"
+    production: false
+    # TODO: set production: true (and pick an appropriately sized plan) for a real deployment.

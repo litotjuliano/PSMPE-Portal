@@ -1,0 +1,52 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PSMPE.Portal.Domain", "PSMPE.Portal.Domain\PSMPE.Portal.Domain.csproj", "{2ECEE244-0A96-494F-8A04-CAA182DC16A4}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PSMPE.Portal.Application", "PSMPE.Portal.Application\PSMPE.Portal.Application.csproj", "{41030D83-9AEF-4535-90EF-FCB37E103E77}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PSMPE.Portal.Infrastructure", "PSMPE.Portal.Infrastructure\PSMPE.Portal.Infrastructure.csproj", "{0863759F-AA9E-4E4F-95E3-120F5442F86C}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PSMPE.Portal.WebAPI", "PSMPE.Portal.WebAPI\PSMPE.Portal.WebAPI.csproj", "{883D703C-F610-4E68-9238-E8719FCB1E28}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PSMPE.Portal.Application.UnitTests", "..\tests\PSMPE.Portal.Application.UnitTests\PSMPE.Portal.Application.UnitTests.csproj", "{2DF663FE-05E3-44EE-AC82-D1B2A7182B4E}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PSMPE.Portal.WebAPI.IntegrationTests", "..\tests\PSMPE.Portal.WebAPI.IntegrationTests\PSMPE.Portal.WebAPI.IntegrationTests.csproj", "{81B3EFC9-4CC8-4239-83E7-4E5575303C9C}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{2ECEE244-0A96-494F-8A04-CAA182DC16A4}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{2ECEE244-0A96-494F-8A04-CAA182DC16A4}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{2ECEE244-0A96-494F-8A04-CAA182DC16A4}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{2ECEE244-0A96-494F-8A04-CAA182DC16A4}.Release|Any CPU.Build.0 = Release|Any CPU
+		{41030D83-9AEF-4535-90EF-FCB37E103E77}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{41030D83-9AEF-4535-90EF-FCB37E103E77}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{41030D83-9AEF-4535-90EF-FCB37E103E77}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{41030D83-9AEF-4535-90EF-FCB37E103E77}.Release|Any CPU.Build.0 = Release|Any CPU
+		{0863759F-AA9E-4E4F-95E3-120F5442F86C}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{0863759F-AA9E-4E4F-95E3-120F5442F86C}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{0863759F-AA9E-4E4F-95E3-120F5442F86C}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{0863759F-AA9E-4E4F-95E3-120F5442F86C}.Release|Any CPU.Build.0 = Release|Any CPU
+		{883D703C-F610-4E68-9238-E8719FCB1E28}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{883D703C-F610-4E68-9238-E8719FCB1E28}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{883D703C-F610-4E68-9238-E8719FCB1E28}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{883D703C-F610-4E68-9238-E8719FCB1E28}.Release|Any CPU.Build.0 = Release|Any CPU
+		{2DF663FE-05E3-44EE-AC82-D1B2A7182B4E}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{2DF663FE-05E3-44EE-AC82-D1B2A7182B4E}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{2DF663FE-05E3-44EE-AC82-D1B2A7182B4E}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{2DF663FE-05E3-44EE-AC82-D1B2A7182B4E}.Release|Any CPU.Build.0 = Release|Any CPU
+		{81B3EFC9-4CC8-4239-83E7-4E5575303C9C}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{81B3EFC9-4CC8-4239-83E7-4E5575303C9C}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{81B3EFC9-4CC8-4239-83E7-4E5575303C9C}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{81B3EFC9-4CC8-4239-83E7-4E5575303C9C}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+EndGlobal

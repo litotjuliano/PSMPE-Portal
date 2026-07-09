@@ -1,0 +1,30 @@
+import { createBrowserRouter } from 'react-router-dom'
+import { AppShell } from '../components/layout/AppShell'
+import { ProtectedRoute } from '../auth/ProtectedRoute'
+import { LoginPage } from '../pages/LoginPage'
+import { DashboardPage } from '../pages/DashboardPage'
+import { ContentListPage } from '../pages/ContentListPage'
+import { ContentEditPage } from '../pages/ContentEditPage'
+import { AdminUsersPage } from '../pages/AdminUsersPage'
+import { Roles } from '../types/auth'
+
+export const router = createBrowserRouter([
+  { path: '/login', element: <LoginPage /> },
+  {
+    element: <ProtectedRoute />,
+    children: [
+      {
+        element: <AppShell />,
+        children: [
+          { path: '/', element: <DashboardPage /> },
+          { path: '/content', element: <ContentListPage /> },
+          { path: '/content/:id', element: <ContentEditPage /> },
+          {
+            element: <ProtectedRoute requiredRoles={[Roles.Admin, Roles.SuperAdmin]} />,
+            children: [{ path: '/admin/users', element: <AdminUsersPage /> }],
+          },
+        ],
+      },
+    ],
+  },
+])
