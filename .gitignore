@@ -47,3 +47,6 @@ Thumbs.db
 *.bak
 coverage/
 TestResults/
+
+# ===== Local AI assistant session state (not project content) =====
+.claude/
