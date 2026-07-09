@@ -1,3 +1,9 @@
+# Pinning the project name avoids Docker Compose deriving it from the current working
+# directory (which changes depending on how/where `docker compose` is invoked from,
+# e.g. run.bat vs a terminal cd'd elsewhere) and silently creating a *different*
+# "pgdata" volume each time instead of reusing/removing the intended one.
+name: psmpe-portal
+
 services:
   postgres:
     image: postgres:16-alpine
