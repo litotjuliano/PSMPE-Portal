@@ -1,5 +1,9 @@
 @echo off
-setlocal enabledelayedexpansion
+REM Delayed expansion deliberately NOT enabled: with it on, "!" in .env values
+REM (e.g. a password like "ChangeMe123!") gets silently stripped when read via
+REM the for /f loop below, since "!" is delayed expansion's own trigger character.
+REM Nothing else in this script needs !VAR! syntax, so plain %VAR% throughout is fine.
+setlocal
 title PSMPE Portal - Dev Launcher
 set ROOT=%~dp0
 
@@ -98,6 +102,11 @@ echo.
 echo Backend:  http://localhost:5000/swagger
 echo Frontend: http://localhost:5173
 echo Each service is running in its own window - close a window to stop it.
+
+echo.
+echo Waiting for the frontend to come up before opening your browser...
+call :waitforweb
+start "" "http://localhost:5173"
 goto :eof
 
 :killport
@@ -107,6 +116,19 @@ for /f "tokens=5" %%a in ('netstat -aon ^| findstr ":%PORT% " ^| findstr "LISTEN
     taskkill /F /PID %%a >nul 2>&1
 )
 goto :eof
+
+:waitforweb
+set _wtries=0
+:waitforweb_loop
+netstat -aon | findstr ":5173 " | findstr "LISTENING" >nul 2>&1
+if not errorlevel 1 goto :eof
+set /a _wtries+=1
+if %_wtries% GEQ 30 (
+    echo WARNING: frontend did not come up in time - open http://localhost:5173 manually.
+    goto :eof
+)
+timeout /t 1 /nobreak >nul
+goto waitforweb_loop
 
 :waitforpg
 echo Waiting for postgres to accept connections...
