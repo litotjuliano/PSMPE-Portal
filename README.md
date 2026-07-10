@@ -14,9 +14,9 @@ This is a **starter**, not a finished product — advanced/optional features are
   Infrastructure → WebAPI), ASP.NET Core Identity + JWT bearer auth, three fixed roles
   (`Super Admin`, `Admin`, `Content Creator`), ownership-based CMS rules, Swagger with
   JWT support, an OpenAI SDK-backed prompt execution endpoint.
-- **Frontend**: `apps/web` — React 18 + Vite + TypeScript + Tailwind CSS v3 +
-  Headless UI, with a clean boundary (`src/integrations/template/`) reserved for a
-  future commercial template/FrostUI integration.
+- **Frontend**: `apps/web` — React 19 + Vite + TypeScript + Tailwind CSS v4 + Preline
+  UI, integrated with the licensed Tailwick admin dashboard template
+  (`src/integrations/template/`) for layout, dashboard, login, and CMS page styling.
 - **Docs**: `openspecs/` — lightweight per-feature API/contract notes.
 - **Infra**: `docker-compose.yml` for local dev, `infra/digitalocean/` for App Platform
   deployment, `.github/workflows/` for CI/CD.
@@ -35,8 +35,8 @@ PSMPE Portal/
 │   └── PSMPE.Portal.WebAPI.IntegrationTests/
 ├── apps/web/                     # Frontend (Vite + React + TS)
 │   └── src/
-│       ├── core/                     # Self-contained CMS UI — auth, API, pages
-│       └── integrations/template/    # Placeholder boundary for a future commercial template
+│       ├── core/                     # Auth, API client, CMS pages (data-fetching)
+│       └── integrations/template/    # Licensed Tailwick template — layout, dashboard, styling
 ├── openspecs/                    # Per-feature API/contract docs
 ├── infra/digitalocean/           # App Platform spec + deployment notes
 ├── .github/workflows/            # ci.yml, cd.yml
@@ -47,7 +47,7 @@ PSMPE Portal/
 ## Prerequisites
 
 - [.NET 8 SDK](https://dotnet.microsoft.com/download/dotnet/8.0)
-- [Node.js 20 LTS](https://nodejs.org/) + npm
+- [Node.js ≥20.19 or ≥22.12](https://nodejs.org/) + npm (Vite 7 requires this; Node 20.15 and earlier will fail to install)
 - [Docker](https://www.docker.com/) and Docker Compose (for the all-in-one local setup)
 - PostgreSQL 16 (only if you want to run it outside Docker)
 
@@ -172,14 +172,15 @@ Covers JWT-issuing auth flows (integration, via `WebApplicationFactory` + EF Cor
 InMemory), ownership authorization logic (unit), and content/layout ownership rules
 (unit). Frontend: `npm run lint && npm run build` in `apps/web`.
 
-## Integrating a commercial template later
+## Commercial template integration
 
-The frontend keeps a deliberate seam at `apps/web/src/integrations/template/` — see
+The frontend runs on the licensed **Tailwick** admin dashboard template (Envato Market,
+`React-TS` distribution) — Tailwind CSS v4, Preline UI, ApexCharts. Template code/assets
+live at `apps/web/src/integrations/template/`; `core/` pages consume it through a single
+barrel (`index.ts`). See
 [`apps/web/src/integrations/template/README.md`](apps/web/src/integrations/template/README.md)
-for the exact steps (installing the licensed FrostUI package, dropping in template
-components/pages, wiring the Tailwind plugin). `src/core/` never depends on this folder,
-so the CMS works today with zero paid dependencies and can absorb a template later
-without a rewrite.
+for what's ported vs. still available-but-unused in the licensed package, and how to
+port more of it later.
 
 ## Deployment
 
@@ -198,8 +199,13 @@ See [`BRANCHING.md`](BRANCHING.md) — `main` / `develop` / `feature/*`.
 - Refresh token rotation (JWT access tokens only, short-lived).
 - API rate limiting / throttling, especially on `/api/ai/prompt`.
 - Multi-tenancy.
-- Real FrostUI/commercial template integration (placeholder boundary only today).
 - OpenAI streaming responses (single-shot completion only).
+- Most of the Tailwick template package is unported (HR, invoicing, ecommerce catalog,
+  chat, mailbox, calendar, other auth styles/flows, landing pages) — see
+  `apps/web/src/integrations/template/README.md` for the full list.
+- Frontend bundle isn't code-split yet (~1.1MB main chunk, mostly ApexCharts/Preline/
+  icon libraries) — fine for a starter, worth revisiting with route-based lazy-loading
+  before this grows much further.
 - Full audit logging / soft-delete.
 - Identity email confirmation / password reset flows.
 - Automated `dotnet ef database update` as a distinct CD step (currently runs at

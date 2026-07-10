@@ -1,33 +1,78 @@
-# Commercial Template Integration Boundary
+# Commercial Template Integration — Tailwick
 
-This folder is the **only** place in the frontend allowed to reference a commercial
-template or the paid FrostUI Tailwind kit. Nothing under `src/core/` may import from
-here, and nothing here may be assumed to exist by `core/` — the app must build and run
-with this folder completely empty, as it is today.
+This folder holds the licensed **Tailwick** admin dashboard template (Envato Market,
+v2.2.0, by Themesdesign — `React-TS` distribution), integrated as the app's real UI
+layer. It's no longer an empty placeholder scaffold.
 
-## Why this boundary exists
+## What changed to make this fit
 
-The core CMS (auth, routing, content management) is built entirely on free, open-source
-pieces: Tailwind CSS utility classes, `@headlessui/react`, and `@heroicons/react`. This
-keeps the starter buildable and testable without any paid assets. When a commercial
-template or FrostUI license is available, its components/pages/hooks get dropped in here
-instead of scattered across `core/`, so the two remain cleanly separable.
+Tailwick's own stack (Tailwind CSS v4, Preline UI, React 19, react-router v7) didn't
+match this project's original stack (Tailwind v3, Headless UI/Heroicons, React 18,
+react-router-dom v6), so the whole frontend was upgraded to match the template rather
+than trying to run two incompatible Tailwind versions side by side. See the git history
+for the full migration (deps/build config → assets → layout chrome → dashboard → login →
+CMS page re-skins).
 
-## How to integrate the real package later
+## Dependency direction (updated from the original one-way rule)
 
-1. **FrostUI (Tailwind plugin)**: install the licensed `@frostui/tailwindcss` package,
-   then replace `styles/frostui-plugin.placeholder.ts` with the real plugin import and
-   flip `USE_TEMPLATE_PLUGIN` to `true` in `../../../tailwind.config.ts`.
-2. **Commercial template components/pages**: place them under `components/`, `hooks/`,
-   `pages/`, and `utils/` respectively, and re-export whatever core pages should use from
-   `index.ts`.
-3. **Wiring into core pages**: import from `src/integrations/template` (never deep-import
-   a specific file) so the boundary stays enforceable — e.g.
-   `import { TemplateButton } from '../../integrations/template'`.
-4. Remove the `.gitkeep` files as real content is added.
+The original version of this doc said `core/` may import from here but never the
+reverse. That held while this folder was empty and hypothetical. Now that a real
+template is the app's actual layout/UI:
 
-## TODO
+- `core/` imports **presentational** pieces from here (`AppShell`, `DashboardPage`,
+  `LoginPage`, `AdminUsersTable`, `ContentListCard`, `ContentEditCard`,
+  `PageBreadcrumb`, `PageMeta`) via the single barrel `index.ts` — never a deep import
+  into a specific file.
+- A few template files import `core/auth/useAuth` directly (`AppMenu.tsx` for
+  role-gating the Users nav item, `topbar/index.tsx` for the signed-in user's
+  name/email and Sign Out, `WelcomeUser.tsx` for the dashboard greeting). The
+  template needs real session data to render correctly — there's no way around this
+  once it's the actual UI, not an optional add-on.
 
-- Once real components exist, add a lint rule (e.g. `eslint-plugin-boundaries` or an
-  import restriction) to prevent `core/` from importing `integrations/template` and vice
-  versa becoming a two-way dependency.
+This is intentionally bidirectional now. The TODO below about an import-boundary lint
+rule is deferred rather than removed — worth adding once this shape has been stable for
+a while, to catch *accidental* new coupling rather than the deliberate coupling above.
+
+## What's here
+
+```
+assets/{css,images}/     Tailwick's CSS (verbatim) + a curated image subset
+components/layout/       SideNav, topbar, Footer, customizer, AppShell
+components/dashboard/    The 10 Ecommerce-dashboard widgets + chart config (data.ts)
+components/shared/       PageBreadcrumb, PageMeta, ApexChart/IconifyIcon/Simplebar wrappers
+context/                 LayoutContext (sidenav size/color, theme, RTL direction)
+hooks/                   usePrelineInit - re-runs Preline's autoInit() on route change
+pages/                   DashboardPage, LoginPage, and the CMS re-skin components
+                          (AdminUsersTable, ContentListCard, ContentEditCard)
+utils/, helpers/         Copied support code (debounce, layout attribute helpers, colors)
+types/global.d.ts        Window.HSStaticMethods typing for Preline
+```
+
+## What's in the Tailwick package but NOT ported here
+
+Only a focused subset was integrated — layout chrome, the main dashboard, one login
+style, and the existing CMS pages re-skinned. Explicitly out of scope for this pass:
+
+- HR management, invoicing, ecommerce product/cart/checkout pages, chat, mailbox,
+  calendar, notes
+- The other 3 auth styles (boxed/cover/modern) and the other 6 auth flows per style
+  (register, logout, reset/create password, two-step verify)
+- Layout demo variants (dark sidenav, RTL demo, compact/hover/offcanvas/hidden sidenav
+  showcases) — the underlying support for most of these (dark mode, RTL, sidenav size)
+  is already wired via `context/useLayoutContext.tsx` and the customizer panel, just not
+  exposed as dedicated demo pages
+- Landing pages, 404/maintenance/coming-soon/offline pages
+- Non-dashboard plugin showcase pages from the HTML distribution (forms, tables, icons,
+  maps, other chart types)
+
+Any of these can be ported later following the same pattern: find the source page under
+`React-TS/src/app/...` in the licensed package, copy into the relevant subfolder here,
+fix `@/` imports to relative paths, adapt any dummy data/actions to real API calls.
+
+## Updating the template later
+
+Tailwick ships 15 distributions in the licensed package (`D:\Envanto Templates\...`) —
+`React-TS` is the one actually used. If Themesdesign ships an updated version, diff
+against what's copied here file-by-file rather than bulk-overwriting, since several
+files were deliberately adapted (see git history for the specifics: real auth wiring,
+trimmed nav menu, removed dead links, a couple of upstream bug fixes).
