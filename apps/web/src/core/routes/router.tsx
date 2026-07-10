@@ -1,5 +1,5 @@
 import { createBrowserRouter } from 'react-router-dom'
-import { AppShell } from '../components/layout/AppShell'
+import { AppShell } from '../../integrations/template'
 import { ProtectedRoute } from '../auth/ProtectedRoute'
 import { LoginPage } from '../pages/LoginPage'
 import { DashboardPage } from '../pages/DashboardPage'
