@@ -2,8 +2,7 @@ import { useEffect, useState, type FormEvent } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { contentApi } from '../api/endpoints/contentApi'
 import { ContentStatus } from '../types/content'
-import { Button } from '../components/ui/Button'
-import { Input } from '../components/ui/Input'
+import { ContentEditCard, PageBreadcrumb, PageMeta } from '../../integrations/template'
 
 export function ContentEditPage() {
   const { id } = useParams()
@@ -34,28 +33,17 @@ export function ContentEditPage() {
     navigate('/content')
   }
 
-  if (loading) {
-    return <p className="text-sm text-gray-500">Loading…</p>
-  }
-
   return (
-    <form onSubmit={handleSubmit} className="max-w-xl space-y-4">
-      <h1 className="text-2xl font-semibold text-gray-900">{isNew ? 'New content' : 'Edit content'}</h1>
-      <Input id="title" label="Title" required value={title} onChange={(e) => setTitle(e.target.value)} />
-      <div>
-        <label htmlFor="body" className="block text-sm font-medium text-gray-900">
-          Body
-        </label>
-        <textarea
-          id="body"
-          required
-          rows={8}
-          value={body}
-          onChange={(e) => setBody(e.target.value)}
-          className="mt-1 block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600"
-        />
-      </div>
-      <Button type="submit">Save</Button>
-    </form>
+    <>
+      <PageMeta title={isNew ? 'New content' : 'Edit content'} />
+      <main>
+        <PageBreadcrumb title={isNew ? 'New content' : 'Edit content'} subtitle="Content" />
+        {loading ? (
+          <p className="text-sm text-default-500">Loading…</p>
+        ) : (
+          <ContentEditCard isNew={isNew} title={title} body={body} onTitleChange={setTitle} onBodyChange={setBody} onSubmit={handleSubmit} />
+        )}
+      </main>
+    </>
   )
 }
