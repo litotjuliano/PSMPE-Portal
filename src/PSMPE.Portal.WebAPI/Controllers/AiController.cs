@@ -2,6 +2,8 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using PSMPE.Portal.Application.AI;
 using PSMPE.Portal.Application.AI.Dtos;
+using PSMPE.Portal.Domain.Enums;
+using PSMPE.Portal.Infrastructure.Authorization;
 
 namespace PSMPE.Portal.WebAPI.Controllers;
 
@@ -15,6 +17,7 @@ namespace PSMPE.Portal.WebAPI.Controllers;
 public class AiController(IPromptExecutionService promptExecutionService) : ControllerBase
 {
     [HttpPost("prompt")]
+    [RequirePermission(Permissions.Ai.UsePrompt)]
     public async Task<ActionResult<PromptResponseDto>> ExecutePrompt(PromptRequestDto request, CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(request.Prompt))

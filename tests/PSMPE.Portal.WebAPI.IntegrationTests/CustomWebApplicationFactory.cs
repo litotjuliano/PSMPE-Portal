@@ -5,9 +5,10 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Logging;
 using PSMPE.Portal.Domain.Entities;
-using PSMPE.Portal.Domain.Enums;
 using PSMPE.Portal.Infrastructure.Persistence;
+using PSMPE.Portal.Infrastructure.Persistence.Seed;
 
 namespace PSMPE.Portal.WebAPI.IntegrationTests;
 
@@ -42,7 +43,11 @@ public class CustomWebApplicationFactory : WebApplicationFactory<Program>
         });
     }
 
-    /// <summary>Ensures the InMemory database exists and the fixed role set is seeded, ready for auth tests.</summary>
+    /// <summary>
+    /// Ensures the InMemory database exists and the fixed role set (with its default permission
+    /// grants) is seeded, ready for auth tests. Reuses the real IdentitySeeder rather than
+    /// hand-rolling role creation, so integration tests reflect actual seed behavior.
+    /// </summary>
     public async Task InitializeAsync()
     {
         using var scope = Services.CreateScope();
@@ -50,12 +55,10 @@ public class CustomWebApplicationFactory : WebApplicationFactory<Program>
         await db.Database.EnsureCreatedAsync();
 
         var roleManager = scope.ServiceProvider.GetRequiredService<RoleManager<IdentityRole<Guid>>>();
-        foreach (var role in RoleNames.All)
-        {
-            if (!await roleManager.RoleExistsAsync(role))
-            {
-                await roleManager.CreateAsync(new IdentityRole<Guid>(role));
-            }
-        }
+        var userManager = scope.ServiceProvider.GetRequiredService<UserManager<ApplicationUser>>();
+        var configuration = scope.ServiceProvider.GetRequiredService<IConfiguration>();
+        var logger = scope.ServiceProvider.GetRequiredService<ILogger<CustomWebApplicationFactory>>();
+
+        await IdentitySeeder.SeedAsync(roleManager, userManager, configuration, logger);
     }
 }

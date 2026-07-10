@@ -3,6 +3,8 @@ using Microsoft.AspNetCore.Mvc;
 using PSMPE.Portal.Application.Common.Models;
 using PSMPE.Portal.Application.Layouts;
 using PSMPE.Portal.Application.Layouts.Dtos;
+using PSMPE.Portal.Domain.Enums;
+using PSMPE.Portal.Infrastructure.Authorization;
 
 namespace PSMPE.Portal.WebAPI.Controllers;
 
@@ -16,10 +18,12 @@ public class LayoutsController(ILayoutService layoutService) : ControllerBase
         => Ok(await layoutService.GetAllAsync(cancellationToken));
 
     [HttpPost]
+    [RequirePermission(Permissions.Layout.Create)]
     public async Task<ActionResult<LayoutDto>> Create(CreateLayoutRequest request, CancellationToken cancellationToken)
         => Ok(await layoutService.CreateAsync(request, cancellationToken));
 
     [HttpDelete("{id:guid}")]
+    [RequirePermission(Permissions.Layout.Delete)]
     public async Task<IActionResult> Delete(Guid id, CancellationToken cancellationToken)
     {
         // Ownership + "no deleting system layouts" rules are enforced inside LayoutService.

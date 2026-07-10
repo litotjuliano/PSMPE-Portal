@@ -11,9 +11,10 @@ This is a **starter**, not a finished product — advanced/optional features are
 ## Overview
 
 - **Backend**: `src/PSMPE.Portal.*` — Clean Architecture (Domain → Application →
-  Infrastructure → WebAPI), ASP.NET Core Identity + JWT bearer auth, three fixed roles
-  (`Super Admin`, `Admin`, `Content Creator`), ownership-based CMS rules, Swagger with
-  JWT support, an OpenAI SDK-backed prompt execution endpoint.
+  Infrastructure → WebAPI), ASP.NET Core Identity + JWT bearer auth, five fixed roles
+  (`Super Admin`, `Admin`, `Manager`, `Accounts`, `Member`) with an editable
+  permission layer on top, ownership-based CMS rules, Swagger with JWT support, an
+  OpenAI SDK-backed prompt execution endpoint.
 - **Frontend**: `apps/web` — React 19 + Vite + TypeScript + Tailwind CSS v4 + Preline
   UI, integrated with the licensed Tailwick admin dashboard template
   (`src/integrations/template/`) for layout, dashboard, login, and CMS page styling.
@@ -136,7 +137,8 @@ When `Seed:Enabled` is `true` (the default in Docker Compose and `appsettings.De
 `Program.cs` automatically calls `dotnet ef database update`'s runtime equivalent
 (`Database.MigrateAsync()`) and seeds:
 
-- The three fixed roles: `Super Admin`, `Admin`, `Content Creator`.
+- The five fixed roles: `Super Admin`, `Admin`, `Manager`, `Accounts`, `Member` — each
+  seeded with a default set of permissions (see `openspecs/roles.md`).
 - A default Super Admin account from `SEED_ADMIN_EMAIL` / `SEED_ADMIN_PASSWORD`.
 - Starter `SystemConfig` rows and one system `Layout` (used to demonstrate the
   "system layouts can't be deleted except by a Super Admin" rule).
@@ -146,9 +148,10 @@ Seeding is idempotent — safe to run on every startup.
 ## Authentication & authorization at a glance
 
 - JWT bearer auth via ASP.NET Core Identity (`POST /api/auth/register`, `POST /api/auth/login`).
-- Roles: `Super Admin`, `Admin`, `Content Creator` — new self-registrations always get
-  `Content Creator`; higher roles are granted via `POST /api/admin/users/{id}/roles`
-  (Super Admin only).
+- Roles: `Super Admin`, `Admin`, `Manager`, `Accounts`, `Member` — new self-registrations
+  always get `Member`; higher roles are granted via `POST /api/admin/users/{id}/roles`
+  (Super Admin only). Each role also carries an editable set of permissions (see
+  `openspecs/roles.md`) enforced via `[RequirePermission]` on top of role checks.
 - Ownership rule: a user can edit/delete their own `ContentItem`s and `Layout`s; an
   `Admin`/`Super Admin` can manage anyone's. System layouts (`IsSystemLayout == true`)
   can only be deleted by a `Super Admin`.

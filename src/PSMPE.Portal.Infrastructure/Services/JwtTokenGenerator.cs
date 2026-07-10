@@ -10,7 +10,7 @@ namespace PSMPE.Portal.Infrastructure.Services;
 
 public class JwtTokenGenerator(IConfiguration configuration) : IJwtTokenGenerator
 {
-    public (string Token, DateTimeOffset ExpiresAt) GenerateToken(ApplicationUser user, IList<string> roles)
+    public (string Token, DateTimeOffset ExpiresAt) GenerateToken(ApplicationUser user, IList<string> roles, IList<string> permissions)
     {
         var key = configuration["Jwt:Key"]
             ?? throw new InvalidOperationException("Jwt:Key configuration value is missing.");
@@ -26,6 +26,7 @@ public class JwtTokenGenerator(IConfiguration configuration) : IJwtTokenGenerato
             new(ClaimTypes.Name, user.DisplayName)
         };
         claims.AddRange(roles.Select(role => new Claim(ClaimTypes.Role, role)));
+        claims.AddRange(permissions.Select(p => new Claim(Domain.Enums.Permissions.ClaimType, p)));
 
         var expiresAt = DateTimeOffset.UtcNow.AddMinutes(expiryMinutes);
         var credentials = new SigningCredentials(

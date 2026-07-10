@@ -20,7 +20,8 @@ public class OwnershipAuthorizationHandler : AuthorizationHandler<OwnershipRequi
         var userId = context.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
 
         var isOwner = Guid.TryParse(userId, out var parsedUserId) && resource.OwnerId == parsedUserId;
-        var isAdmin = context.User.IsInRole(RoleNames.Admin) || context.User.IsInRole(RoleNames.SuperAdmin);
+        var isAdmin = context.User.IsInRole(RoleNames.Admin) || context.User.IsInRole(RoleNames.SuperAdmin)
+            || context.User.HasClaim(Permissions.ClaimType, Permissions.Content.ManageOthers);
 
         if (isOwner || isAdmin)
         {

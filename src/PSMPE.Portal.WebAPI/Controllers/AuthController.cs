@@ -10,8 +10,30 @@ namespace PSMPE.Portal.WebAPI.Controllers;
 [Route("api/auth")]
 public class AuthController(
     UserManager<ApplicationUser> userManager,
+    RoleManager<IdentityRole<Guid>> roleManager,
     IJwtTokenGenerator jwtTokenGenerator) : ControllerBase
 {
+    private async Task<IList<string>> GetPermissionsAsync(IList<string> roles)
+    {
+        var permissions = new HashSet<string>();
+        foreach (var roleName in roles)
+        {
+            var role = await roleManager.FindByNameAsync(roleName);
+            if (role is null)
+            {
+                continue;
+            }
+
+            var claims = await roleManager.GetClaimsAsync(role);
+            foreach (var claim in claims.Where(c => c.Type == Permissions.ClaimType))
+            {
+                permissions.Add(claim.Value);
+            }
+        }
+
+        return permissions.ToList();
+    }
+
     [HttpPost("register")]
     public async Task<ActionResult<AuthResponse>> Register(RegisterRequest request)
     {
@@ -37,11 +59,12 @@ public class AuthController(
                 result.Errors.ToDictionary(e => e.Code, e => new[] { e.Description })));
         }
 
-        // New self-registrations get the lowest-privilege role; Super Admin/Admin are granted by an existing admin.
-        await userManager.AddToRoleAsync(user, RoleNames.ContentCreator);
+        // New self-registrations get the lowest-privilege role; higher roles are granted by an existing admin.
+        await userManager.AddToRoleAsync(user, RoleNames.Member);
 
         var roles = await userManager.GetRolesAsync(user);
-        var (token, expiresAt) = jwtTokenGenerator.GenerateToken(user, roles);
+        var permissions = await GetPermissionsAsync(roles);
+        var (token, expiresAt) = jwtTokenGenerator.GenerateToken(user, roles, permissions);
         return Ok(new AuthResponse(token, expiresAt, user.Email!, user.DisplayName, roles.ToList()));
     }
 
@@ -55,7 +78,8 @@ public class AuthController(
         }
 
         var roles = await userManager.GetRolesAsync(user);
-        var (token, expiresAt) = jwtTokenGenerator.GenerateToken(user, roles);
+        var permissions = await GetPermissionsAsync(roles);
+        var (token, expiresAt) = jwtTokenGenerator.GenerateToken(user, roles, permissions);
         return Ok(new AuthResponse(token, expiresAt, user.Email!, user.DisplayName, roles.ToList()));
     }
 }

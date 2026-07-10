@@ -41,8 +41,9 @@ public class LayoutService(IApplicationDbContext db, ICurrentUserService current
             return Result.NotFound($"Layout '{id}' was not found.");
         }
 
-        // System layouts ship with the platform and may only be removed by a Super Admin.
-        if (layout.IsSystemLayout && !currentUser.IsInRole(RoleNames.SuperAdmin))
+        // System layouts ship with the platform and may only be removed by a role granted this
+        // permission (Super Admin by default - see IdentitySeeder.DefaultRolePermissions).
+        if (layout.IsSystemLayout && !currentUser.HasPermission(Permissions.Layout.DeleteSystem))
         {
             return Result.Forbidden("System layouts can only be deleted by a Super Admin.");
         }

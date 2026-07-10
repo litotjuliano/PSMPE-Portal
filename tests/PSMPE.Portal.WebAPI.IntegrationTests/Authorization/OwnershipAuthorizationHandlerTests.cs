@@ -16,6 +16,16 @@ public class OwnershipAuthorizationHandlerTests
         return new ClaimsPrincipal(new ClaimsIdentity(claims, "TestAuth"));
     }
 
+    private static ClaimsPrincipal BuildUserWithPermission(Guid userId, string permission)
+    {
+        var claims = new List<Claim>
+        {
+            new(ClaimTypes.NameIdentifier, userId.ToString()),
+            new(Permissions.ClaimType, permission)
+        };
+        return new ClaimsPrincipal(new ClaimsIdentity(claims, "TestAuth"));
+    }
+
     private static async Task<bool> AuthorizeAsync(ClaimsPrincipal user, ContentItem resource)
     {
         var handler = new OwnershipAuthorizationHandler();
@@ -31,7 +41,7 @@ public class OwnershipAuthorizationHandlerTests
         var userId = Guid.NewGuid();
         var resource = new ContentItem { OwnerId = userId };
 
-        Assert.True(await AuthorizeAsync(BuildUser(userId, RoleNames.ContentCreator), resource));
+        Assert.True(await AuthorizeAsync(BuildUser(userId, RoleNames.Member), resource));
     }
 
     [Fact]
@@ -39,7 +49,7 @@ public class OwnershipAuthorizationHandlerTests
     {
         var resource = new ContentItem { OwnerId = Guid.NewGuid() };
 
-        Assert.False(await AuthorizeAsync(BuildUser(Guid.NewGuid(), RoleNames.ContentCreator), resource));
+        Assert.False(await AuthorizeAsync(BuildUser(Guid.NewGuid(), RoleNames.Member), resource));
     }
 
     [Fact]
@@ -48,5 +58,13 @@ public class OwnershipAuthorizationHandlerTests
         var resource = new ContentItem { OwnerId = Guid.NewGuid() };
 
         Assert.True(await AuthorizeAsync(BuildUser(Guid.NewGuid(), RoleNames.Admin), resource));
+    }
+
+    [Fact]
+    public async Task NonAdminWithManageOthersPermission_IsAuthorized_RegardlessOfOwnership()
+    {
+        var resource = new ContentItem { OwnerId = Guid.NewGuid() };
+
+        Assert.True(await AuthorizeAsync(BuildUserWithPermission(Guid.NewGuid(), Permissions.Content.ManageOthers), resource));
     }
 }

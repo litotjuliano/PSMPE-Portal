@@ -4,6 +4,8 @@ using PSMPE.Portal.Application.Common.Models;
 using PSMPE.Portal.Application.Content;
 using PSMPE.Portal.Application.Content.Dtos;
 using PSMPE.Portal.Domain.Entities;
+using PSMPE.Portal.Domain.Enums;
+using PSMPE.Portal.Infrastructure.Authorization;
 using PSMPE.Portal.Infrastructure.Authorization.Policies;
 
 namespace PSMPE.Portal.WebAPI.Controllers;
@@ -25,6 +27,7 @@ public class ContentController(IContentService contentService, IAuthorizationSer
     }
 
     [HttpPost]
+    [RequirePermission(Permissions.Content.Create)]
     public async Task<ActionResult<ContentItemDto>> Create(CreateContentItemRequest request, CancellationToken cancellationToken)
     {
         var created = await contentService.CreateAsync(request, cancellationToken);
@@ -32,6 +35,7 @@ public class ContentController(IContentService contentService, IAuthorizationSer
     }
 
     [HttpPut("{id:guid}")]
+    [RequirePermission(Permissions.Content.Update)]
     public async Task<IActionResult> Update(Guid id, UpdateContentItemRequest request, CancellationToken cancellationToken)
     {
         var existing = await contentService.GetByIdAsync(id, cancellationToken);
@@ -54,6 +58,7 @@ public class ContentController(IContentService contentService, IAuthorizationSer
     }
 
     [HttpDelete("{id:guid}")]
+    [RequirePermission(Permissions.Content.Delete)]
     public async Task<IActionResult> Delete(Guid id, CancellationToken cancellationToken)
     {
         var existing = await contentService.GetByIdAsync(id, cancellationToken);

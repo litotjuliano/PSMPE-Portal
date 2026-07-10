@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using Microsoft.AspNetCore.Http;
 using PSMPE.Portal.Application.Common.Interfaces;
+using PSMPE.Portal.Domain.Enums;
 
 namespace PSMPE.Portal.Infrastructure.Services;
 
@@ -21,4 +22,6 @@ public class CurrentUserService(IHttpContextAccessor httpContextAccessor) : ICur
         User?.FindAll(ClaimTypes.Role).Select(c => c.Value).ToList() ?? [];
 
     public bool IsInRole(string role) => User?.IsInRole(role) ?? false;
+
+    public bool HasPermission(string permission) => User?.HasClaim(Permissions.ClaimType, permission) ?? false;
 }

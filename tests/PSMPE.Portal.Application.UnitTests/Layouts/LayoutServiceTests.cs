@@ -25,7 +25,7 @@ public class LayoutServiceTests
     }
 
     [Fact]
-    public async Task DeleteAsync_SystemLayout_BySuperAdmin_Succeeds()
+    public async Task DeleteAsync_SystemLayout_ByUserWithoutDeleteSystemPermission_IsForbidden()
     {
         using var db = TestDbContext.CreateInMemory();
         var layout = new Layout { Name = "System", Definition = "{}", IsSystemLayout = true, OwnerId = null };
@@ -33,6 +33,25 @@ public class LayoutServiceTests
         await db.SaveChangesAsync();
 
         var service = new LayoutService(db, new FakeCurrentUserService(Guid.NewGuid(), RoleNames.SuperAdmin));
+
+        var result = await service.DeleteAsync(layout.Id);
+
+        Assert.False(result.Succeeded);
+        Assert.Equal(Common.Models.ResultErrorType.Forbidden, result.ErrorType);
+    }
+
+    [Fact]
+    public async Task DeleteAsync_SystemLayout_ByUserWithDeleteSystemPermission_Succeeds()
+    {
+        using var db = TestDbContext.CreateInMemory();
+        var layout = new Layout { Name = "System", Definition = "{}", IsSystemLayout = true, OwnerId = null };
+        db.Layouts.Add(layout);
+        await db.SaveChangesAsync();
+
+        var service = new LayoutService(db, new FakeCurrentUserService(Guid.NewGuid(), RoleNames.SuperAdmin)
+        {
+            GrantedPermissions = [Permissions.Layout.DeleteSystem]
+        });
 
         var result = await service.DeleteAsync(layout.Id);
 
@@ -48,7 +67,7 @@ public class LayoutServiceTests
         db.Layouts.Add(layout);
         await db.SaveChangesAsync();
 
-        var service = new LayoutService(db, new FakeCurrentUserService(ownerId, RoleNames.ContentCreator));
+        var service = new LayoutService(db, new FakeCurrentUserService(ownerId, RoleNames.Member));
 
         var result = await service.DeleteAsync(layout.Id);
 

@@ -72,7 +72,7 @@ public static class DependencyInjection
                 policy.Requirements.Add(new OwnershipRequirement()));
 
         services.AddScoped<IAuthorizationHandler, OwnershipAuthorizationHandler>();
-        services.AddScoped<IAuthorizationHandler, SystemAdminAuthorizationHandler>();
+        services.AddScoped<IAuthorizationHandler, PermissionAuthorizationHandler>();
 
         services.AddHttpContextAccessor();
         services.AddScoped<ICurrentUserService, CurrentUserService>();

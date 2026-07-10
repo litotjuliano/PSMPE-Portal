@@ -6,5 +6,7 @@ public class FakeCurrentUserService(Guid? userId, params string[] roles) : ICurr
 {
     public Guid? UserId { get; } = userId;
     public IReadOnlyList<string> Roles { get; } = roles;
+    public IReadOnlyList<string> GrantedPermissions { get; init; } = [];
     public bool IsInRole(string role) => Roles.Contains(role);
+    public bool HasPermission(string permission) => GrantedPermissions.Contains(permission);
 }

@@ -14,7 +14,7 @@ public class ContentServiceTests
     {
         using var db = TestDbContext.CreateInMemory();
         var ownerId = Guid.NewGuid();
-        var service = new ContentService(db, new FakeCurrentUserService(ownerId, RoleNames.ContentCreator));
+        var service = new ContentService(db, new FakeCurrentUserService(ownerId, RoleNames.Member));
 
         var created = await service.CreateAsync(new CreateContentItemRequest("Title", "Body", null));
 
@@ -30,7 +30,7 @@ public class ContentServiceTests
         db.ContentItems.Add(item);
         await db.SaveChangesAsync();
 
-        var service = new ContentService(db, new FakeCurrentUserService(Guid.NewGuid(), RoleNames.ContentCreator));
+        var service = new ContentService(db, new FakeCurrentUserService(Guid.NewGuid(), RoleNames.Member));
 
         var result = await service.DeleteAsync(item.Id);
 
@@ -47,7 +47,7 @@ public class ContentServiceTests
         db.ContentItems.Add(item);
         await db.SaveChangesAsync();
 
-        var service = new ContentService(db, new FakeCurrentUserService(ownerId, RoleNames.ContentCreator));
+        var service = new ContentService(db, new FakeCurrentUserService(ownerId, RoleNames.Member));
 
         var result = await service.DeleteAsync(item.Id);
 

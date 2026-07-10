@@ -6,6 +6,19 @@ import IconifyIcon from '../components/shared/IconifyIcon'
 import PageMeta from '../components/shared/PageMeta'
 import { useAuth } from '../../../core/auth/useAuth'
 
+/**
+ * Mirrors the accounts IdentitySeeder.cs creates when SEED_ADMIN_PASSWORD/SEED_DEFAULT_PASSWORD
+ * are set (dev/Testing only) - matches the repo's .env.example defaults. Keep in sync with
+ * src/PSMPE.Portal.Infrastructure/Persistence/Seed/IdentitySeeder.cs if those values change.
+ */
+const DEV_SEED_ACCOUNTS = [
+  { role: 'Super Admin', email: 'admin@psmpe.local', password: 'ChangeMe123!' },
+  { role: 'Admin', email: 'admin.user@psmpe.local', password: 'ChangeMe123!' },
+  { role: 'Manager', email: 'manager@psmpe.local', password: 'ChangeMe123!' },
+  { role: 'Accounts', email: 'accounts@psmpe.local', password: 'ChangeMe123!' },
+  { role: 'Member', email: 'member@psmpe.local', password: 'ChangeMe123!' },
+] as const
+
 export const LoginPage = () => {
   const { login } = useAuth()
   const navigate = useNavigate()
@@ -28,10 +41,16 @@ export const LoginPage = () => {
     }
   }
 
+  const autofill = (account: (typeof DEV_SEED_ACCOUNTS)[number]) => {
+    setEmail(account.email)
+    setPassword(account.password)
+    setError(null)
+  }
+
   return (
     <>
       <PageMeta title="Login" />
-      <div className="relative min-h-screen w-full flex justify-center items-center py-16 md:py-10">
+      <div className="relative min-h-screen w-full flex flex-col justify-center items-center py-16 md:py-10">
         <div className="card md:w-lg w-screen z-10">
           <div className="text-center px-10 py-12">
             <Link to="/" className="flex justify-center">
@@ -104,6 +123,32 @@ export const LoginPage = () => {
             </form>
           </div>
         </div>
+
+        {import.meta.env.DEV && (
+          <div className="card md:w-lg w-screen z-10 mt-3">
+            <div className="px-5 py-3.5">
+              <h6 className="text-[11px] font-semibold text-default-700 uppercase tracking-wide mb-0.5">
+                Dev credential cheatsheet
+              </h6>
+              <p className="text-[10px] text-default-500 mb-2.5">
+                Local dev only — click a role to autofill email &amp; password above.
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {DEV_SEED_ACCOUNTS.map((account) => (
+                  <button
+                    key={account.email}
+                    type="button"
+                    title={`${account.email} / ${account.password}`}
+                    onClick={() => autofill(account)}
+                    className="px-3 py-2 rounded-lg border border-success/30 bg-success/15 hover:bg-success/25 text-default-800 text-xs font-medium text-center transition"
+                  >
+                    {account.role}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
 
         <div className="absolute inset-0 overflow-hidden">
           <svg aria-hidden="true" className="absolute inset-0 size-full fill-black/2 stroke-black/5 dark:fill-white/2.5 dark:stroke-white/2.5">

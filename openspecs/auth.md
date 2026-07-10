@@ -11,7 +11,7 @@ API calls. Backed by ASP.NET Core Identity (`PSMPE.Portal.Domain.Entities.Applic
   - Auth: anonymous
   - Request: `{ email, password, displayName }`
   - Response: `{ token, expiresAt, email, displayName, roles }`
-  - New accounts are always granted the `Content Creator` role; `Admin`/`Super Admin`
+  - New accounts are always granted the `Member` role; `Admin`/`Super Admin`
     must be granted by an existing Super Admin via `POST /api/admin/users/{id}/roles`.
   - TODO: gate behind the seeded `SystemConfig.AllowPublicRegistration` flag once an
     admin settings UI exists to toggle it.
