@@ -1,0 +1,101 @@
+@theme {
+  --font-body: 'DM Sans', serif;
+  --font-tourney: 'Tourney', sans-serif;
+
+  --color-body-bg: var(--color-default-50);
+  --color-body-color: var(--color-default-600);
+
+  --color-card: var(--color-white);
+
+  --color-primary: var(--color-blue-500);
+  --color-secondary: var(--color-violet-500);
+  --color-success: var(--color-green-500);
+  --color-info: var(--color-sky-500);
+  --color-warning: var(--color-amber-500);
+  --color-danger: var(--color-orange-500);
+
+  --color-default-50: var(--color-zinc-50);
+  --color-default-100: var(--color-zinc-100);
+  --color-default-150: var(--color-zinc-100);
+  --color-default-200: var(--color-zinc-200);
+  --color-default-300: var(--color-zinc-300);
+  --color-default-400: var(--color-zinc-400);
+  --color-default-500: var(--color-zinc-500);
+  --color-default-600: var(--color-zinc-600);
+  --color-default-700: var(--color-zinc-700);
+  --color-default-800: var(--color-zinc-800);
+  --color-default-900: var(--color-zinc-900);
+  --color-default-950: var(--color-zinc-950);
+
+  --text-base--line-height: 1.1;
+  --text-xl--line-height: 1.1;
+  --text-2xl--line-height: 1.1;
+  --text-3xl--line-height: 1.1;
+  --text-4xl--line-height: 1.1;
+  --text-5xl--line-height: 1.1;
+
+  --spacing-sidenav-width: 260px;
+  --spacing-sidenav-width-md: 175px;
+  --spacing-sidenav-width-sm: 70px;
+
+  --spacing-topbar-height: 70px;
+
+  --sidenav-link-padding-x: 12px;
+  --sidenav-link-padding-y: 8px;
+  --sidenav-item-icon-size: 18px;
+  --sidenav-item-font-size: 14px;
+
+  --topbar-background: var(--color-white);
+}
+
+@custom-variant dark (&:where([data-theme=dark], [data-theme=dark] *, .dark, .dark *));
+
+:root {
+  color-scheme: light;
+}
+
+[data-theme='dark'] {
+  color-scheme: dark;
+
+  --color-body-bg: var(--color-zinc-950);
+  --color-body-color: var(--color-zinc-400);
+
+  --color-card: var(--color-zinc-900);
+
+  --color-default-50: var(--color-zinc-950);
+  --color-default-100: var(--color-zinc-900);
+  --color-default-150: var(--color-zinc-800);
+  --color-default-200: var(--color-zinc-800);
+  --color-default-300: var(--color-zinc-700);
+  --color-default-400: var(--color-zinc-600);
+  --color-default-500: var(--color-zinc-500);
+  --color-default-600: var(--color-zinc-400);
+  --color-default-700: var(--color-zinc-300);
+  --color-default-800: var(--color-zinc-200);
+  --color-default-900: var(--color-zinc-100);
+  --color-default-950: var(--color-zinc-50);
+
+  --topbar-background: var(--color-default-100);
+}
+
+/* Light Menu */
+html[data-theme='light'],
+html[data-sidenav-color='light'] {
+  --sidenav-background: var(--color-white);
+  --sidenav-item-color: var(--color-zinc-600);
+  --sidenav-item-active-color: theme(backgroundColor.primary);
+  --sidenav-item-active-bg: theme(backgroundColor.primary/10%);
+  --sidenav-item-hover-color: theme(backgroundColor.primary);
+  --sidenav-item-hover-bg: theme(backgroundColor.primary/10%);
+}
+
+/* Dark Menu (Dark Mode) */
+html[data-sidenav-color='dark'],
+html[data-theme='dark'][data-sidenav-color='light'] {
+  --sidenav-background: var(--color-zinc-900);
+  --sidenav-item-color: var(--color-zinc-400);
+  --sidenav-item-active-color: var(--color-zinc-50);
+  --sidenav-item-active-bg: var(--color-zinc-800);
+  --sidenav-item-hover-color: var(--color-zinc-300);
+  --sidenav-item-hover-bg: var(--color-zinc-800);
+}

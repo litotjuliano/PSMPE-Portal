@@ -1,0 +1,13 @@
+/*  */
+
+.wrapper {
+  @apply flex size-full;
+}
+
+.page-content {
+  @apply flex flex-col flex-grow overflow-auto w-full h-screen transition-[width,margin] ease-in-out duration-300;
+}
+
+main {
+  @apply flex-grow w-full px-6 py-6;
+}

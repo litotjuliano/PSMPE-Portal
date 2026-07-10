@@ -1,0 +1,11 @@
+/* 
+
+_dropdown.css
+
+*/
+
+@layer base {
+  .hs-dropdown-menu {
+    @apply hidden rounded-[0.3rem] bg-card shadow-sm border border-default-300/40 transition-[opacity,margin] hs-dropdown-open:opacity-100 opacity-0 min-w-40 z-30 mt-2 p-2;
+  }
+}

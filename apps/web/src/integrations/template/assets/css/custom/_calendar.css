@@ -1,0 +1,58 @@
+/*  
+_calendar.css
+*/
+
+:root .fc {
+  --fc-border-color: var(--color-default-200);
+  --fc-non-business-color: var(--color-default-100);
+  --fc-button-bg-color: var(--color-primary);
+  --fc-button-border-color: var(--color-primary);
+  --fc-button-hover-bg-color: var(--color-primary);
+  --fc-button-hover-border-color: var(--color-primary);
+  --fc-button-active-bg-color: var(--color-primary);
+  --fc-button-active-border-color: var(--color-primary);
+  --fc-neutral-bg-color: var(--color-default-300);
+  --fc-neutral-text-color: var(--color-default-700);
+  --fc-page-bg-color: #fff;
+}
+
+#external-events .fc-event {
+  text-align: left;
+  padding: 8px 16px;
+  @apply cursor-pointer rounded-sm flex items-center font-medium;
+}
+
+.fc-event.fc-event-dragging {
+  text-align: left;
+  padding: 8px 16px;
+  @apply cursor-pointer rounded-sm flex items-center font-medium;
+}
+
+.fc-daygrid-day-events {
+  @apply flex flex-col;
+}
+
+.fc-event {
+  @apply bg-current/20;
+}
+
+.fc-event-draggable.fc-event {
+  padding: 4px 4px;
+  @apply text-current border-none rounded-sm font-medium py-1.5 px-3 mt-2;
+}
+
+.fc-daygrid-event-dot {
+  @apply hidden border-current;
+}
+
+.fc-event-main {
+  @apply !text-current;
+}
+
+.fc-button {
+  @apply !capitalize !flex items-center;
+}
+
+.fc .fc-button-primary:focus {
+  @apply !shadow-none;
+}

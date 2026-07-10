@@ -1,0 +1,9 @@
+/* //
+// _topbar.scss
+// */
+
+.app-header {
+  .topbar-item {
+    @apply h-9.5 flex items-center;
+  }
+}

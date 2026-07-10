@@ -1,0 +1,27 @@
+/* 
+
+_card.css
+
+*/
+
+@layer base {
+  .card {
+    @apply relative rounded-[0.3rem] bg-card flex flex-col break-words bg-clip-border h-fit shadow-sm dark:bg-default-100;
+
+    .card-header {
+      @apply flex justify-between items-center gap-3 min-h-14 px-5 border-b border-default-200;
+    }
+
+    .card-footer {
+      @apply flex justify-between items-center gap-3 min-h-14 px-5 border-t border-default-200;
+    }
+  }
+
+  .card-body {
+    @apply p-5;
+  }
+
+  .card-title {
+    @apply text-base font-semibold text-default-800;
+  }
+}

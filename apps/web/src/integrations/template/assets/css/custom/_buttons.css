@@ -1,0 +1,29 @@
+@layer components {
+  .btn {
+    @apply cursor-pointer inline-flex items-center gap-x-2 justify-center text-center rounded border border-transparent px-4 py-1.75 text-sm transition-all font-medium;
+
+    &.btn-lg {
+      @apply px-5 py-3 text-base;
+    }
+
+    &.btn-sm {
+      @apply px-3.5 py-1.5 text-xs;
+    }
+
+    &.btn-icon {
+      @apply size-9 p-0;
+    }
+  }
+
+  .btn[class*='size-'] {
+    padding: 0;
+  }
+
+  button:not(:disabled) {
+    cursor: pointer;
+  }
+
+  button:disabled {
+    cursor: not-allowed;
+  }
+}

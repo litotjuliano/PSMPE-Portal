@@ -1,0 +1,43 @@
+/*  */
+
+@layer base {
+  html {
+    @apply scroll-smooth relative;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    line-height: 1.1;
+    @apply font-semibold;
+  }
+
+  body {
+    overflow-x: hidden;
+    -webkit-tap-highlight-color: transparent;
+    @apply size-full antialiased font-body font-normal text-sm leading-normal bg-body-bg text-body-color;
+  }
+}
+
+code {
+  @apply text-primary;
+}
+
+input,
+textarea,
+button,
+select,
+a {
+  -webkit-tap-highlight-color: transparent;
+}
+
+.container {
+  @apply mx-auto max-w-[1280px] px-4;
+}
+
+.hs-overlay-backdrop {
+  @apply !bg-default-900/20;
+}

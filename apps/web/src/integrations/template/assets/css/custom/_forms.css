@@ -1,0 +1,268 @@
+/* 
+
+_forms.scss 
+
+*/
+
+.form-input {
+  @apply bg-card h-9.25 py-0 rounded outline-0 block w-full border border-default-200 transition-all text-default-800 placeholder:text-default-400;
+  @apply focus-visible:ring-default-300/30 focus-visible:border-default-300 focus-visible:outline-none focus-visible:ring-[3px];
+  @apply disabled:cursor-not-allowed disabled:opacity-70;
+  @apply [&[readonly]]:bg-default-100/80 [&[readonly]]:cursor-not-allowed [&[readonly]]:text-default-600/80;
+  @apply file:h-full [&[type=file]]:py-0;
+  @apply file:border-solid file:border-default-200 file:bg-transparent file:font-medium file:not-italic file:text-default-800 file:p-0 file:border-0 file:border-e;
+  @apply aria-invalid:border-danger/60 aria-invalid:ring-danger/10;
+  transition-property: color, box-shadow;
+}
+
+.form-input-sm {
+  @apply h-7.5 text-xs;
+}
+
+textarea.form-input {
+  @apply p-3 !h-auto;
+}
+
+select.form-input {
+  @apply min-w-28;
+}
+
+.form-radio,
+.form-checkbox {
+  @apply appearance-none bg-no-repeat bg-center;
+  @apply shrink-0 bg-current border border-current ring-offset-white focus-visible:outline-none;
+  @apply focus-visible:ring-2 focus-visible:ring-inherit focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-90;
+  @apply aria-invalid:border-danger/60 aria-invalid:ring-danger/10;
+  @apply cursor-pointer checked:border-inherit focus:ring-0 focus:ring-offset-0;
+  @apply checked:bg-current checked:border-transparent;
+}
+
+.form-radio:not([class*='text-']),
+.form-checkbox:not([class*='text-']) {
+  @apply bg-transparent border-default-300;
+  @apply checked:bg-primary checked:border-transparent;
+}
+
+.form-checkbox {
+  @apply rounded-sm;
+}
+
+.form-radio:not([class*='size-']),
+.form-checkbox:not([class*='size-']) {
+  @apply size-4.5;
+}
+
+.form-checkbox[class*='rounded-full'] {
+  @apply rounded-full;
+}
+
+.form-checkbox-sm {
+  @apply size-4.5;
+}
+
+.form-radio-sm {
+  @apply size-4.5;
+}
+
+.form-radio-lg {
+  @apply size-5.5;
+}
+
+.form-switch {
+  @apply checked:bg-none cursor-pointer inline-flex appearance-none bg-default-200 relative shrink-0;
+  @apply focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-default-300 focus-visible:ring-offset-2 focus-visible:ring-offset-card;
+  @apply disabled:cursor-not-allowed disabled:opacity-50;
+  @apply aria-invalid:border aria-invalid:border-danger/60 aria-invalid:ring-danger/10;
+  @apply cursor-pointer border-0 focus:ring-0 focus:ring-offset-0;
+
+  &:before {
+    @apply block shadow-xs pointer-events-none ring-0 absolute rounded-full bg-white top-1/2 start-0 -translate-y-1/2 transition-transform content-[""] translate-x-1;
+  }
+
+  &:checked,
+  &[aria-checked='true'] {
+    @apply bg-primary;
+  }
+}
+
+.form-switch {
+  @apply h-5 w-7.5 rounded-full;
+
+  &:before {
+    @apply size-3;
+  }
+
+  &:checked,
+  &[aria-checked='true'] {
+    &:before {
+      @apply translate-x-3.5;
+    }
+  }
+}
+
+.form-switch-sm {
+  @apply h-4.5 w-6.5 rounded-full;
+
+  &:before {
+    @apply size-2.5;
+  }
+
+  &:checked,
+  &[aria-checked='true'] {
+    &:before {
+      @apply translate-x-3;
+    }
+  }
+}
+
+.form-switch-lg {
+  @apply h-5.5 w-8.5 rounded-full;
+
+  &:before {
+    @apply size-3.5;
+  }
+
+  &:checked,
+  &[aria-checked='true'] {
+    &:before {
+      @apply translate-x-4;
+    }
+  }
+}
+
+[dir='rtl'] .form-switch {
+  &:before {
+    @apply -translate-x-1;
+  }
+
+  &:checked,
+  &[aria-checked='true'] {
+    &:before {
+      @apply -translate-x-3.5;
+    }
+  }
+
+  &.form-switch-sm {
+    &:checked,
+    &[aria-checked='true'] {
+      &:before {
+        @apply -translate-x-3;
+      }
+    }
+  }
+
+  &.form-switch-lg {
+    &:checked,
+    &[aria-checked='true'] {
+      &:before {
+        @apply -translate-x-4;
+      }
+    }
+  }
+}
+
+/* card radio */
+.card-radio {
+  @apply relative;
+
+  input:checked + .form-label {
+    @apply relative;
+
+    &::after {
+      content: '';
+      /* iconify tabler--circle-check-filled */
+      @apply absolute bottom-2 end-2  ms-auto text-xl transition-all text-success;
+    }
+  }
+}
+
+input:checked + .form-label.btn {
+  @apply bg-primary/10 text-primary;
+}
+
+/* flatpickr */
+
+.flatpickr-day {
+  @apply text-default-600;
+}
+
+.form-input.flatpickr-input {
+  @apply !bg-card;
+}
+
+.flatpickr-calendar {
+  @apply bg-card shadow border border-default-150;
+}
+
+.flatpickr-day.selected,
+.flatpickr-day.startRange,
+.flatpickr-day.endRange,
+.flatpickr-day.selected.inRange,
+.flatpickr-day.startRange.inRange,
+.flatpickr-day.endRange.inRange,
+.flatpickr-day.selected:focus,
+.flatpickr-day.startRange:focus,
+.flatpickr-day.endRange:focus,
+.flatpickr-day.selected:hover,
+.flatpickr-day.startRange:hover,
+.flatpickr-day.endRange:hover,
+.flatpickr-day.selected.prevMonthDay,
+.flatpickr-day.startRange.prevMonthDay,
+.flatpickr-day.endRange.prevMonthDay,
+.flatpickr-day.selected.nextMonthDay,
+.flatpickr-day.startRange.nextMonthDay,
+.flatpickr-day.endRange.nextMonthDay {
+  @apply bg-primary border-primary;
+}
+
+span.flatpickr-weekday {
+  @apply text-body-color;
+}
+
+.flatpickr-day.inRange,
+.flatpickr-day.prevMonthDay.inRange,
+.flatpickr-day.nextMonthDay.inRange,
+.flatpickr-day.today.inRange,
+.flatpickr-day.prevMonthDay.today.inRange,
+.flatpickr-day.nextMonthDay.today.inRange,
+.flatpickr-day:hover,
+.flatpickr-day.prevMonthDay:hover,
+.flatpickr-day.nextMonthDay:hover,
+.flatpickr-day:focus,
+.flatpickr-day.prevMonthDay:focus,
+.flatpickr-day.nextMonthDay:focus {
+  @apply bg-default-200 text-body-color;
+  @apply bg-default-200 text-body-color border-transparent;
+}
+
+.flatpickr-day.inRange {
+  @apply text-default-950 shadow-[-5px_0_0_var(--color-default-200),5px_0_0_var(--color-default-200)];
+}
+
+.flatpickr-prev-month svg,
+.flatpickr-next-month svg {
+  @apply !fill-default-700;
+}
+
+.flatpickr-monthDropdown-months,
+.numInput {
+  @apply !text-default-700;
+}
+
+.flatpickr-calendar.arrowBottom:after {
+  @apply bg-card;
+}
+
+.flatpickr-calendar.hasTime .flatpickr-time {
+  @apply border-default-200;
+}
+
+.flatpickr-day.flatpickr-disabled,
+.flatpickr-day.flatpickr-disabled:hover,
+.flatpickr-day.prevMonthDay,
+.flatpickr-day.nextMonthDay,
+.flatpickr-day.notAllowed,
+.flatpickr-day.notAllowed.prevMonthDay,
+.flatpickr-day.notAllowed.nextMonthDay {
+  @apply !text-default-400;
+}
