@@ -12,6 +12,7 @@ public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options
     public DbSet<ContentItem> ContentItems => Set<ContentItem>();
     public DbSet<Layout> Layouts => Set<Layout>();
     public DbSet<SystemConfig> SystemConfigs => Set<SystemConfig>();
+    public DbSet<Member> Members => Set<Member>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {

@@ -223,6 +223,13 @@ const Topbar = () => {
               <div className="border-t border-default-200 -mx-2 my-2"></div>
 
               <div className="flex flex-col gap-y-1">
+                <Link
+                  to="/profile"
+                  className="flex items-center gap-x-3.5 py-1.5 px-3 text-default-600 hover:bg-default-150 rounded font-medium w-full text-left"
+                >
+                  <LuUserRound className="size-4" />
+                  My Profile
+                </Link>
                 <button
                   onClick={handleSignOut}
                   className="flex items-center gap-x-3.5 py-1.5 px-3 text-default-600 hover:bg-default-150 rounded font-medium w-full text-left"

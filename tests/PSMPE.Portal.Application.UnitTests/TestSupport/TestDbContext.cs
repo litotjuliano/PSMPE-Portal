@@ -11,6 +11,7 @@ public class TestDbContext(DbContextOptions<TestDbContext> options) : DbContext(
     public DbSet<ContentItem> ContentItems => Set<ContentItem>();
     public DbSet<Layout> Layouts => Set<Layout>();
     public DbSet<SystemConfig> SystemConfigs => Set<SystemConfig>();
+    public DbSet<Member> Members => Set<Member>();
 
     public static TestDbContext CreateInMemory()
     {

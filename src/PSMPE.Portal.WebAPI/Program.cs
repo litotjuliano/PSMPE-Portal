@@ -57,6 +57,7 @@ if (builder.Configuration.GetValue<bool>("Seed:Enabled"))
     var userManager = services.GetRequiredService<UserManager<ApplicationUser>>();
     await IdentitySeeder.SeedAsync(roleManager, userManager, builder.Configuration, logger);
     await SystemConfigSeeder.SeedAsync(db, logger);
+    await MemberSeeder.SeedAsync(db, userManager, logger);
 }
 
 app.Run();

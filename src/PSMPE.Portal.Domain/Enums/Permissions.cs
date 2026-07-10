@@ -31,11 +31,18 @@ public static class Permissions
         public const string UsePrompt = "ai:use-prompt";
     }
 
+    public static class Members
+    {
+        public const string View = "members:view";
+        public const string Manage = "members:manage";
+    }
+
     public static readonly string[] All =
     [
         Content.Create, Content.Update, Content.Delete, Content.ManageOthers,
         Layout.Create, Layout.Delete, Layout.DeleteSystem,
         Admin.ManageUsers, Admin.ManageRoles,
-        Ai.UsePrompt
+        Ai.UsePrompt,
+        Members.View, Members.Manage
     ];
 }

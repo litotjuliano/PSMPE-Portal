@@ -12,6 +12,7 @@ public interface IApplicationDbContext
     DbSet<ContentItem> ContentItems { get; }
     DbSet<Layout> Layouts { get; }
     DbSet<SystemConfig> SystemConfigs { get; }
+    DbSet<Member> Members { get; }
 
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
 }

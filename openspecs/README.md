@@ -36,5 +36,6 @@ Anything deliberately deferred.
 - [layouts.md](./layouts.md) — layouts and the system-layout protection rule
 - [ai-prompt-execution.md](./ai-prompt-execution.md) — OpenAI prompt execution endpoint
 - [roles.md](./roles.md) — role and permission administration
+- [members.md](./members.md) — PSMPE membership profiles (distinct from Users)
 
 Add a new file here whenever a new feature area is added to the API.

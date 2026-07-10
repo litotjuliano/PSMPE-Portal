@@ -1,5 +1,5 @@
 import type { IconType } from 'react-icons/lib'
-import { LuFileText, LuMonitorDot, LuShieldCheck, LuSquareUserRound } from 'react-icons/lu'
+import { LuFileText, LuMonitorDot, LuShieldCheck, LuSquareUserRound, LuUsers } from 'react-icons/lu'
 
 export type MenuItemType = {
   key: string
@@ -31,6 +31,18 @@ export const menuItemsData: MenuItemType[] = [
     label: 'Dashboard',
     icon: LuMonitorDot,
     href: '/',
+  },
+  {
+    key: 'Membership',
+    label: 'Membership',
+    isTitle: true,
+  },
+  {
+    key: 'Members',
+    label: 'Members',
+    icon: LuUsers,
+    href: '/members',
+    requiredRoles: ['Admin', 'Super Admin'],
   },
   {
     key: 'CMS',
