@@ -1,7 +1,6 @@
 import { createBrowserRouter } from 'react-router-dom'
-import { AppShell, DashboardPage } from '../../integrations/template'
+import { AppShell, DashboardPage, LoginPage } from '../../integrations/template'
 import { ProtectedRoute } from '../auth/ProtectedRoute'
-import { LoginPage } from '../pages/LoginPage'
 import { ContentListPage } from '../pages/ContentListPage'
 import { ContentEditPage } from '../pages/ContentEditPage'
 import { AdminUsersPage } from '../pages/AdminUsersPage'
