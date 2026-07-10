@@ -5,10 +5,11 @@ Website: https://themesdesign.in/
 Contact: themesdesign.in@gmail.com
 */
 
-/* Google Font Link */
-@import url('https://fonts.googleapis.com/css2?family=DM+Sans:ital,wght@0,100..900;1,100..900&display=swap');
-
-@import url('https://fonts.googleapis.com/css2?family=Tourney:ital,wght@0,100..900;1,100..900&display=swap');
+/* Google Font Link - loaded from index.html as a non-render-blocking <link>, not
+   @import here. A render-blocking @import to an external CDN ties the page's
+   "loading" state to that network request; if it's slow/blocked, the tab can look
+   stuck "loading" indefinitely (busy cursor, stale hover states still work fine)
+   even though the app itself is fully interactive. See index.html for details. */
 
 /* ========= Tailwind CSS ========= */
 @import 'tailwindcss';

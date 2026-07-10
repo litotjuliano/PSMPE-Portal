@@ -1,6 +1,6 @@
 import { LuAlignLeft } from 'react-icons/lu'
 
-import { showBackdrop, toggleClassName } from '../../../utils/layout'
+import { hideBackdrop, showBackdrop, toggleClassName } from '../../../utils/layout'
 import { useLayoutContext, type SideNavSizeType } from '../../../context/useLayoutContext'
 
 const SidenavToggle = () => {
@@ -13,7 +13,17 @@ const SidenavToggle = () => {
 
   const toggleSidebar = () => {
     if (size === 'offcanvas') {
-      showBackdrop()
+      // Bug fix: the original template called showBackdrop() unconditionally here,
+      // even on the click that *closes* the sidebar - toggleClassName's return value
+      // (whether the class ended up present or removed) tells us which case this is,
+      // so the backdrop only shows while the sidebar is actually open.
+      const isNowOpen = toggleClassName('sidenav-enable')
+      if (isNowOpen) {
+        showBackdrop()
+      } else {
+        hideBackdrop()
+      }
+      return
     } else if (size === 'md') {
       changeSideNavSize('sm')
     } else if (size === 'hidden') {

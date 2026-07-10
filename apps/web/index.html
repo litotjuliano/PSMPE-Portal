@@ -5,6 +5,31 @@
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>PSMPE Portal</title>
+
+    <!--
+      Google Fonts, loaded non-render-blocking. The template originally pulled these
+      in via `@import url(...)` inside style.css, which is render-blocking and ties
+      the page's "loading" state to an external CDN request - if that request is
+      slow, blocked (ad-blocker/firewall/DNS), or hangs, the browser tab can appear
+      stuck "loading" indefinitely even though the app itself is fully interactive
+      (buttons still respond, hover states still work - only the tab's load spinner
+      is stuck). The media="print" swap trick below requests the stylesheet without
+      blocking rendering; text just uses the fallback font until it arrives.
+    -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,wght@0,100..900;1,100..900&family=Tourney:ital,wght@0,100..900;1,100..900&display=swap"
+      media="print"
+      onload="this.media='all'"
+    />
+    <noscript>
+      <link
+        rel="stylesheet"
+        href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,wght@0,100..900;1,100..900&family=Tourney:ital,wght@0,100..900;1,100..900&display=swap"
+      />
+    </noscript>
   </head>
   <body>
     <div id="root"></div>
