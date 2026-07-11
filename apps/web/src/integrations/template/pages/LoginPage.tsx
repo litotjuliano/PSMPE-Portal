@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
+import { isAxiosError } from 'axios'
 import logoDark from '../assets/images/logo-dark.png'
 import logoLight from '../assets/images/logo-light.png'
 import IconifyIcon from '../components/shared/IconifyIcon'
@@ -34,8 +35,21 @@ export const LoginPage = () => {
     try {
       await login({ email, password })
       navigate('/')
-    } catch {
-      setError('Invalid email or password.')
+    } catch (err) {
+      if (isAxiosError(err)) {
+        if (err.response?.status === 401) {
+          setError('Invalid email or password.')
+        } else if (err.response) {
+          // Backend responded but something failed server-side (e.g. it can't reach the
+          // database) - don't tell the user their credentials are wrong when they aren't.
+          setError('Something went wrong on our end. Please try again in a moment.')
+        } else {
+          // No response at all - the backend itself isn't reachable, not just its database.
+          setError('Could not reach the server. Please check your connection and try again.')
+        }
+      } else {
+        setError('Something went wrong. Please try again.')
+      }
     } finally {
       setSubmitting(false)
     }
