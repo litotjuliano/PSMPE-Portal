@@ -48,9 +48,42 @@ where docker >nul 2>&1
 if errorlevel 1 (
     echo Docker not found on PATH - skipping. Make sure Postgres is reachable
     echo via the connection string in your .env / user-secrets.
-) else (
-    set DOCKER_OK=1
+    goto :afterdocker
 )
+
+REM "where docker" only confirms the CLI is installed, not that Docker Desktop's engine
+REM is actually running - docker info is the real reachability check. Without this, a
+REM closed Docker Desktop silently falls through to "continuing anyway" below, the
+REM backend starts with no reachable database, and login fails with a confusing
+REM "invalid credentials" message that has nothing to do with credentials.
+docker info >nul 2>&1
+if not errorlevel 1 (
+    set DOCKER_OK=1
+    goto :afterdocker
+)
+
+echo Docker is installed but Docker Desktop does not appear to be running.
+set "DOCKER_DESKTOP_EXE=C:\Program Files\Docker\Docker\Docker Desktop.exe"
+if exist "%DOCKER_DESKTOP_EXE%" (
+    echo Launching Docker Desktop...
+    start "" "%DOCKER_DESKTOP_EXE%"
+) else (
+    echo Could not find Docker Desktop at the default install path.
+    echo Please start Docker Desktop manually now.
+)
+call :waitfordocker
+if "%DOCKER_OK%"=="0" (
+    echo.
+    echo ============================================
+    echo  Docker did not start in time - aborting
+    echo ============================================
+    echo Start Docker Desktop yourself and re-run this script once it's ready.
+    echo ^(This check exists so you never hit the confusing "invalid credentials"
+    echo  error that happens when the backend runs without a reachable database.^)
+    exit /b 1
+)
+
+:afterdocker
 if "%DOCKER_OK%"=="1" (
     docker compose -f "%ROOT%docker-compose.yml" up -d postgres
     if errorlevel 1 (
@@ -129,6 +162,26 @@ if %_wtries% GEQ 30 (
 )
 timeout /t 1 /nobreak >nul
 goto waitforweb_loop
+
+:waitfordocker
+echo Waiting for Docker Desktop to start...
+set _dtries=0
+:waitfordocker_loop
+docker info >nul 2>&1
+if not errorlevel 1 (
+    set DOCKER_OK=1
+    echo Docker is ready.
+    goto :eof
+)
+set /a _dtries+=1
+if %_dtries% GEQ 40 (
+    echo WARNING: Docker Desktop did not start within 2 minutes.
+    goto :eof
+)
+set /a _delapsed=_dtries*3
+echo   still waiting... ^(%_delapsed%s elapsed^)
+timeout /t 3 /nobreak >nul
+goto waitfordocker_loop
 
 :waitforpg
 echo Waiting for postgres to accept connections...
