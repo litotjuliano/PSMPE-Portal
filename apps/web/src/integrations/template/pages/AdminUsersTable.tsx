@@ -1,7 +1,9 @@
+import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { LuChevronDown, LuChevronUp, LuPlus, LuSquarePen, LuTrash2 } from 'react-icons/lu'
 import type { GetUsersParams, UserSummary } from '../../../core/api/endpoints/adminApi'
-import { Roles, type Role } from '../../../core/types/auth'
+import { AssignableRoles, Roles, type Role } from '../../../core/types/auth'
+import { ConfirmationModal } from '../components/shared/ConfirmationModal'
 
 type SortableColumn = NonNullable<GetUsersParams['sortBy']>
 
@@ -68,6 +70,7 @@ export const AdminUsersTable = ({
   onPageChange,
 }: AdminUsersTableProps) => {
   const totalPages = Math.max(1, Math.ceil(totalCount / pageSize))
+  const [deletingUser, setDeletingUser] = useState<UserSummary | null>(null)
 
   return (
     <div className="card">
@@ -94,7 +97,12 @@ export const AdminUsersTable = ({
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-default-200">
-                  {users.map((user) => (
+                  {users.map((user) => {
+                    // A Super Admin row is only ever the caller's own (backend hides every other
+                    // Super Admin's row) - fully read-only, changes only happen via seeding/config/
+                    // direct DB, never through this screen.
+                    const isSuperAdminRow = user.roles.includes(Roles.SuperAdmin)
+                    return (
                     <tr key={user.id} className="text-default-800 font-normal text-sm whitespace-nowrap">
                       <td className="flex py-3 px-3.5 items-center gap-3">
                         <div className="w-9 h-9 flex items-center justify-center rounded-full bg-primary/10 text-primary font-semibold text-xs">
@@ -105,20 +113,21 @@ export const AdminUsersTable = ({
                       <td className="py-3 px-3.5">{user.email}</td>
                       <td className="py-3 px-3.5">
                         <div className="flex flex-wrap gap-2.5">
-                          {Object.values(Roles).map((role) => {
+                          {AssignableRoles.map((role) => {
                             const hasRole = user.roles.includes(role)
+                            const disabled = !canManageRoles || isSuperAdminRow
                             return (
                               <label
                                 key={role}
                                 className={`py-0.5 px-2.5 inline-flex items-center gap-1.5 text-xs font-medium rounded ${
                                   hasRole ? 'bg-primary/10 text-primary' : 'bg-default-150 text-default-600'
-                                } ${canManageRoles ? 'cursor-pointer' : 'cursor-default'}`}
+                                } ${disabled ? 'cursor-default' : 'cursor-pointer'}`}
                               >
                                 <input
                                   type="checkbox"
                                   className="form-checkbox size-3.5"
                                   checked={hasRole}
-                                  disabled={!canManageRoles}
+                                  disabled={disabled}
                                   onChange={() => onToggleRole(user.id, role, hasRole)}
                                 />
                                 {role}
@@ -130,16 +139,25 @@ export const AdminUsersTable = ({
                       <td className="py-3 px-3.5 text-default-500">{new Date(user.createdAt).toLocaleDateString()}</td>
                       <td className="py-3 px-3.5">
                         <div className="flex items-center gap-1.5">
-                          <Link
-                            to={`/admin/users/${user.id}`}
-                            className="btn btn-icon size-8 hover:bg-default-150 rounded-full text-default-500"
-                            aria-label="Edit"
-                          >
-                            <LuSquarePen className="size-4" />
-                          </Link>
+                          {isSuperAdminRow ? (
+                            <span
+                              className="btn btn-icon size-8 rounded-full text-default-300 cursor-not-allowed"
+                              aria-label="Edit disabled - Super Admin accounts are read-only"
+                            >
+                              <LuSquarePen className="size-4" />
+                            </span>
+                          ) : (
+                            <Link
+                              to={`/admin/users/${user.id}`}
+                              className="btn btn-icon size-8 hover:bg-default-150 rounded-full text-default-500"
+                              aria-label="Edit"
+                            >
+                              <LuSquarePen className="size-4" />
+                            </Link>
+                          )}
                           {user.email !== currentUserEmail && (
                             <button
-                              onClick={() => onDelete(user.id)}
+                              onClick={() => setDeletingUser(user)}
                               className="btn btn-icon size-8 hover:bg-danger/10 hover:text-danger rounded-full text-default-500"
                               aria-label="Delete"
                             >
@@ -149,7 +167,8 @@ export const AdminUsersTable = ({
                         </div>
                       </td>
                     </tr>
-                  ))}
+                    )
+                  })}
                   {users.length === 0 && (
                     <tr>
                       <td colSpan={5} className="py-6 px-3.5 text-center text-default-500">
@@ -187,6 +206,23 @@ export const AdminUsersTable = ({
           </button>
         </div>
       </div>
+
+      <ConfirmationModal
+        isOpen={deletingUser !== null}
+        title="Delete this user?"
+        message={
+          deletingUser
+            ? `This permanently removes the login account for ${deletingUser.displayName} (${deletingUser.email}).`
+            : undefined
+        }
+        confirmLabel="Delete"
+        confirmVariant="danger"
+        onConfirm={() => {
+          if (deletingUser) onDelete(deletingUser.id)
+          setDeletingUser(null)
+        }}
+        onCancel={() => setDeletingUser(null)}
+      />
     </div>
   )
 }

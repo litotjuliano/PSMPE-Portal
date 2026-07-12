@@ -1,5 +1,5 @@
 import type { FormEvent } from 'react'
-import { Roles, type Role } from '../../../core/types/auth'
+import { AssignableRoles, type Role } from '../../../core/types/auth'
 
 interface AdminUserFormCardProps {
   isNew: boolean
@@ -86,7 +86,7 @@ export const AdminUserFormCard = ({
                 Role
               </label>
               <select id="role" className="form-input" value={role} onChange={(e) => onRoleChange(e.target.value as Role)}>
-                {Object.values(Roles).map((r) => (
+                {AssignableRoles.map((r) => (
                   <option key={r} value={r}>
                     {r}
                   </option>

@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging.Abstractions;
 using PSMPE.Portal.Application.Common.Models;
 using PSMPE.Portal.Domain.Entities;
 using PSMPE.Portal.Domain.Enums;
@@ -54,7 +55,7 @@ public class AdminControllerTests : IClassFixture<CustomWebApplicationFactory>, 
         var claims = new List<Claim> { new(ClaimTypes.NameIdentifier, (callerId ?? Guid.NewGuid()).ToString()) };
         claims.AddRange(callerRoles.Select(r => new Claim(ClaimTypes.Role, r)));
         var httpContext = new DefaultHttpContext { User = new ClaimsPrincipal(new ClaimsIdentity(claims, "TestAuth")) };
-        return new AdminController(_userManager, _roleManager)
+        return new AdminController(_userManager, _roleManager, NullLogger<AdminController>.Instance)
         {
             ControllerContext = new ControllerContext { HttpContext = httpContext }
         };
@@ -101,11 +102,23 @@ public class AdminControllerTests : IClassFixture<CustomWebApplicationFactory>, 
     }
 
     [Fact]
-    public async Task GetUsers_IncludesSuperAdmin_WhenCallerIsSuperAdmin()
+    public async Task GetUsers_ExcludesOtherSuperAdmins_EvenWhenCallerIsSuperAdmin()
     {
-        var superAdmin = await CreateUserAsync(RoleNames.SuperAdmin);
+        var otherSuperAdmin = await CreateUserAsync(RoleNames.SuperAdmin);
 
         var result = await _controller.GetUsers(page: 1, pageSize: 1000, cancellationToken: CancellationToken.None);
+
+        var paged = UnwrapPaged(result);
+        Assert.DoesNotContain(paged.Items, s => s.Id == otherSuperAdmin.Id);
+    }
+
+    [Fact]
+    public async Task GetUsers_IncludesCallersOwnRow_WhenCallerIsSuperAdmin()
+    {
+        var superAdmin = await CreateUserAsync(RoleNames.SuperAdmin);
+        var controller = CreateController(callerId: superAdmin.Id, callerRoles: RoleNames.SuperAdmin);
+
+        var result = await controller.GetUsers(page: 1, pageSize: 1000, cancellationToken: CancellationToken.None);
 
         var paged = UnwrapPaged(result);
         Assert.Contains(paged.Items, s => s.Id == superAdmin.Id);
@@ -251,6 +264,19 @@ public class AdminControllerTests : IClassFixture<CustomWebApplicationFactory>, 
     }
 
     [Fact]
+    public async Task UpdateUser_TargetingSelfAsSuperAdmin_ReturnsForbidden()
+    {
+        var superAdmin = await CreateUserAsync(RoleNames.SuperAdmin);
+        var controller = CreateController(callerId: superAdmin.Id, callerRoles: RoleNames.SuperAdmin);
+
+        var result = await controller.UpdateUser(superAdmin.Id, new AdminController.UpdateUserRequest("New Name", superAdmin.Email!, null));
+
+        Assert.IsType<ForbidResult>(result);
+        var unchanged = await _userManager.FindByIdAsync(superAdmin.Id.ToString());
+        Assert.Equal(superAdmin.DisplayName, unchanged!.DisplayName);
+    }
+
+    [Fact]
     public async Task DeleteUser_RemovesUser()
     {
         var user = await CreateUserAsync(RoleNames.Member);
@@ -274,22 +300,14 @@ public class AdminControllerTests : IClassFixture<CustomWebApplicationFactory>, 
     }
 
     [Fact]
-    public async Task DeleteUser_LastRemainingSuperAdmin_ReturnsBadRequest()
+    public async Task DeleteUser_TargetingSelfAsSuperAdmin_ReturnsForbidden()
     {
-        // Force exactly one Super Admin to exist, regardless of what other tests in this
-        // shared-DB test class may have left behind, so the "last remaining" guard is
-        // deterministic no matter what order tests run in.
-        foreach (var other in await _userManager.GetUsersInRoleAsync(RoleNames.SuperAdmin))
-        {
-            await _userManager.DeleteAsync(other);
-        }
-
         var superAdmin = await CreateUserAsync(RoleNames.SuperAdmin);
-        var controller = CreateController(callerRoles: RoleNames.SuperAdmin);
+        var controller = CreateController(callerId: superAdmin.Id, callerRoles: RoleNames.SuperAdmin);
 
         var result = await controller.DeleteUser(superAdmin.Id);
 
-        Assert.IsType<BadRequestObjectResult>(result);
+        Assert.IsType<ForbidResult>(result);
         Assert.NotNull(await _userManager.FindByIdAsync(superAdmin.Id.ToString()));
     }
 
@@ -330,35 +348,79 @@ public class AdminControllerTests : IClassFixture<CustomWebApplicationFactory>, 
     }
 
     [Fact]
-    public async Task RemoveRole_LastRemainingSuperAdmin_ReturnsBadRequest()
+    public async Task RemoveRole_RequestingSuperAdminRole_ReturnsForbidden()
     {
-        // Force exactly one Super Admin to exist first - see the identical comment on
-        // DeleteUser_LastRemainingSuperAdmin_ReturnsBadRequest for why this is needed in a
-        // shared-DB test class.
-        foreach (var other in await _userManager.GetUsersInRoleAsync(RoleNames.SuperAdmin))
-        {
-            await _userManager.DeleteAsync(other);
-        }
-
         var superAdmin = await CreateUserAsync(RoleNames.SuperAdmin);
 
         var result = await _controller.RemoveRole(superAdmin.Id, new AdminController.AssignRoleRequest(RoleNames.SuperAdmin));
 
-        Assert.IsType<BadRequestObjectResult>(result);
+        Assert.IsType<ForbidResult>(result);
         Assert.Contains(RoleNames.SuperAdmin, await _userManager.GetRolesAsync(superAdmin));
     }
 
     [Fact]
-    public async Task GetRoles_ReturnsAllFiveRolesWithSeededPermissions()
+    public async Task AssignRole_RequestingSuperAdminRole_ReturnsForbidden()
+    {
+        var user = await CreateUserAsync(RoleNames.Member);
+
+        var result = await _controller.AssignRole(user.Id, new AdminController.AssignRoleRequest(RoleNames.SuperAdmin));
+
+        Assert.IsType<ForbidResult>(result);
+        Assert.DoesNotContain(RoleNames.SuperAdmin, await _userManager.GetRolesAsync(user));
+    }
+
+    [Fact]
+    public async Task AssignRole_TargetingExistingSuperAdmin_ReturnsForbidden()
+    {
+        var superAdmin = await CreateUserAsync(RoleNames.SuperAdmin);
+
+        var result = await _controller.AssignRole(superAdmin.Id, new AdminController.AssignRoleRequest(RoleNames.Manager));
+
+        Assert.IsType<ForbidResult>(result);
+        Assert.DoesNotContain(RoleNames.Manager, await _userManager.GetRolesAsync(superAdmin));
+    }
+
+    [Fact]
+    public async Task CreateUser_RequestingSuperAdminRole_ReturnsForbidden_EvenAsSuperAdminCaller()
+    {
+        var request = new AdminController.CreateUserRequest($"{Guid.NewGuid()}@example.com", "New Super Admin", "Password123!", RoleNames.SuperAdmin);
+
+        var result = await _controller.CreateUser(request);
+
+        Assert.IsType<ForbidResult>(result.Result);
+        Assert.Null(await _userManager.FindByEmailAsync(request.Email));
+    }
+
+    [Fact]
+    public async Task GetRoles_NeverReturnsSuperAdmin()
     {
         var result = await _controller.GetRoles();
 
         var ok = Assert.IsType<OkObjectResult>(result.Result);
         var roles = Assert.IsAssignableFrom<IReadOnlyList<AdminController.RoleSummaryDto>>(ok.Value);
-        Assert.Equal(RoleNames.All.Length, roles.Count);
+        Assert.DoesNotContain(roles, r => r.Name == RoleNames.SuperAdmin);
+    }
 
-        var superAdminRole = Assert.Single(roles, r => r.Name == RoleNames.SuperAdmin);
-        Assert.Equal(Permissions.All.OrderBy(p => p), superAdminRole.Permissions.OrderBy(p => p));
+    [Fact]
+    public async Task UpdateRolePermissions_TargetingSuperAdminRole_ReturnsForbidden()
+    {
+        var superAdminRole = await _roleManager.FindByNameAsync(RoleNames.SuperAdmin);
+        Assert.NotNull(superAdminRole);
+
+        var result = await _controller.UpdateRolePermissions(superAdminRole!.Id, new AdminController.UpdateRolePermissionsRequest([]));
+
+        Assert.IsType<ForbidResult>(result);
+    }
+
+    [Fact]
+    public async Task GetRoles_ReturnsAllNonSuperAdminRolesWithSeededPermissions()
+    {
+        var result = await _controller.GetRoles();
+
+        var ok = Assert.IsType<OkObjectResult>(result.Result);
+        var roles = Assert.IsAssignableFrom<IReadOnlyList<AdminController.RoleSummaryDto>>(ok.Value);
+        Assert.Equal(RoleNames.All.Length - 1, roles.Count);
+        Assert.DoesNotContain(roles, r => r.Name == RoleNames.SuperAdmin);
 
         var memberRole = Assert.Single(roles, r => r.Name == RoleNames.Member);
         Assert.Contains(Permissions.Content.Create, memberRole.Permissions);

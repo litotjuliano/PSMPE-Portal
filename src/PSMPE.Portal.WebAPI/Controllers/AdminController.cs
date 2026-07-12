@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using PSMPE.Portal.Application.Common.Models;
 using PSMPE.Portal.Domain.Entities;
 using PSMPE.Portal.Domain.Enums;
@@ -13,16 +14,19 @@ namespace PSMPE.Portal.WebAPI.Controllers;
 
 /// <summary>
 /// System-wide administrative actions. Listing users/roles requires Admin; creating/editing/
-/// deleting users requires the admin:manage-users permission; changing role assignments and
-/// role permissions requires Super Admin. Super Admin accounts are invisible to non-Super-Admin
-/// callers (GetUsers excludes them; GetUserById/UpdateUser/DeleteUser 404 on them) - see
-/// IsHiddenFromCallerAsync.
+/// deleting users requires the admin:manage-users permission; changing role assignments and role
+/// permissions requires Super Admin. Super Admin is never assignable/visible through this API,
+/// for any caller including a Super Admin - it's provisioned only via seeding/config/direct DB.
+/// A Super Admin's own account is visible to themselves (GetUsers/GetUserById) but fully
+/// read-only (UpdateUser/DeleteUser/AssignRole/RemoveRole all reject any Super Admin target) -
+/// see IsHiddenFromCallerAsync and IsSuperAdminAccountAsync.
 /// </summary>
 [ApiController]
 [Route("api/admin")]
 public class AdminController(
     UserManager<ApplicationUser> userManager,
-    RoleManager<IdentityRole<Guid>> roleManager) : ControllerBase
+    RoleManager<IdentityRole<Guid>> roleManager,
+    ILogger<AdminController> logger) : ControllerBase
 {
     public record UserSummaryDto(Guid Id, string Email, string DisplayName, IReadOnlyList<string> Roles, DateTimeOffset CreatedAt);
 
@@ -50,12 +54,15 @@ public class AdminController(
 
         IQueryable<ApplicationUser> query = userManager.Users.AsNoTracking();
 
-        if (!User.IsInRole(RoleNames.SuperAdmin))
+        var superAdminIds = (await userManager.GetUsersInRoleAsync(RoleNames.SuperAdmin))
+            .Select(u => u.Id)
+            .ToHashSet();
+        if (superAdminIds.Count > 0)
         {
-            var superAdminIds = (await userManager.GetUsersInRoleAsync(RoleNames.SuperAdmin))
-                .Select(u => u.Id)
-                .ToHashSet();
-            query = query.Where(u => !superAdminIds.Contains(u.Id));
+            // Every Super Admin is invisible here except the caller's own row, if they are one -
+            // never another Super Admin's, even to a Super Admin caller.
+            var callerId = CurrentUserId;
+            query = query.Where(u => !superAdminIds.Contains(u.Id) || u.Id == callerId);
         }
 
         var descending = string.Equals(sortDir, "desc", StringComparison.OrdinalIgnoreCase);
@@ -105,6 +112,14 @@ public class AdminController(
             return BadRequest(new { message = $"Unknown role '{role}'." });
         }
 
+        // Super Admin is never assignable through the application, regardless of caller -
+        // provisioned only via seeding/config/direct DB.
+        if (role == RoleNames.SuperAdmin)
+        {
+            logger.LogWarning("Rejected attempt by {CallerId} to create a new user with the Super Admin role.", CurrentUserId);
+            return Forbid();
+        }
+
         // Only a Super Admin may assign anything above the default role - mirrors AssignRole/
         // RemoveRole, which are Super-Admin-only, so this endpoint can't be used to grant
         // privilege an Admin couldn't grant through the existing role-assignment endpoints.
@@ -147,6 +162,12 @@ public class AdminController(
         if (user is null || await IsHiddenFromCallerAsync(user))
         {
             return NotFound();
+        }
+
+        if (await IsSuperAdminAccountAsync(user))
+        {
+            logger.LogWarning("Rejected attempt by {CallerId} to update Super Admin account {TargetId}.", CurrentUserId, user.Id);
+            return Forbid();
         }
 
         if (!string.Equals(user.Email, request.Email, StringComparison.OrdinalIgnoreCase))
@@ -197,15 +218,15 @@ public class AdminController(
             return NotFound();
         }
 
-        var currentUserId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-        if (string.Equals(currentUserId, id.ToString(), StringComparison.OrdinalIgnoreCase))
+        if (await IsSuperAdminAccountAsync(user))
         {
-            return BadRequest(new { message = "You cannot delete your own account." });
+            logger.LogWarning("Rejected attempt by {CallerId} to delete Super Admin account {TargetId}.", CurrentUserId, user.Id);
+            return Forbid();
         }
 
-        if (await IsLastRemainingSuperAdminAsync(id))
+        if (string.Equals(CurrentUserId?.ToString(), id.ToString(), StringComparison.OrdinalIgnoreCase))
         {
-            return BadRequest(new { message = "Cannot delete the last remaining Super Admin." });
+            return BadRequest(new { message = "You cannot delete your own account." });
         }
 
         var result = await userManager.DeleteAsync(user);
@@ -233,6 +254,14 @@ public class AdminController(
             return BadRequest(new { message = $"Unknown role '{request.Role}'." });
         }
 
+        if (request.Role == RoleNames.SuperAdmin || await IsSuperAdminAccountAsync(user))
+        {
+            logger.LogWarning(
+                "Rejected attempt by {CallerId} to assign role '{Role}' involving Super Admin (target {TargetId}).",
+                CurrentUserId, request.Role, user.Id);
+            return Forbid();
+        }
+
         var result = await userManager.AddToRoleAsync(user, request.Role);
         if (!result.Succeeded)
         {
@@ -258,9 +287,12 @@ public class AdminController(
             return BadRequest(new { message = $"Unknown role '{request.Role}'." });
         }
 
-        if (request.Role == RoleNames.SuperAdmin && await IsLastRemainingSuperAdminAsync(id))
+        if (request.Role == RoleNames.SuperAdmin || await IsSuperAdminAccountAsync(user))
         {
-            return BadRequest(new { message = "Cannot remove the last remaining Super Admin." });
+            logger.LogWarning(
+                "Rejected attempt by {CallerId} to remove role '{Role}' involving Super Admin (target {TargetId}).",
+                CurrentUserId, request.Role, user.Id);
+            return Forbid();
         }
 
         var result = await userManager.RemoveFromRoleAsync(user, request.Role);
@@ -277,7 +309,9 @@ public class AdminController(
     [Authorize(Policy = PolicyNames.RequireAdmin)]
     public async Task<ActionResult<IReadOnlyList<RoleSummaryDto>>> GetRoles()
     {
-        var roles = await roleManager.Roles.AsNoTracking().ToListAsync();
+        // Super Admin's role (and its full permission claim set) never leaves the server -
+        // it isn't manageable through the app for any caller.
+        var roles = await roleManager.Roles.AsNoTracking().Where(r => r.Name != RoleNames.SuperAdmin).ToListAsync();
         var summaries = new List<RoleSummaryDto>(roles.Count);
         foreach (var role in roles)
         {
@@ -297,6 +331,12 @@ public class AdminController(
         if (role is null)
         {
             return NotFound();
+        }
+
+        if (role.Name == RoleNames.SuperAdmin)
+        {
+            logger.LogWarning("Rejected attempt by {CallerId} to edit Super Admin's permissions.", CurrentUserId);
+            return Forbid();
         }
 
         var unknown = request.Permissions.Where(p => !Permissions.All.Contains(p)).ToList();
@@ -325,19 +365,25 @@ public class AdminController(
     [Authorize(Policy = PolicyNames.RequireAdmin)]
     public ActionResult<IReadOnlyList<string>> GetPermissions() => Ok(Permissions.All);
 
+    private Guid? CurrentUserId =>
+        Guid.TryParse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value, out var id) ? id : null;
+
+    /// <summary>Hidden (404) unless it's the caller's own Super Admin row.</summary>
     private async Task<bool> IsHiddenFromCallerAsync(ApplicationUser target)
     {
-        if (User.IsInRole(RoleNames.SuperAdmin))
+        if (!await userManager.IsInRoleAsync(target, RoleNames.SuperAdmin))
         {
             return false;
         }
 
-        return await userManager.IsInRoleAsync(target, RoleNames.SuperAdmin);
+        return target.Id != CurrentUserId;
     }
 
-    private async Task<bool> IsLastRemainingSuperAdminAsync(Guid userId)
-    {
-        var superAdmins = await userManager.GetUsersInRoleAsync(RoleNames.SuperAdmin);
-        return superAdmins.Count <= 1 && superAdmins.Any(u => u.Id == userId);
-    }
+    /// <summary>
+    /// Unconditional, regardless of caller - a Super Admin account is never mutable through this
+    /// API, not even by itself. Used to reject Update/Delete/AssignRole/RemoveRole on any target
+    /// that holds Super Admin.
+    /// </summary>
+    private Task<bool> IsSuperAdminAccountAsync(ApplicationUser target) =>
+        userManager.IsInRoleAsync(target, RoleNames.SuperAdmin);
 }
