@@ -1,5 +1,5 @@
 import type { IconType } from 'react-icons/lib'
-import { LuFileText, LuMonitorDot, LuShieldCheck, LuSquareUserRound, LuUsers } from 'react-icons/lu'
+import { LuBadgeCheck, LuBellRing, LuFileText, LuMonitorDot, LuShieldCheck, LuSquareUserRound, LuUserCheck, LuUserRound, LuUsers } from 'react-icons/lu'
 
 export type MenuItemType = {
   key: string
@@ -38,10 +38,40 @@ export const menuItemsData: MenuItemType[] = [
     isTitle: true,
   },
   {
+    key: 'MyProfile',
+    label: 'My Profile',
+    icon: LuUserRound,
+    href: '/profile',
+    // Administrative accounts (Admin/Super Admin/Manager/Accounts) don't have membership
+    // profiles - see MembersController.UpdateMyProfile.
+    requiredRoles: ['Member'],
+  },
+  {
     key: 'Members',
     label: 'Members',
     icon: LuUsers,
     href: '/members',
+    requiredRoles: ['Admin', 'Super Admin'],
+  },
+  {
+    key: 'MembershipApprovals',
+    label: 'Membership Approvals',
+    icon: LuUserCheck,
+    href: '/membership-approvals',
+    requiredRoles: ['Admin', 'Super Admin'],
+  },
+  {
+    key: 'PrcVerifications',
+    label: 'PRC Verifications',
+    icon: LuBadgeCheck,
+    href: '/prc-verifications',
+    requiredRoles: ['Admin', 'Super Admin'],
+  },
+  {
+    key: 'Notifications',
+    label: 'Notifications',
+    icon: LuBellRing,
+    href: '/notifications',
     requiredRoles: ['Admin', 'Super Admin'],
   },
   {

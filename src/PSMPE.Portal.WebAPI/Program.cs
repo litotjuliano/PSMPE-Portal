@@ -57,7 +57,19 @@ if (builder.Configuration.GetValue<bool>("Seed:Enabled"))
     var userManager = services.GetRequiredService<UserManager<ApplicationUser>>();
     await IdentitySeeder.SeedAsync(roleManager, userManager, builder.Configuration, logger);
     await SystemConfigSeeder.SeedAsync(db, logger);
-    await MemberSeeder.SeedAsync(db, userManager, logger);
+    await MemberSeeder.SeedAsync(db, userManager, builder.Configuration, logger);
+}
+
+// Unconditional (not gated by Seed:Enabled) - fixes real corrupted data (administrative accounts
+// that ended up with a Member row via a since-fixed bug), so it self-heals every environment,
+// not just dev/test. Idempotent - a no-op once the data is clean.
+{
+    using var scope = app.Services.CreateScope();
+    var services = scope.ServiceProvider;
+    var logger = services.GetRequiredService<ILoggerFactory>().CreateLogger("Cleanup");
+    var db = services.GetRequiredService<ApplicationDbContext>();
+    var userManager = services.GetRequiredService<UserManager<ApplicationUser>>();
+    await SystemAccountMemberCleanup.CleanupAsync(db, userManager, logger);
 }
 
 app.Run();
