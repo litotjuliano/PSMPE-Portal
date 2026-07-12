@@ -1,6 +1,8 @@
+import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { LuPlus, LuSquarePen, LuTrash2 } from 'react-icons/lu'
 import { ContentStatus, type ContentItem } from '../../../core/types/content'
+import { ConfirmationModal } from '../components/shared/ConfirmationModal'
 
 interface ContentListCardProps {
   items: ContentItem[]
@@ -20,6 +22,8 @@ const statusClasses: Record<number, string> = {
 }
 
 export const ContentListCard = ({ items, onDelete }: ContentListCardProps) => {
+  const [deletingItem, setDeletingItem] = useState<ContentItem | null>(null)
+
   return (
     <div className="card">
       <div className="card-header flex justify-between items-center">
@@ -61,7 +65,7 @@ export const ContentListCard = ({ items, onDelete }: ContentListCardProps) => {
                             <LuSquarePen className="size-4" />
                           </Link>
                           <button
-                            onClick={() => onDelete(item.id)}
+                            onClick={() => setDeletingItem(item)}
                             className="btn btn-icon size-8 hover:bg-danger/10 hover:text-danger rounded-full text-default-500"
                             aria-label="Delete"
                           >
@@ -84,6 +88,19 @@ export const ContentListCard = ({ items, onDelete }: ContentListCardProps) => {
           </div>
         </div>
       </div>
+
+      <ConfirmationModal
+        isOpen={deletingItem !== null}
+        title="Delete this content?"
+        message={deletingItem ? `This permanently removes "${deletingItem.title}".` : undefined}
+        confirmLabel="Delete"
+        confirmVariant="danger"
+        onConfirm={() => {
+          if (deletingItem) onDelete(deletingItem.id)
+          setDeletingItem(null)
+        }}
+        onCancel={() => setDeletingItem(null)}
+      />
     </div>
   )
 }

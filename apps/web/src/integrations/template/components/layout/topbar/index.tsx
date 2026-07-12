@@ -1,85 +1,44 @@
-import ArabianFlag from '../../../assets/images/flags/arebian.svg'
-import FrenchFlag from '../../../assets/images/flags/french.jpg'
-import GermanyFlag from '../../../assets/images/flags/germany.jpg'
-import ItalyFlag from '../../../assets/images/flags/italy.jpg'
-import JapaneseFlag from '../../../assets/images/flags/japanese.svg'
-import RussiaFlag from '../../../assets/images/flags/russia.jpg'
-import SpainFlag from '../../../assets/images/flags/spain.jpg'
-import UsFlag from '../../../assets/images/flags/us.jpg'
 import { Link, useNavigate } from 'react-router-dom'
 import { TbSearch } from 'react-icons/tb'
 import SimpleBar from 'simplebar-react'
 import SidenavToggle from './SidenavToggle'
 import ThemeModeToggle from './ThemeModeToggle'
-import { LuBellRing, LuClock, LuHeart, LuLogOut, LuMoveRight, LuSettings, LuShoppingBag, LuUserRound } from 'react-icons/lu'
-import type { ReactNode } from 'react'
+import { LuBadgeCheck, LuBellRing, LuLogOut, LuMoveRight, LuSettings, LuUserPlus, LuUserRound } from 'react-icons/lu'
+import { useEffect, useState } from 'react'
 import { useAuth } from '../../../../../core/auth/useAuth'
-
-type Language = {
-  src: string
-  label: string
-}
-
-type Tab = {
-  id: string
-  title: string
-  active?: boolean
-}
-
-type Notification = {
-  type: 'follow' | 'comment' | 'purchase' | 'like'
-  icon?: ReactNode
-  text: ReactNode
-  time: string
-  ago: string
-  comment?: string
-}
-
-// Sample notification feed for visual parity with the demo - not backed by a real
-// notifications API yet. TODO: replace with a real endpoint if this becomes a need.
-const languages: Language[] = [
-  { src: UsFlag, label: 'English' },
-  { src: SpainFlag, label: 'Spanish' },
-  { src: GermanyFlag, label: 'German' },
-  { src: FrenchFlag, label: 'French' },
-  { src: JapaneseFlag, label: 'Japanese' },
-  { src: ItalyFlag, label: 'Italian' },
-  { src: RussiaFlag, label: 'Russian' },
-  { src: ArabianFlag, label: 'Arabic' },
-]
-
-const tabs: Tab[] = [
-  { id: 'tabsViewall', title: 'View all', active: true },
-  { id: 'tabsMentions', title: 'Mentions' },
-]
-
-const notifications: Record<string, Notification[]> = {
-  tabsViewall: [
-    {
-      type: 'comment',
-      icon: <LuHeart className="size-3.5 fill-orange-500" />,
-      text: (
-        <>
-          Welcome to <b>PSMPE Portal</b>
-        </>
-      ),
-      time: 'Just now',
-      ago: 'now',
-    },
-    {
-      type: 'purchase',
-      icon: <LuShoppingBag className="size-5 text-danger" />,
-      text: <>No new activity yet</>,
-      time: '',
-      ago: '',
-    },
-  ],
-  tabsMentions: [],
-}
+import { Roles } from '../../../../../core/types/auth'
+import { memberApi } from '../../../../../core/api/endpoints/memberApi'
+import type { Member } from '../../../../../core/types/member'
 
 const Topbar = () => {
   const { user, logout } = useAuth()
   const navigate = useNavigate()
+
+  const canReviewApplications = Boolean(user?.roles.includes(Roles.Admin) || user?.roles.includes(Roles.SuperAdmin))
+  const [pendingApplications, setPendingApplications] = useState<Member[]>([])
+  const [pendingCount, setPendingCount] = useState(0)
+  const [pendingPrcVerifications, setPendingPrcVerifications] = useState<Member[]>([])
+  const [pendingPrcCount, setPendingPrcCount] = useState(0)
+
+  useEffect(() => {
+    if (!canReviewApplications) {
+      return
+    }
+    memberApi
+      .getMembers({ pendingApprovalOnly: true, pageSize: 5, sortBy: 'membershipNo' })
+      .then((result) => {
+        setPendingApplications(result.items)
+        setPendingCount(result.totalCount)
+      })
+    memberApi
+      .getMembers({ pendingPrcVerificationOnly: true, pageSize: 5, sortBy: 'membershipNo' })
+      .then((result) => {
+        setPendingPrcVerifications(result.items)
+        setPendingPrcCount(result.totalCount)
+      })
+  }, [canReviewApplications])
+
+  const totalPendingCount = pendingCount + pendingPrcCount
 
   const handleSignOut = () => {
     logout()
@@ -108,24 +67,6 @@ const Topbar = () => {
         </div>
 
         <div className="flex items-center gap-3">
-          <div className="topbar-item hs-dropdown [--placement:bottom-right] relative inline-flex">
-            <button className="hs-dropdown-toggle btn btn-icon size-8 hover:bg-default-150 rounded-full relative" type="button">
-              <img src={UsFlag} alt="us-flag" className="size-4.5 rounded" />
-            </button>
-            <div className="hs-dropdown-menu" role="menu">
-              {languages.map((lang, i) => (
-                <Link
-                  key={i}
-                  to="#"
-                  className="flex items-center gap-x-3.5 py-1.5 px-3 text-default-600 hover:bg-default-150 rounded font-medium"
-                >
-                  <img src={lang.src} alt={lang.label} className="size-4 rounded-full" />
-                  {lang.label}
-                </Link>
-              ))}
-            </div>
-          </div>
-
           <ThemeModeToggle />
 
           <div className="topbar-item hs-dropdown [--auto-close:inside] relative inline-flex">
@@ -134,58 +75,60 @@ const Topbar = () => {
               className="hs-dropdown-toggle btn btn-icon size-8 hover:bg-default-150 rounded-full relative"
             >
               <LuBellRing className="size-4.5" />
-              <span className="absolute end-0 top-0 size-1.5 bg-primary/90 rounded-full"></span>
+              {totalPendingCount > 0 && (
+                <span className="absolute end-0 top-0 size-1.5 bg-primary/90 rounded-full"></span>
+              )}
             </button>
             <div className="hs-dropdown-menu max-w-100 p-0">
               <div className="p-4 border-b border-default-200 flex items-center gap-2">
                 <h3 className="text-base text-default-800">Notifications</h3>
+                {totalPendingCount > 0 && (
+                  <span className="py-0.5 px-2 rounded-full bg-primary/10 text-primary text-xs font-semibold">{totalPendingCount}</span>
+                )}
               </div>
 
-              <nav className="flex gap-x-1 bg-default-150 p-2 border-b border-default-200" role="tablist">
-                {tabs.map((tab, i) => (
-                  <button
-                    key={i}
-                    data-hs-tab={`#${tab.id}`}
-                    type="button"
-                    className={`hs-tab-active:bg-card hs-tab-active:text-primary py-0.5 px-4 rounded font-semibold inline-flex items-center gap-x-2 border-b-2 border-transparent text-xs whitespace-nowrap text-default-500 hover:text-blue-600 ${tab.active ? 'active' : ''}`}
-                  >
-                    {tab.title}
-                  </button>
-                ))}
-              </nav>
-
               <SimpleBar className="h-80">
-                {tabs.map((tab, i) => (
-                  <div key={i} id={tab.id} className={tab.active ? '' : 'hidden'}>
-                    {notifications[tab.id]?.map((n, j) => (
-                      <Link key={j} to="#" className="flex gap-3 p-4 items-start hover:bg-default-150">
-                        <div className="size-10 rounded-md bg-default-100 flex justify-center items-center">{n.icon}</div>
-                        <div className="flex justify-between w-full text-sm">
-                          <div>
-                            <h6 className="mb-2 font-medium text-default-800">{n.text}</h6>
-                            {n.time && (
-                              <p className="flex items-center gap-1 text-default-500 text-xs">
-                                <LuClock className="size-3.5" /> <span>{n.time}</span>
-                              </p>
-                            )}
-                          </div>
-                          {n.ago && (
-                            <div className="flex items-center gap-2 text-xs text-default-500">
-                              <div className="w-1.5 h-1.5 bg-primary rounded-full"></div>
-                              {n.ago}
-                            </div>
-                          )}
-                        </div>
-                      </Link>
-                    ))}
-                  </div>
+                {pendingApplications.map((member) => (
+                  <Link
+                    key={member.id}
+                    to={`/members/${member.id}`}
+                    className="flex gap-3 p-4 items-start hover:bg-default-150"
+                  >
+                    <div className="size-10 rounded-md bg-default-100 flex justify-center items-center">
+                      <LuUserPlus className="size-5 text-primary" />
+                    </div>
+                    <div className="flex justify-between w-full text-sm">
+                      <h6 className="font-medium text-default-800">
+                        New membership application: {member.firstName} {member.lastName}
+                      </h6>
+                    </div>
+                  </Link>
                 ))}
+                {pendingPrcVerifications.map((member) => (
+                  <Link
+                    key={member.id}
+                    to="/prc-verifications"
+                    className="flex gap-3 p-4 items-start hover:bg-default-150"
+                  >
+                    <div className="size-10 rounded-md bg-default-100 flex justify-center items-center">
+                      <LuBadgeCheck className="size-5 text-primary" />
+                    </div>
+                    <div className="flex justify-between w-full text-sm">
+                      <h6 className="font-medium text-default-800">
+                        PRC License verification needed: {member.firstName} {member.lastName}
+                      </h6>
+                    </div>
+                  </Link>
+                ))}
+                {pendingApplications.length === 0 && pendingPrcVerifications.length === 0 && (
+                  <p className="p-4 text-sm text-default-500">No new notifications.</p>
+                )}
               </SimpleBar>
 
               <div className="flex items-center justify-end p-4 border-t border-default-200">
-                <button type="button" className="btn btn-sm text-white bg-primary">
+                <Link to="/notifications" className="btn btn-sm text-white bg-primary">
                   View All <LuMoveRight className="size-4" />
-                </button>
+                </Link>
               </div>
             </div>
           </div>
