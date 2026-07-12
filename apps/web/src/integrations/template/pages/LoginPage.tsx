@@ -6,6 +6,7 @@ import logoLight from '../assets/images/logo-light.png'
 import IconifyIcon from '../components/shared/IconifyIcon'
 import PageMeta from '../components/shared/PageMeta'
 import { useAuth } from '../../../core/auth/useAuth'
+import { authApi } from '../../../core/api/endpoints/authApi'
 
 /**
  * Mirrors the accounts IdentitySeeder.cs creates when SEED_ADMIN_PASSWORD/SEED_DEFAULT_PASSWORD
@@ -26,18 +27,24 @@ export const LoginPage = () => {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
+  const [needsVerification, setNeedsVerification] = useState(false)
+  const [resending, setResending] = useState(false)
   const [submitting, setSubmitting] = useState(false)
 
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault()
     setSubmitting(true)
     setError(null)
+    setNeedsVerification(false)
     try {
       await login({ email, password })
       navigate('/')
     } catch (err) {
       if (isAxiosError(err)) {
-        if (err.response?.status === 401) {
+        if (err.response?.status === 403 && (err.response.data as { code?: string } | undefined)?.code === 'EMAIL_NOT_CONFIRMED') {
+          setError('Please verify your email before signing in.')
+          setNeedsVerification(true)
+        } else if (err.response?.status === 401) {
           setError('Invalid email or password.')
         } else if (err.response) {
           // Backend responded but something failed server-side (e.g. it can't reach the
@@ -52,6 +59,16 @@ export const LoginPage = () => {
       }
     } finally {
       setSubmitting(false)
+    }
+  }
+
+  const handleResendVerification = async () => {
+    setResending(true)
+    try {
+      await authApi.resendVerificationEmail(email)
+      navigate('/verify-email', { state: { email } })
+    } finally {
+      setResending(false)
     }
   }
 
@@ -111,6 +128,13 @@ export const LoginPage = () => {
               </div>
 
               {error && <p className="text-sm text-danger mb-4">{error}</p>}
+              {needsVerification && (
+                <p className="text-sm text-default-500 mb-4">
+                  <button type="button" onClick={handleResendVerification} disabled={resending} className="text-primary disabled:opacity-50">
+                    {resending ? 'Sending…' : 'Resend verification email'}
+                  </button>
+                </p>
+              )}
 
               <div className="mt-10 text-center">
                 <button type="submit" disabled={submitting} className="btn bg-primary text-white w-full">
@@ -134,6 +158,13 @@ export const LoginPage = () => {
                   Use Apple
                 </Link>
               </div>
+
+              <p className="mt-6 text-center text-sm text-default-500">
+                Don't have an account?{' '}
+                <Link to="/register" className="font-semibold text-primary">
+                  Register
+                </Link>
+              </p>
             </form>
           </div>
         </div>

@@ -1,13 +1,14 @@
 import { createContext, useCallback, useMemo, useState, type ReactNode } from 'react'
 import { authApi } from '../api/endpoints/authApi'
 import { tokenStorage } from '../api/apiClient'
-import type { AuthUser, LoginRequest, RegisterRequest } from '../types/auth'
+import type { AuthUser, LoginRequest, RegisterRequest, RegisterResponse } from '../types/auth'
 
 interface AuthContextValue {
   user: AuthUser | null
   isAuthenticated: boolean
   login: (request: LoginRequest) => Promise<void>
-  register: (request: RegisterRequest) => Promise<void>
+  register: (request: RegisterRequest) => Promise<RegisterResponse>
+  verifyEmail: (userId: string, token: string) => Promise<void>
   logout: () => void
 }
 
@@ -42,9 +43,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [persist],
   )
 
-  const register = useCallback(
-    async (request: RegisterRequest) => {
-      const response = await authApi.register(request)
+  const register = useCallback(async (request: RegisterRequest) => {
+    // No token yet - the account can't be used until the email is verified (see verifyEmail).
+    return authApi.register(request)
+  }, [])
+
+  const verifyEmail = useCallback(
+    async (userId: string, token: string) => {
+      const response = await authApi.verifyEmail(userId, token)
       persist(response.token, {
         email: response.email,
         displayName: response.displayName,
@@ -61,8 +67,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const value = useMemo(
-    () => ({ user, isAuthenticated: user !== null, login, register, logout }),
-    [user, login, register, logout],
+    () => ({ user, isAuthenticated: user !== null, login, register, verifyEmail, logout }),
+    [user, login, register, verifyEmail, logout],
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
