@@ -1,5 +1,5 @@
 import type { FormEvent } from 'react'
-import { Chapters, MembershipStatus, type MembershipStatusValue } from '../../../core/types/member'
+import { Chapters, MemberTypes, MembershipStatus, type MembershipStatusValue } from '../../../core/types/member'
 import type { UserSummary } from '../../../core/api/endpoints/adminApi'
 
 export interface MemberFormState {
@@ -15,6 +15,7 @@ export interface MemberFormState {
   prcLicenseNo: string
   chapter: string
   company: string
+  memberType: string
   status: MembershipStatusValue
   renewalDueDate: string
   nationalDuesReferenceNo: string
@@ -27,6 +28,11 @@ interface MemberFormCardProps {
   onSubmit: (event: FormEvent) => void
   /** Only used when isNew - candidate login accounts this Member profile can be linked to. */
   users: UserSummary[]
+  /** Only present when editing an existing, not-yet-approved application - lets an admin act
+   *  right from this page, which is where a notification click lands them. */
+  approvedAt?: string | null
+  onApprove?: () => void
+  isInGracePeriod?: boolean
 }
 
 const statusLabels: Record<MembershipStatusValue, string> = {
@@ -36,12 +42,41 @@ const statusLabels: Record<MembershipStatusValue, string> = {
   [MembershipStatus.Deactivated]: 'Deactivated',
 }
 
-export const MemberFormCard = ({ isNew, state, onChange, onSubmit, users }: MemberFormCardProps) => {
+export const MemberFormCard = ({
+  isNew,
+  state,
+  onChange,
+  onSubmit,
+  users,
+  approvedAt,
+  onApprove,
+  isInGracePeriod,
+}: MemberFormCardProps) => {
   return (
     <div className="card max-w-3xl">
-      <div className="card-header">
+      <div className="card-header flex items-center justify-between">
         <h6 className="card-title">{isNew ? 'New member profile' : 'Edit member profile'}</h6>
+        {!isNew && !approvedAt && onApprove && (
+          <button type="button" onClick={onApprove} className="btn btn-sm bg-success text-white">
+            Approve Application
+          </button>
+        )}
       </div>
+      {!isNew && (approvedAt || isInGracePeriod) && (
+        <div className="px-5 pt-4 flex flex-col gap-1 text-sm">
+          {approvedAt && (
+            <div>
+              <span className="text-default-500">Approved</span>{' '}
+              <span className="font-semibold text-default-800">{new Date(approvedAt).toLocaleDateString()}</span>
+            </div>
+          )}
+          {isInGracePeriod && (
+            <div className="text-warning font-medium">
+              This member is past their renewal due date and is currently within the grace period.
+            </div>
+          )}
+        </div>
+      )}
       <form onSubmit={onSubmit} className="card-body grid grid-cols-1 md:grid-cols-2 gap-4">
         {isNew && (
           <div className="md:col-span-2">
@@ -122,6 +157,17 @@ export const MemberFormCard = ({ isNew, state, onChange, onSubmit, users }: Memb
         <div>
           <label className="block font-medium text-default-900 text-sm mb-2">Company</label>
           <input className="form-input" value={state.company} onChange={(e) => onChange('company', e.target.value)} />
+        </div>
+        <div>
+          <label className="block font-medium text-default-900 text-sm mb-2">Member Type</label>
+          <select className="form-input" required value={state.memberType} onChange={(e) => onChange('memberType', e.target.value)}>
+            <option value="">Select a member type…</option>
+            {Object.values(MemberTypes).map((t) => (
+              <option key={t} value={t}>
+                {t}
+              </option>
+            ))}
+          </select>
         </div>
 
         {!isNew && (

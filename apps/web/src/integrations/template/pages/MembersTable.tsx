@@ -1,8 +1,10 @@
+import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { LuChevronDown, LuChevronUp, LuPlus, LuSquarePen, LuTrash2 } from 'react-icons/lu'
 import type { GetMembersParams } from '../../../core/api/endpoints/memberApi'
 import type { Member } from '../../../core/types/member'
 import { MembershipStatus } from '../../../core/types/member'
+import { ConfirmationModal } from '../components/shared/ConfirmationModal'
 
 type SortableColumn = NonNullable<GetMembersParams['sortBy']>
 
@@ -72,6 +74,7 @@ export const MembersTable = ({
   onPageChange,
 }: MembersTableProps) => {
   const totalPages = Math.max(1, Math.ceil(totalCount / pageSize))
+  const [deletingMember, setDeletingMember] = useState<Member | null>(null)
 
   return (
     <div className="card">
@@ -133,7 +136,7 @@ export const MembersTable = ({
                             <LuSquarePen className="size-4" />
                           </Link>
                           <button
-                            onClick={() => onDelete(member.id)}
+                            onClick={() => setDeletingMember(member)}
                             className="btn btn-icon size-8 hover:bg-danger/10 hover:text-danger rounded-full text-default-500"
                             aria-label="Delete"
                           >
@@ -180,6 +183,23 @@ export const MembersTable = ({
           </button>
         </div>
       </div>
+
+      <ConfirmationModal
+        isOpen={deletingMember !== null}
+        title="Delete this member?"
+        message={
+          deletingMember
+            ? `This permanently removes ${deletingMember.firstName} ${deletingMember.lastName}'s membership profile. Their login account is not affected.`
+            : undefined
+        }
+        confirmLabel="Delete"
+        confirmVariant="danger"
+        onConfirm={() => {
+          if (deletingMember) onDelete(deletingMember.id)
+          setDeletingMember(null)
+        }}
+        onCancel={() => setDeletingMember(null)}
+      />
     </div>
   )
 }

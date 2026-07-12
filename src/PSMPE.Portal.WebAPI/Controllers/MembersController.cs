@@ -19,20 +19,32 @@ namespace PSMPE.Portal.WebAPI.Controllers;
 [ApiController]
 [Authorize]
 [Route("api/members")]
-public class MembersController(IMemberService memberService, UserManager<ApplicationUser> userManager) : ControllerBase
+public class MembersController(
+    IMemberService memberService, IMemberUploadService memberUploadService, UserManager<ApplicationUser> userManager) : ControllerBase
 {
     [HttpGet]
     [RequirePermission(Permissions.Members.View)]
     public async Task<ActionResult<PagedResult<MemberDto>>> GetAll(
-        int page = 1, int pageSize = 20, string sortBy = "lastName", string sortDir = "asc", CancellationToken cancellationToken = default)
-        => Ok(await memberService.GetAllAsync(page, pageSize, sortBy, sortDir, cancellationToken));
+        int page = 1, int pageSize = 20, string sortBy = "lastName", string sortDir = "asc",
+        MembershipStatus? status = null, bool? pendingApprovalOnly = null, bool? pendingPrcVerificationOnly = null,
+        CancellationToken cancellationToken = default)
+    {
+        var excludeUserIds = await GetSystemAccountUserIdsAsync();
+        return Ok(await memberService.GetAllAsync(
+            page, pageSize, sortBy, sortDir, status, pendingApprovalOnly, pendingPrcVerificationOnly, excludeUserIds, cancellationToken));
+    }
 
     [HttpGet("{id:guid}")]
     [RequirePermission(Permissions.Members.View)]
     public async Task<ActionResult<MemberDto>> GetById(Guid id, CancellationToken cancellationToken)
     {
         var member = await memberService.GetByIdAsync(id, cancellationToken);
-        return member is null ? NotFound() : Ok(member);
+        if (member is null || await IsSystemAccountAsync(member.UserId))
+        {
+            return NotFound();
+        }
+
+        return Ok(member);
     }
 
     [HttpGet("me")]
@@ -76,6 +88,11 @@ public class MembersController(IMemberService memberService, UserManager<Applica
     [RequirePermission(Permissions.Members.Manage)]
     public async Task<IActionResult> Update(Guid id, UpdateMemberRequest request, CancellationToken cancellationToken)
     {
+        if (await IsHiddenMemberAsync(id, cancellationToken))
+        {
+            return NotFound();
+        }
+
         var result = await memberService.UpdateAsync(id, request, cancellationToken);
         return ToActionResult(result);
     }
@@ -89,26 +106,224 @@ public class MembersController(IMemberService memberService, UserManager<Applica
             return Unauthorized();
         }
 
-        var updated = await memberService.UpsertMyProfileAsync(userId.Value, request, cancellationToken);
-        return Ok(updated);
+        // Administrative accounts (Super Admin, Admin, Manager, Accounts) don't have membership
+        // profiles - only block first-time self-registration (no existing row yet), so this never
+        // touches a genuine member's later saves.
+        if (await memberService.GetByUserIdAsync(userId.Value, cancellationToken) is null
+            && await IsSystemAccountAsync(userId.Value))
+        {
+            return Forbid();
+        }
+
+        var result = await memberService.UpsertMyProfileAsync(userId.Value, request, cancellationToken);
+        return ToActionResult(result);
+    }
+
+    [HttpPost("me/submit")]
+    public async Task<IActionResult> SubmitMyProfile(CancellationToken cancellationToken)
+    {
+        var userId = CurrentUserId;
+        if (userId is null)
+        {
+            return Unauthorized();
+        }
+
+        var result = await memberService.SubmitMyProfileAsync(userId.Value, cancellationToken);
+        return ToActionResult(result);
     }
 
     [HttpDelete("{id:guid}")]
     [RequirePermission(Permissions.Members.Manage)]
     public async Task<IActionResult> Delete(Guid id, CancellationToken cancellationToken)
     {
+        if (await IsHiddenMemberAsync(id, cancellationToken))
+        {
+            return NotFound();
+        }
+
         var result = await memberService.DeleteAsync(id, cancellationToken);
         return ToActionResult(result);
     }
 
+    [HttpPost("{id:guid}/approve")]
+    [RequirePermission(Permissions.Members.Manage)]
+    public async Task<IActionResult> Approve(Guid id, CancellationToken cancellationToken)
+    {
+        if (await IsHiddenMemberAsync(id, cancellationToken))
+        {
+            return NotFound();
+        }
+
+        var result = await memberService.ApproveAsync(id, cancellationToken);
+        return ToActionResult(result);
+    }
+
+    [HttpPost("{id:guid}/prc-verification/approve")]
+    [RequirePermission(Permissions.Members.Manage)]
+    public async Task<IActionResult> ApprovePrcVerification(Guid id, CancellationToken cancellationToken)
+    {
+        var decidedByUserId = CurrentUserId;
+        if (decidedByUserId is null)
+        {
+            return Unauthorized();
+        }
+
+        if (await IsHiddenMemberAsync(id, cancellationToken))
+        {
+            return NotFound();
+        }
+
+        var result = await memberService.ApprovePrcVerificationAsync(id, decidedByUserId.Value, cancellationToken);
+        return ToActionResult(result);
+    }
+
+    [HttpPost("{id:guid}/prc-verification/reject")]
+    [RequirePermission(Permissions.Members.Manage)]
+    public async Task<IActionResult> RejectPrcVerification(Guid id, RejectPrcVerificationRequest request, CancellationToken cancellationToken)
+    {
+        var decidedByUserId = CurrentUserId;
+        if (decidedByUserId is null)
+        {
+            return Unauthorized();
+        }
+
+        if (await IsHiddenMemberAsync(id, cancellationToken))
+        {
+            return NotFound();
+        }
+
+        var result = await memberService.RejectPrcVerificationAsync(id, request.Reason, decidedByUserId.Value, cancellationToken);
+        return ToActionResult(result);
+    }
+
+    [HttpPost("me/photo")]
+    public Task<IActionResult> UploadMyPhoto(IFormFile file, CancellationToken cancellationToken) =>
+        UploadMyFileAsync(UploadKind.Photo, file, cancellationToken);
+
+    [HttpPost("me/prc-id")]
+    public Task<IActionResult> UploadMyPrcId(IFormFile file, CancellationToken cancellationToken) =>
+        UploadMyFileAsync(UploadKind.PrcId, file, cancellationToken);
+
+    [HttpGet("me/photo")]
+    public Task<IActionResult> GetMyPhoto(CancellationToken cancellationToken) => GetMyFileAsync(UploadKind.Photo, cancellationToken);
+
+    [HttpGet("me/prc-id")]
+    public Task<IActionResult> GetMyPrcId(CancellationToken cancellationToken) => GetMyFileAsync(UploadKind.PrcId, cancellationToken);
+
+    [HttpGet("{id:guid}/photo")]
+    [RequirePermission(Permissions.Members.View)]
+    public Task<IActionResult> GetMemberPhoto(Guid id, CancellationToken cancellationToken) => GetMemberFileAsync(id, UploadKind.Photo, cancellationToken);
+
+    [HttpGet("{id:guid}/prc-id")]
+    [RequirePermission(Permissions.Members.View)]
+    public Task<IActionResult> GetMemberPrcId(Guid id, CancellationToken cancellationToken) => GetMemberFileAsync(id, UploadKind.PrcId, cancellationToken);
+
+    private async Task<IActionResult> UploadMyFileAsync(UploadKind kind, IFormFile file, CancellationToken cancellationToken)
+    {
+        var userId = CurrentUserId;
+        if (userId is null)
+        {
+            return Unauthorized();
+        }
+
+        await using var stream = file.OpenReadStream();
+        var result = await memberUploadService.UploadAsync(userId.Value, kind, stream, file.FileName, file.Length, cancellationToken);
+        return ToActionResult(result);
+    }
+
+    private async Task<IActionResult> GetMyFileAsync(UploadKind kind, CancellationToken cancellationToken)
+    {
+        var userId = CurrentUserId;
+        if (userId is null)
+        {
+            return Unauthorized();
+        }
+
+        var file = await memberUploadService.GetAsync(userId.Value, kind, cancellationToken);
+        return file is null ? NotFound() : File(file.Value.Content, file.Value.ContentType);
+    }
+
+    private async Task<IActionResult> GetMemberFileAsync(Guid memberId, UploadKind kind, CancellationToken cancellationToken)
+    {
+        var member = await memberService.GetByIdAsync(memberId, cancellationToken);
+        if (member is null || await IsSystemAccountAsync(member.UserId))
+        {
+            return NotFound();
+        }
+
+        var file = await memberUploadService.GetAsync(member.UserId, kind, cancellationToken);
+        return file is null ? NotFound() : File(file.Value.Content, file.Value.ContentType);
+    }
+
     private Guid? CurrentUserId =>
         Guid.TryParse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value, out var id) ? id : null;
+
+    /// <summary>
+    /// Every non-Member role (Super Admin, Admin, Manager, Accounts) is a staff/administrative
+    /// account - none of them have membership profiles, so any Member row seen with one of these
+    /// UserIds is stale data left by the bug this method's callers guard against.
+    /// </summary>
+    private async Task<IReadOnlyCollection<Guid>> GetSystemAccountUserIdsAsync()
+    {
+        var ids = new HashSet<Guid>();
+        foreach (var role in RoleNames.All.Where(r => r != RoleNames.Member))
+        {
+            foreach (var user in await userManager.GetUsersInRoleAsync(role))
+            {
+                ids.Add(user.Id);
+            }
+        }
+
+        return ids;
+    }
+
+    private async Task<bool> IsSystemAccountAsync(Guid userId)
+    {
+        var user = await userManager.FindByIdAsync(userId.ToString());
+        if (user is null)
+        {
+            return false;
+        }
+
+        var roles = await userManager.GetRolesAsync(user);
+        return roles.Any(r => r != RoleNames.Member);
+    }
+
+    /// <summary>
+    /// Only true when the id resolves to a real Member row owned by an administrative account -
+    /// a genuinely unknown id falls through to the calling action so it keeps producing that
+    /// action's normal "not found" Result (with its error message), same as before this guard
+    /// existed. Unconditional for every caller, including Super Admin - unlike AdminController's
+    /// Users list (which only hides Super Admin from lower roles), an administrative account's
+    /// Member row should never be reachable via the Members surface by anyone, since it
+    /// shouldn't exist.
+    /// </summary>
+    private async Task<bool> IsHiddenMemberAsync(Guid id, CancellationToken cancellationToken)
+    {
+        var member = await memberService.GetByIdAsync(id, cancellationToken);
+        return member is not null && await IsSystemAccountAsync(member.UserId);
+    }
 
     private IActionResult ToActionResult(Result result)
     {
         if (result.Succeeded)
         {
             return NoContent();
+        }
+
+        return result.ErrorType switch
+        {
+            ResultErrorType.NotFound => NotFound(new { message = result.Error }),
+            ResultErrorType.Forbidden => Forbid(),
+            _ => BadRequest(new { message = result.Error })
+        };
+    }
+
+    private ActionResult<MemberDto> ToActionResult(Result<MemberDto> result)
+    {
+        if (result.Succeeded)
+        {
+            return Ok(result.Value);
         }
 
         return result.ErrorType switch

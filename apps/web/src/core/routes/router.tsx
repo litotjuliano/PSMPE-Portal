@@ -9,10 +9,17 @@ import { AdminRolesPage } from '../pages/AdminRolesPage'
 import { MembersPage } from '../pages/MembersPage'
 import { MemberFormPage } from '../pages/MemberFormPage'
 import { MyProfilePage } from '../pages/MyProfilePage'
+import { RegisterPage } from '../pages/RegisterPage'
+import { VerifyEmailPage } from '../pages/VerifyEmailPage'
+import { MembershipApprovalsPage } from '../pages/MembershipApprovalsPage'
+import { PrcVerificationsPage } from '../pages/PrcVerificationsPage'
+import { NotificationsPage } from '../pages/NotificationsPage'
 import { Roles } from '../types/auth'
 
 export const router = createBrowserRouter([
   { path: '/login', element: <LoginPage /> },
+  { path: '/register', element: <RegisterPage /> },
+  { path: '/verify-email', element: <VerifyEmailPage /> },
   {
     element: <ProtectedRoute />,
     children: [
@@ -31,6 +38,9 @@ export const router = createBrowserRouter([
               { path: '/admin/roles', element: <AdminRolesPage /> },
               { path: '/members', element: <MembersPage /> },
               { path: '/members/:id', element: <MemberFormPage /> },
+              { path: '/membership-approvals', element: <MembershipApprovalsPage /> },
+              { path: '/prc-verifications', element: <PrcVerificationsPage /> },
+              { path: '/notifications', element: <NotificationsPage /> },
             ],
           },
         ],

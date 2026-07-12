@@ -18,6 +18,12 @@ export const Chapters = {
 
 export type ChapterValue = (typeof Chapters)[keyof typeof Chapters]
 
+export const MemberTypes = {
+  Regular: 'Regular Member',
+} as const
+
+export type MemberTypeValue = (typeof MemberTypes)[keyof typeof MemberTypes]
+
 export interface Member {
   id: string
   userId: string
@@ -31,13 +37,18 @@ export interface Member {
   address: string | null
   membershipNo: string
   prcLicenseNo: string | null
+  prcIdVerified: boolean
+  pendingPrcLicenseNo: string | null
+  prcVerificationRejectedReason: string | null
   chapter: string
   company: string | null
+  memberType: string
   status: MembershipStatusValue
   renewalDueDate: string | null
   nationalDuesReferenceNo: string | null
-  photoUrl: string | null
-  prcIdUrl: string | null
+  approvedAt: string | null
+  submittedAt: string | null
+  isInGracePeriod: boolean
   createdAt: string
   updatedAt: string | null
 }

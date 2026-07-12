@@ -18,6 +18,7 @@ const emptyState: MemberFormState = {
   prcLicenseNo: '',
   chapter: '',
   company: '',
+  memberType: '',
   status: MembershipStatus.Pending,
   renewalDueDate: '',
   nationalDuesReferenceNo: '',
@@ -31,14 +32,12 @@ export function MemberFormPage() {
   const [state, setState] = useState<MemberFormState>(emptyState)
   const [users, setUsers] = useState<UserSummary[]>([])
   const [loading, setLoading] = useState(!isNew)
+  const [approvedAt, setApprovedAt] = useState<string | null>(null)
+  const [isInGracePeriod, setIsInGracePeriod] = useState(false)
 
-  useEffect(() => {
-    if (isNew) {
-      adminApi.getUsers({ pageSize: 200 }).then((result) => setUsers(result.items))
-      return
-    }
+  const load = () => {
     if (id) {
-      memberApi.getMemberById(id).then((member) => {
+      return memberApi.getMemberById(id).then((member) => {
         setState({
           userId: member.userId,
           membershipNo: member.membershipNo,
@@ -52,14 +51,32 @@ export function MemberFormPage() {
           prcLicenseNo: member.prcLicenseNo ?? '',
           chapter: member.chapter,
           company: member.company ?? '',
+          memberType: member.memberType,
           status: member.status,
           renewalDueDate: member.renewalDueDate ?? '',
           nationalDuesReferenceNo: member.nationalDuesReferenceNo ?? '',
         })
-        setLoading(false)
+        setApprovedAt(member.approvedAt)
+        setIsInGracePeriod(member.isInGracePeriod)
       })
     }
+    return Promise.resolve()
+  }
+
+  useEffect(() => {
+    if (isNew) {
+      adminApi.getUsers({ pageSize: 200 }).then((result) => setUsers(result.items))
+      return
+    }
+    load().then(() => setLoading(false))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id, isNew])
+
+  const handleApprove = async () => {
+    if (!id) return
+    await memberApi.approveMember(id)
+    await load()
+  }
 
   const handleChange = <K extends keyof MemberFormState>(field: K, value: MemberFormState[K]) => {
     setState((current) => ({ ...current, [field]: value }))
@@ -81,6 +98,7 @@ export function MemberFormPage() {
         prcLicenseNo: state.prcLicenseNo || null,
         chapter: state.chapter,
         company: state.company || null,
+        memberType: state.memberType,
         renewalDueDate: state.renewalDueDate || null,
         nationalDuesReferenceNo: state.nationalDuesReferenceNo || null,
       })
@@ -96,6 +114,7 @@ export function MemberFormPage() {
         prcLicenseNo: state.prcLicenseNo || null,
         chapter: state.chapter,
         company: state.company || null,
+        memberType: state.memberType,
         status: state.status,
         renewalDueDate: state.renewalDueDate || null,
         nationalDuesReferenceNo: state.nationalDuesReferenceNo || null,
@@ -112,7 +131,16 @@ export function MemberFormPage() {
         {loading ? (
           <p className="text-sm text-default-500">Loading…</p>
         ) : (
-          <MemberFormCard isNew={isNew} state={state} onChange={handleChange} onSubmit={handleSubmit} users={users} />
+          <MemberFormCard
+            isNew={isNew}
+            state={state}
+            onChange={handleChange}
+            onSubmit={handleSubmit}
+            users={users}
+            approvedAt={approvedAt}
+            onApprove={handleApprove}
+            isInGracePeriod={isInGracePeriod}
+          />
         )}
       </main>
     </>
