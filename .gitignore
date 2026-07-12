@@ -14,6 +14,9 @@ appsettings.*.local.json
 # EF Core
 *.efmdf
 
+# User-uploaded files (local disk storage - see openspecs/members.md)
+src/PSMPE.Portal.WebAPI/wwwroot/uploads/
+
 # ===== Node / Frontend =====
 node_modules/
 dist/

@@ -12,6 +12,7 @@ public static class DependencyInjection
         services.AddScoped<IContentService, ContentService>();
         services.AddScoped<ILayoutService, LayoutService>();
         services.AddScoped<IMemberService, MemberService>();
+        services.AddScoped<IMemberUploadService, MemberUploadService>();
         return services;
     }
 }

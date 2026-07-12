@@ -24,13 +24,48 @@ public class Member : BaseEntity
 
     public string MembershipNo { get; set; } = string.Empty;
     public string? PrcLicenseNo { get; set; }
+
+    /// <summary>
+    /// Whether an admin has reviewed and approved the member's current PrcLicenseNo/PRC ID
+    /// document. Only ever set by MemberService.ApprovePrcVerificationAsync - never by the member
+    /// themselves, and never by a raw admin toggle (see PrcVerificationHistory for the decision
+    /// log).
+    /// </summary>
+    public bool PrcIdVerified { get; set; }
+
+    /// <summary>
+    /// A proposed new PrcLicenseNo awaiting an admin decision - set when a member with an
+    /// already-submitted application changes PrcLicenseNo (with a fresh PRC ID reupload). Null
+    /// means no change is pending. PrcLicenseNo itself is NOT overwritten until an admin approves
+    /// - see MemberService.UpsertMyProfileAsync/ApprovePrcVerificationAsync.
+    /// </summary>
+    public string? PendingPrcLicenseNo { get; set; }
+
+    /// <summary>
+    /// Set when an admin rejects a pending PrcLicenseNo change, shown to the member until they
+    /// attempt another PRC change (which clears it, whether or not that new attempt is itself
+    /// later approved).
+    /// </summary>
+    public string? PrcVerificationRejectedReason { get; set; }
+
     public string Chapter { get; set; } = string.Empty;
     public string? Company { get; set; }
+    public string MemberType { get; set; } = string.Empty;
 
     public MembershipStatus Status { get; set; } = MembershipStatus.Pending;
     public DateOnly? RenewalDueDate { get; set; }
     public string? NationalDuesReferenceNo { get; set; }
 
-    public string? PhotoUrl { get; set; }
-    public string? PrcIdUrl { get; set; }
+    /// <summary>
+    /// When an admin approved this application. Null means "not yet reviewed" - a distinct axis
+    /// from Status, since an approved application can still be Pending until dues are paid.
+    /// </summary>
+    public DateTimeOffset? ApprovedAt { get; set; }
+
+    /// <summary>
+    /// When the applicant finished the multi-step registration wizard and submitted it for
+    /// review. Null means this is still an in-progress draft (created by the wizard's per-step
+    /// autosave) - drafts are invisible to admins entirely, not just unapproved.
+    /// </summary>
+    public DateTimeOffset? SubmittedAt { get; set; }
 }

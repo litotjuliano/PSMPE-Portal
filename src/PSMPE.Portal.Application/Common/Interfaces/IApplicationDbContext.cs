@@ -13,6 +13,8 @@ public interface IApplicationDbContext
     DbSet<Layout> Layouts { get; }
     DbSet<SystemConfig> SystemConfigs { get; }
     DbSet<Member> Members { get; }
+    DbSet<MemberUpload> MemberUploads { get; }
+    DbSet<PrcVerificationHistory> PrcVerificationHistories { get; }
 
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
 }

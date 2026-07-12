@@ -79,6 +79,8 @@ public static class DependencyInjection
         services.AddSingleton<IDateTimeProvider, DateTimeProvider>();
         services.AddScoped<IJwtTokenGenerator, JwtTokenGenerator>();
         services.AddScoped<IPromptExecutionService, OpenAiPromptExecutionService>();
+        services.AddScoped<IFileStorageService, LocalDiskFileStorageService>();
+        services.AddScoped<IEmailSender, ConsoleEmailSender>();
 
         return services;
     }

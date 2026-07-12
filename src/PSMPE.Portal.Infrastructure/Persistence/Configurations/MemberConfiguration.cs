@@ -14,10 +14,14 @@ public class MemberConfiguration : IEntityTypeConfiguration<Member>
         builder.Property(m => m.Suffix).HasMaxLength(32);
         builder.Property(m => m.MembershipNo).IsRequired().HasMaxLength(32);
         builder.Property(m => m.Chapter).IsRequired().HasMaxLength(64);
+        builder.Property(m => m.MemberType).IsRequired().HasMaxLength(64);
         builder.Property(m => m.PrcLicenseNo).HasMaxLength(64);
         builder.Property(m => m.Company).HasMaxLength(256);
         builder.Property(m => m.Address).HasMaxLength(512);
         builder.Property(m => m.NationalDuesReferenceNo).HasMaxLength(64);
+        builder.Property(m => m.PrcIdVerified).IsRequired();
+        builder.Property(m => m.PendingPrcLicenseNo).HasMaxLength(64);
+        builder.Property(m => m.PrcVerificationRejectedReason).HasMaxLength(512);
 
         builder.HasIndex(m => m.UserId).IsUnique();
         builder.HasIndex(m => m.MembershipNo).IsUnique();
