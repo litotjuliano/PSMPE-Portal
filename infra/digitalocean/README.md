@@ -1,69 +1,63 @@
 # DigitalOcean Deployment
 
-The portal runs on [DigitalOcean App Platform](https://docs.digitalocean.com/products/app-platform/)
-using container images built from `src/PSMPE.Portal.WebAPI/Dockerfile` and
-`apps/web/Dockerfile`, pushed to the DigitalOcean Container Registry (DOCR).
+The portal runs on [DigitalOcean App Platform](https://docs.digitalocean.com/products/app-platform/).
+App Platform builds the container images **directly from this GitHub repo** (using
+`src/PSMPE.Portal.WebAPI/Dockerfile` and `apps/web/Dockerfile`) — there is no container
+registry, no `doctl`, and no GitHub Actions deploy step.
 
-There are **two independent environments**, each its own App Platform app with its own
-database and domain:
+Two independent environments, each its own App Platform app, database, and domain:
 
-| Git branch | App spec | GitHub secret with app id | URL |
-| ---------- | ---------------- | ------------------- | ------------------------- |
-| `staging`  | `app.staging.yaml` | `DO_APP_ID_STAGING` | StagingPSMPE.litxus.com |
-| `main`     | `app.prod.yaml`    | `DO_APP_ID_PROD`    | ProdPSMPE.litxus.com    |
+| Git branch | App spec | Deploys | URL |
+| ---------- | ---------------- | ------------------------- | ----------------------- |
+| `staging`  | `app.staging.yaml` | automatically on every push | StagingPSMPE.litxus.com |
+| `main`     | `app.prod.yaml`    | **manually** (one click in DO) | ProdPSMPE.litxus.com  |
 
-Images are tagged `staging` (staging app) and `latest` (prod app); every build is also
-tagged with the commit SHA for traceability.
+Production is set to **not** auto-deploy (`deploy_on_push: false`), so shipping to prod is a
+deliberate click — that click is your production gate.
 
-## One-time setup
+## One-time setup (per app)
 
-1. **Create a DOCR registry** (once, shared by both environments):
-   ```
-   doctl registry create <your-registry-name>
-   ```
-2. In both `app.staging.yaml` and `app.prod.yaml`, replace `<YOUR_DO_REGISTRY>` with that
-   registry name.
-3. **Create each app** and note the app id it returns:
-   ```
-   doctl apps create --spec infra/digitalocean/app.staging.yaml
-   doctl apps create --spec infra/digitalocean/app.prod.yaml
-   ```
-4. **Set the SECRET-type env vars** for each app in the DO dashboard — `doctl` only creates
-   the app shape, not secret values:
-   `Jwt__Key`, `SEED_ADMIN_EMAIL`, `SEED_ADMIN_PASSWORD`, `OpenAI__ApiKey`.
-   (`ConnectionStrings__DefaultConnection` is injected automatically from the managed DB via
-   `${db.DATABASE_URL}`.)
-5. **Point DNS** for each subdomain at its app (add the domain in the app's Settings, then
-   create the CNAME / A record your registrar shows).
-6. **Add GitHub Actions repo secrets** (Settings → Secrets and variables → Actions):
-   - `DIGITALOCEAN_ACCESS_TOKEN` — a DO API token with read/write.
-   - `DO_REGISTRY_NAME` — the DOCR registry name from step 1.
-   - `DO_APP_ID_STAGING` — app id from step 3 (staging).
-   - `DO_APP_ID_PROD` — app id from step 3 (prod).
-7. **Gate production** (recommended): Settings → Environments → `production` → enable
-   *Required reviewers* and add yourself. A push to `main` will then build and wait for your
-   approval before it deploys.
+Do this once for staging, once for prod:
 
-## Subsequent deploys
+1. DO dashboard → **Create App** → **GitHub** → authorize DigitalOcean to access the
+   `litotjuliano/PSMPE-Portal` repo when prompted (one-time OAuth).
+2. Pick the repo and the matching branch (`staging` or `main`). App Platform detects the
+   two Dockerfiles.
+3. Open the app's **Settings → App Spec (YAML)** and paste the contents of
+   `app.staging.yaml` (or `app.prod.yaml`) so the routes, health check, env vars, domain,
+   and database match exactly. Save.
+   - Alternatively, if you install `doctl`: `doctl apps create --spec infra/digitalocean/app.staging.yaml`.
+4. Set the **SECRET-type env vars** in the DO dashboard (the spec declares them but can't
+   hold their values): `Jwt__Key`, `SEED_ADMIN_EMAIL`, `SEED_ADMIN_PASSWORD`,
+   `OpenAI__ApiKey`. (`ConnectionStrings__DefaultConnection` is injected automatically from
+   the managed DB via `${db.DATABASE_URL}`.)
+5. **DNS:** add the domain (StagingPSMPE / ProdPSMPE .litxus.com) under the app's Settings,
+   then create the CNAME record DO shows you. Managed TLS is issued automatically once it
+   resolves.
 
-Fully automated by GitHub Actions:
+## Day-to-day deploys
 
-- Push/merge to **`staging`** → `.github/workflows/cd-staging.yml` builds + pushes images and
-  runs `doctl apps update <DO_APP_ID_STAGING> --spec infra/digitalocean/app.staging.yaml`.
-- Push/merge to **`main`** → `.github/workflows/cd-prod.yml` does the same for prod, after the
-  manual approval on the `production` environment.
+- **Staging:** push/merge to the `staging` branch → App Platform rebuilds and redeploys
+  automatically. Nothing else to do.
+- **Production:** merge to `main`, then in the DO dashboard open the prod app and click
+  **Deploy** (Create Deployment). It builds the latest `main` and goes live.
 
-`.github/workflows/ci.yml` runs build + tests on every pull request (no deploy).
+`.github/workflows/ci.yml` still runs build + tests on every pull request (a safety check
+before merge). It does not deploy.
+
+## Not needed anymore
+
+The old container-registry approach is gone, so these GitHub secrets are unused and can be
+deleted: `DIGITALOCEAN_ACCESS_TOKEN`, `DO_REGISTRY_NAME`, `DO_APP_ID_STAGING`,
+`DO_APP_ID_PROD`.
 
 ## Database
 
-Each spec provisions a DigitalOcean-managed PostgreSQL 16 database. Staging uses a dev-tier
-DB (`production: false`); prod uses `production: true` — pick an appropriately sized plan
-before real traffic. The connection string is injected into the backend automatically via
-`${db.DATABASE_URL}`.
+Each spec provisions a DigitalOcean-managed PostgreSQL 16 database (staging dev-tier, prod
+`production: true` — size it before real traffic). The connection string is injected into
+the backend automatically via `${db.DATABASE_URL}`.
 
 ## TODO
 
 - Automate `dotnet ef database update` as a pre-deploy job instead of relying on the
   `Seed:Enabled` startup migration call (see `src/PSMPE.Portal.WebAPI/Program.cs`).
-- Managed TLS is issued automatically by App Platform once each custom domain resolves.

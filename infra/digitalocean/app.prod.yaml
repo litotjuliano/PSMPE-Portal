@@ -1,14 +1,14 @@
 # DigitalOcean App Platform spec — PRODUCTION (ProdPSMPE.litxus.com)
 #
-# Deployed by .github/workflows/cd-prod.yml on push to `main`, AFTER the manual
-# approval on the `production` GitHub Environment:
-#   doctl apps update <DO_APP_ID_PROD> --spec infra/digitalocean/app.prod.yaml
+# App Platform builds the images itself, straight from this GitHub repo — no container
+# registry, no doctl, no GitHub Actions deploy step.
 #
-# One-time setup (see infra/digitalocean/README.md):
-#   1. Replace <YOUR_DO_REGISTRY> with your DigitalOcean Container Registry name.
-#   2. doctl apps create --spec infra/digitalocean/app.prod.yaml  (note the app id
-#      it returns and store it as the DO_APP_ID_PROD GitHub secret).
-#   3. Set the SECRET-type env vars below in the DO dashboard.
+# deploy_on_push is FALSE here on purpose: production does NOT auto-deploy. After you've
+# verified a change on staging and merged it to `main`, deploy prod with one click in the
+# DO dashboard (app → "Deploy" / "Create Deployment"). That click is your production gate.
+#
+# One-time setup (see infra/digitalocean/README.md): create the app from this spec,
+# authorize DigitalOcean's access to the GitHub repo, then set the SECRET-type env vars.
 
 name: psmpe-portal-prod
 region: nyc
@@ -19,13 +19,12 @@ domains:
 
 services:
   - name: backend
-    image:
-      registry_type: DOCR
-      registry: <YOUR_DO_REGISTRY>
-      repository: psmpe-backend
-      tag: latest
-      deploy_on_push:
-        enabled: true
+    github:
+      repo: litotjuliano/PSMPE-Portal
+      branch: main
+      deploy_on_push: false # manual deploy = production gate
+    source_dir: src
+    dockerfile_path: src/PSMPE.Portal.WebAPI/Dockerfile
     instance_size_slug: basic-xxs
     instance_count: 1
     http_port: 8080
@@ -62,18 +61,21 @@ services:
         value: gpt-4o-mini
 
   - name: frontend
-    image:
-      registry_type: DOCR
-      registry: <YOUR_DO_REGISTRY>
-      repository: psmpe-frontend
-      tag: latest
-      deploy_on_push:
-        enabled: true
+    github:
+      repo: litotjuliano/PSMPE-Portal
+      branch: main
+      deploy_on_push: false # manual deploy = production gate
+    source_dir: apps/web
+    dockerfile_path: apps/web/Dockerfile
     instance_size_slug: basic-xxs
     instance_count: 1
     http_port: 80
     routes:
       - path: /
+    envs:
+      - key: VITE_API_BASE_URL
+        value: https://ProdPSMPE.litxus.com
+        scope: BUILD_TIME
 
 databases:
   - name: db

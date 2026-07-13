@@ -1,14 +1,13 @@
 # DigitalOcean App Platform spec — STAGING (StagingPSMPE.litxus.com)
 #
-# Deployed by .github/workflows/cd-staging.yml on every push to the `staging` branch:
-#   doctl apps update <DO_APP_ID_STAGING> --spec infra/digitalocean/app.staging.yaml
+# App Platform builds the images itself, straight from this GitHub repo — no container
+# registry, no doctl, no GitHub Actions deploy step. Because deploy_on_push is true,
+# every push to the `staging` branch automatically rebuilds and redeploys.
 #
-# One-time setup (see infra/digitalocean/README.md):
-#   1. Replace <YOUR_DO_REGISTRY> with your DigitalOcean Container Registry name.
-#   2. doctl apps create --spec infra/digitalocean/app.staging.yaml  (note the app id
-#      it returns and store it as the DO_APP_ID_STAGING GitHub secret).
-#   3. Set the SECRET-type env vars below in the DO dashboard (doctl creates the app
-#      shape, not secret values).
+# One-time setup (see infra/digitalocean/README.md): create the app from this spec
+# (dashboard → Create App → paste this YAML, or `doctl apps create --spec`), authorize
+# DigitalOcean's access to the GitHub repo when prompted, then set the SECRET-type env
+# vars in the DO dashboard.
 
 name: psmpe-portal-staging
 region: nyc
@@ -19,13 +18,12 @@ domains:
 
 services:
   - name: backend
-    image:
-      registry_type: DOCR
-      registry: <YOUR_DO_REGISTRY>
-      repository: psmpe-backend
-      tag: staging
-      deploy_on_push:
-        enabled: true
+    github:
+      repo: litotjuliano/PSMPE-Portal
+      branch: staging
+      deploy_on_push: true
+    source_dir: src
+    dockerfile_path: src/PSMPE.Portal.WebAPI/Dockerfile
     instance_size_slug: basic-xxs
     instance_count: 1
     http_port: 8080
@@ -62,18 +60,23 @@ services:
         value: gpt-4o-mini
 
   - name: frontend
-    image:
-      registry_type: DOCR
-      registry: <YOUR_DO_REGISTRY>
-      repository: psmpe-frontend
-      tag: staging
-      deploy_on_push:
-        enabled: true
+    github:
+      repo: litotjuliano/PSMPE-Portal
+      branch: staging
+      deploy_on_push: true
+    source_dir: apps/web
+    dockerfile_path: apps/web/Dockerfile
     instance_size_slug: basic-xxs
     instance_count: 1
     http_port: 80
     routes:
       - path: /
+    envs:
+      # Baked into the built JS. The frontend and backend share this domain and the API
+      # client already prefixes requests with /api, so point at the app's own origin.
+      - key: VITE_API_BASE_URL
+        value: https://StagingPSMPE.litxus.com
+        scope: BUILD_TIME
 
 databases:
   - name: db
