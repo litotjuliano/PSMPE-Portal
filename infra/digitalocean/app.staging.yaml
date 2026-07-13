@@ -1,19 +1,21 @@
-# DigitalOcean App Platform spec for PSMPE Portal.
+# DigitalOcean App Platform spec — STAGING (StagingPSMPE.litxus.com)
 #
-# TODO before first deploy:
-#   1. Replace <YOUR_DO_REGISTRY> with your DigitalOcean Container Registry name
-#      (same value as the DO_REGISTRY_NAME GitHub secret used in .github/workflows/cd.yml).
-#   2. Adjust `region` and `instance_size_slug` values to taste.
-#   3. Set the SECRET-type env vars below as actual values (or app-level "Encrypted"
-#      secrets) in the DO dashboard the first time — doctl will not create secret
-#      values for you, only the app resource shape.
+# Deployed by .github/workflows/cd-staging.yml on every push to the `staging` branch:
+#   doctl apps update <DO_APP_ID_STAGING> --spec infra/digitalocean/app.staging.yaml
 #
-# Deploy/update with:
-#   doctl apps create --spec infra/digitalocean/app.yaml         # first time
-#   doctl apps update <app-id> --spec infra/digitalocean/app.yaml  # subsequent deploys (used by cd.yml)
+# One-time setup (see infra/digitalocean/README.md):
+#   1. Replace <YOUR_DO_REGISTRY> with your DigitalOcean Container Registry name.
+#   2. doctl apps create --spec infra/digitalocean/app.staging.yaml  (note the app id
+#      it returns and store it as the DO_APP_ID_STAGING GitHub secret).
+#   3. Set the SECRET-type env vars below in the DO dashboard (doctl creates the app
+#      shape, not secret values).
 
-name: psmpe-portal
+name: psmpe-portal-staging
 region: nyc
+
+domains:
+  - domain: StagingPSMPE.litxus.com
+    type: PRIMARY
 
 services:
   - name: backend
@@ -21,20 +23,20 @@ services:
       registry_type: DOCR
       registry: <YOUR_DO_REGISTRY>
       repository: psmpe-backend
-      tag: latest
+      tag: staging
       deploy_on_push:
         enabled: true
     instance_size_slug: basic-xxs
     instance_count: 1
     http_port: 8080
     health_check:
-      http_path: /swagger/index.html
+      http_path: /health
     routes:
       - path: /api
       - path: /swagger
     envs:
       - key: ASPNETCORE_ENVIRONMENT
-        value: Production
+        value: Staging
       - key: ASPNETCORE_URLS
         value: http://+:8080
       - key: ConnectionStrings__DefaultConnection
@@ -64,7 +66,7 @@ services:
       registry_type: DOCR
       registry: <YOUR_DO_REGISTRY>
       repository: psmpe-frontend
-      tag: latest
+      tag: staging
       deploy_on_push:
         enabled: true
     instance_size_slug: basic-xxs
@@ -77,5 +79,4 @@ databases:
   - name: db
     engine: PG
     version: "16"
-    production: false
-    # TODO: set production: true (and pick an appropriately sized plan) for a real deployment.
+    production: false # dev-tier database is fine for staging
