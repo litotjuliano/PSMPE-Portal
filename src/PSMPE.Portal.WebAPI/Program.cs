@@ -14,6 +14,7 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddPortalSwagger();
+builder.Services.AddHealthChecks();
 
 builder.Services.AddApplication();
 builder.Services.AddInfrastructure(builder.Configuration);
@@ -43,6 +44,10 @@ app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapControllers();
+
+// Unauthenticated liveness probe used by the DigitalOcean App Platform health check
+// (see infra/digitalocean/app.*.yaml). Kept simple: 200 OK means the process is up.
+app.MapHealthChecks("/health");
 
 if (builder.Configuration.GetValue<bool>("Seed:Enabled"))
 {

@@ -1,0 +1,83 @@
+# DigitalOcean App Platform spec — PRODUCTION (ProdPSMPE.litxus.com)
+#
+# Deployed by .github/workflows/cd-prod.yml on push to `main`, AFTER the manual
+# approval on the `production` GitHub Environment:
+#   doctl apps update <DO_APP_ID_PROD> --spec infra/digitalocean/app.prod.yaml
+#
+# One-time setup (see infra/digitalocean/README.md):
+#   1. Replace <YOUR_DO_REGISTRY> with your DigitalOcean Container Registry name.
+#   2. doctl apps create --spec infra/digitalocean/app.prod.yaml  (note the app id
+#      it returns and store it as the DO_APP_ID_PROD GitHub secret).
+#   3. Set the SECRET-type env vars below in the DO dashboard.
+
+name: psmpe-portal-prod
+region: nyc
+
+domains:
+  - domain: ProdPSMPE.litxus.com
+    type: PRIMARY
+
+services:
+  - name: backend
+    image:
+      registry_type: DOCR
+      registry: <YOUR_DO_REGISTRY>
+      repository: psmpe-backend
+      tag: latest
+      deploy_on_push:
+        enabled: true
+    instance_size_slug: basic-xxs
+    instance_count: 1
+    http_port: 8080
+    health_check:
+      http_path: /health
+    routes:
+      - path: /api
+      - path: /swagger
+    envs:
+      - key: ASPNETCORE_ENVIRONMENT
+        value: Production
+      - key: ASPNETCORE_URLS
+        value: http://+:8080
+      - key: ConnectionStrings__DefaultConnection
+        value: ${db.DATABASE_URL}
+        type: SECRET
+      - key: Jwt__Key
+        type: SECRET
+      - key: Jwt__Issuer
+        value: PSMPE.Portal
+      - key: Jwt__Audience
+        value: PSMPE.Portal.Client
+      - key: Jwt__ExpiryMinutes
+        value: "60"
+      - key: Seed__Enabled
+        value: "true"
+      - key: SEED_ADMIN_EMAIL
+        type: SECRET
+      - key: SEED_ADMIN_PASSWORD
+        type: SECRET
+      - key: OpenAI__ApiKey
+        type: SECRET
+      - key: OpenAI__Model
+        value: gpt-4o-mini
+
+  - name: frontend
+    image:
+      registry_type: DOCR
+      registry: <YOUR_DO_REGISTRY>
+      repository: psmpe-frontend
+      tag: latest
+      deploy_on_push:
+        enabled: true
+    instance_size_slug: basic-xxs
+    instance_count: 1
+    http_port: 80
+    routes:
+      - path: /
+
+databases:
+  - name: db
+    engine: PG
+    version: "16"
+    # TODO: pick an appropriately sized paid plan for real traffic.
+    production: true

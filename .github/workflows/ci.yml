@@ -1,33 +1,23 @@
 name: CI
 
+# Build and test on every pull request and on pushes to the long-lived branches.
+# This never deploys anything — it only tells you whether the code compiles and the
+# tests pass. Deployment is handled separately by cd-staging.yml / cd-prod.yml.
 on:
   pull_request:
-    branches: [main, develop]
+    branches: [main, staging, develop]
   push:
-    branches: [main, develop]
+    branches: [main, staging, develop]
 
 jobs:
   backend:
+    name: Backend (build + test)
     runs-on: ubuntu-latest
-    services:
-      postgres:
-        image: postgres:16-alpine
-        env:
-          POSTGRES_DB: psmpe_portal_test
-          POSTGRES_USER: psmpe_user
-          POSTGRES_PASSWORD: test-password
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U psmpe_user -d psmpe_portal_test"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 10
-
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-dotnet@v4
+      - name: Setup .NET 8
+        uses: actions/setup-dotnet@v4
         with:
           dotnet-version: "8.0.x"
 
@@ -37,19 +27,22 @@ jobs:
       - name: Build
         run: dotnet build src/PSMPE.Portal.sln --no-restore --configuration Release
 
+      # Integration tests use an EF Core InMemory database (see CustomWebApplicationFactory),
+      # so no PostgreSQL service is required here.
       - name: Test
         run: dotnet test src/PSMPE.Portal.sln --no-build --configuration Release --logger "console;verbosity=normal"
 
   frontend:
+    name: Frontend (lint + build)
     runs-on: ubuntu-latest
     defaults:
       run:
         working-directory: apps/web
-
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-node@v4
+      - name: Setup Node 20
+        uses: actions/setup-node@v4
         with:
           node-version: "20"
           cache: npm
