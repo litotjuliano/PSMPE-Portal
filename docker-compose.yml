@@ -39,6 +39,12 @@ services:
       Jwt__Audience: ${Jwt__Audience:-PSMPE.Portal.Client}
       Jwt__ExpiryMinutes: ${Jwt__ExpiryMinutes:-60}
       Frontend__BaseUrl: ${Frontend__BaseUrl:-http://localhost:5173}
+      Smtp__Host: ${Smtp__Host}
+      Smtp__Port: ${Smtp__Port:-587}
+      Smtp__Username: ${Smtp__Username}
+      Smtp__Password: ${Smtp__Password}
+      Smtp__From: ${Smtp__From:-noreply@litxus.com}
+      Smtp__FromName: ${Smtp__FromName:-PSMPE Portal}
       Seed__Enabled: ${Seed__Enabled:-true}
       SEED_ADMIN_EMAIL: ${SEED_ADMIN_EMAIL}
       SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD}

@@ -80,7 +80,17 @@ public static class DependencyInjection
         services.AddScoped<IJwtTokenGenerator, JwtTokenGenerator>();
         services.AddScoped<IPromptExecutionService, OpenAiPromptExecutionService>();
         services.AddScoped<IFileStorageService, LocalDiskFileStorageService>();
-        services.AddScoped<IEmailSender, ConsoleEmailSender>();
+
+        // Falls back to logging-only when no real SMTP host is configured, so local dev keeps
+        // working without real credentials - see ConsoleEmailSender / SmtpEmailSender.
+        if (string.IsNullOrWhiteSpace(configuration["Smtp:Host"]))
+        {
+            services.AddScoped<IEmailSender, ConsoleEmailSender>();
+        }
+        else
+        {
+            services.AddScoped<IEmailSender, SmtpEmailSender>();
+        }
 
         return services;
     }
