@@ -13,7 +13,8 @@ import SalesThisMonth from '../components/dashboard/SalesThisMonth'
 import TopSellingProducts from '../components/dashboard/TopSellingProducts'
 import TrafficResources from '../components/dashboard/TrafficResources'
 import WelcomeUser from '../components/dashboard/WelcomeUser'
-import { memberApi } from '../../../core/api/endpoints/memberApi'
+import { GaugeStat } from '../components/shared/GaugeStat'
+import { memberApi, type ProfileCompleteness } from '../../../core/api/endpoints/memberApi'
 
 function CompleteApplicationBanner() {
   const [needsCompletion, setNeedsCompletion] = useState(false)
@@ -49,6 +50,36 @@ function CompleteApplicationBanner() {
   )
 }
 
+/**
+ * Only meaningful once Steps 1-3 are submitted (CompleteApplicationBanner covers the "not
+ * submitted yet" case above) - nudges toward the post-approval Professional Information/Documents
+ * tabs in My Profile, which are otherwise easy to forget since nothing blocks approval on them.
+ */
+function ProfileCompletenessGauge() {
+  const [completeness, setCompleteness] = useState<ProfileCompleteness | null>(null)
+
+  useEffect(() => {
+    memberApi
+      .getMyProfileCompleteness()
+      .then(setCompleteness)
+      .catch(() => setCompleteness(null))
+  }, [])
+
+  if (!completeness || !completeness.isSubmitted || completeness.percentComplete >= 100) {
+    return null
+  }
+
+  return (
+    <div className="mb-5 max-w-sm">
+      <GaugeStat
+        label="Profile Completeness"
+        value={completeness.percentComplete}
+        helpText="Add your documents in My Profile to finish setting up your account."
+      />
+    </div>
+  )
+}
+
 export const DashboardPage = () => {
   return (
     <>
@@ -56,6 +87,7 @@ export const DashboardPage = () => {
       <main>
         <PageBreadcrumb title="Dashboard" />
         <CompleteApplicationBanner />
+        <ProfileCompletenessGauge />
         <div className="grid lg:grid-cols-3 grid-cols-1 gap-5 mb-5">
           <div className="lg:col-span-2 col-span-1">
             <WelcomeUser />

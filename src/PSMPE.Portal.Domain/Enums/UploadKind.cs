@@ -4,4 +4,7 @@ public enum UploadKind
 {
     Photo,
     PrcId,
+    ValidGovernmentId,
+    FormalPhoto,
+    Signature,
 }

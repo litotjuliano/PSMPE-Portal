@@ -7,25 +7,61 @@
 
   --color-card: var(--color-white);
 
-  --color-primary: var(--color-blue-500);
-  --color-secondary: var(--color-violet-500);
-  --color-success: var(--color-green-500);
-  --color-info: var(--color-sky-500);
-  --color-warning: var(--color-amber-500);
-  --color-danger: var(--color-orange-500);
+  /* PSMPE "Waterworks Professional" palette - see openspecs for the approved mockup. */
+  --color-primary-50: #EFF5FB;
+  --color-primary-100: #DCE8F5;
+  --color-primary-500: #2E6FB8;
+  --color-primary-600: #1B5CA6;
+  --color-primary: #0E4C92;
+  --color-primary-800: #0A3A70;
+  --color-primary-900: #082C55;
 
-  --color-default-50: var(--color-zinc-50);
-  --color-default-100: var(--color-zinc-100);
-  --color-default-150: var(--color-zinc-100);
-  --color-default-200: var(--color-zinc-200);
-  --color-default-300: var(--color-zinc-300);
-  --color-default-400: var(--color-zinc-400);
-  --color-default-500: var(--color-zinc-500);
-  --color-default-600: var(--color-zinc-600);
-  --color-default-700: var(--color-zinc-700);
-  --color-default-800: var(--color-zinc-800);
-  --color-default-900: var(--color-zinc-900);
-  --color-default-950: var(--color-zinc-950);
+  /* Accent - rare, deliberate use only (active nav item, one primary CTA per screen, verified
+     badges, wizard pipe fills, membership card). #B87333 fails AA for text on white - it's for
+     backgrounds/borders/fills/icons only; copper-dark is the text-safe shade on light surfaces. */
+  --color-copper-50: #F8F1E8;
+  --color-copper-light: #E8D3BC;
+  --color-copper: #B87333;
+  --color-copper-dark: #8F5722;
+
+  /* Success/progress/Active-state hue. */
+  --color-teal-50: #E6F5F6;
+  --color-teal: #0F9BA8;
+  --color-teal-dark: #0B7680;
+
+  /* Neutral scale - replaces the template's warm zinc grays everywhere via --color-default-*. */
+  --color-steel-50: #F5F7F9;
+  --color-steel-100: #EBEFF2;
+  --color-steel-200: #D7DEE4;
+  --color-steel-300: #B9C4CE;
+  --color-steel-400: #8494A3;
+  --color-steel-500: #5C6B7A;
+  --color-steel-600: #47566A;
+  --color-steel-700: #33404F;
+  --color-steel-800: #263140;
+  --color-steel-900: #1C2530;
+  /* Not in the approved palette - extrapolated one shade past steel-900 for the deepest dark-mode
+     background slot, the same role zinc-950 played before (see the dark-mode block below). */
+  --color-steel-950: #12181F;
+
+  --color-secondary: var(--color-steel-500);
+  --color-success: var(--color-teal);
+  --color-info: var(--color-primary-500);
+  --color-warning: #C77E0F;
+  --color-danger: #B3382E;
+
+  --color-default-50: var(--color-steel-50);
+  --color-default-100: var(--color-steel-100);
+  --color-default-150: var(--color-steel-100);
+  --color-default-200: var(--color-steel-200);
+  --color-default-300: var(--color-steel-300);
+  --color-default-400: var(--color-steel-400);
+  --color-default-500: var(--color-steel-500);
+  --color-default-600: var(--color-steel-600);
+  --color-default-700: var(--color-steel-700);
+  --color-default-800: var(--color-steel-800);
+  --color-default-900: var(--color-steel-900);
+  --color-default-950: var(--color-steel-950);
 
   --text-base--line-height: 1.1;
   --text-xl--line-height: 1.1;
@@ -57,23 +93,23 @@
 [data-theme='dark'] {
   color-scheme: dark;
 
-  --color-body-bg: var(--color-zinc-950);
-  --color-body-color: var(--color-zinc-400);
+  --color-body-bg: var(--color-steel-950);
+  --color-body-color: var(--color-steel-400);
 
-  --color-card: var(--color-zinc-900);
+  --color-card: var(--color-steel-900);
 
-  --color-default-50: var(--color-zinc-950);
-  --color-default-100: var(--color-zinc-900);
-  --color-default-150: var(--color-zinc-800);
-  --color-default-200: var(--color-zinc-800);
-  --color-default-300: var(--color-zinc-700);
-  --color-default-400: var(--color-zinc-600);
-  --color-default-500: var(--color-zinc-500);
-  --color-default-600: var(--color-zinc-400);
-  --color-default-700: var(--color-zinc-300);
-  --color-default-800: var(--color-zinc-200);
-  --color-default-900: var(--color-zinc-100);
-  --color-default-950: var(--color-zinc-50);
+  --color-default-50: var(--color-steel-950);
+  --color-default-100: var(--color-steel-900);
+  --color-default-150: var(--color-steel-800);
+  --color-default-200: var(--color-steel-800);
+  --color-default-300: var(--color-steel-700);
+  --color-default-400: var(--color-steel-600);
+  --color-default-500: var(--color-steel-500);
+  --color-default-600: var(--color-steel-400);
+  --color-default-700: var(--color-steel-300);
+  --color-default-800: var(--color-steel-200);
+  --color-default-900: var(--color-steel-100);
+  --color-default-950: var(--color-steel-50);
 
   --topbar-background: var(--color-default-100);
 }
@@ -82,7 +118,7 @@
 html[data-theme='light'],
 html[data-sidenav-color='light'] {
   --sidenav-background: var(--color-white);
-  --sidenav-item-color: var(--color-zinc-600);
+  --sidenav-item-color: var(--color-steel-600);
   --sidenav-item-active-color: theme(backgroundColor.primary);
   --sidenav-item-active-bg: theme(backgroundColor.primary/10%);
   --sidenav-item-hover-color: theme(backgroundColor.primary);
@@ -92,10 +128,10 @@ html[data-sidenav-color='light'] {
 /* Dark Menu (Dark Mode) */
 html[data-sidenav-color='dark'],
 html[data-theme='dark'][data-sidenav-color='light'] {
-  --sidenav-background: var(--color-zinc-900);
-  --sidenav-item-color: var(--color-zinc-400);
-  --sidenav-item-active-color: var(--color-zinc-50);
-  --sidenav-item-active-bg: var(--color-zinc-800);
-  --sidenav-item-hover-color: var(--color-zinc-300);
-  --sidenav-item-hover-bg: var(--color-zinc-800);
+  --sidenav-background: var(--color-steel-900);
+  --sidenav-item-color: var(--color-steel-400);
+  --sidenav-item-active-color: var(--color-steel-50);
+  --sidenav-item-active-bg: var(--color-steel-800);
+  --sidenav-item-hover-color: var(--color-steel-300);
+  --sidenav-item-hover-bg: var(--color-steel-800);
 }

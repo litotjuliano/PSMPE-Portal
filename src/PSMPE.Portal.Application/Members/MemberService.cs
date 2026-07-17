@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using Microsoft.EntityFrameworkCore;
 using PSMPE.Portal.Application.Common.Interfaces;
 using PSMPE.Portal.Application.Common.Models;
@@ -41,8 +42,13 @@ public class MemberService(IApplicationDbContext db) : IMemberService
 
     private static MemberDto ToDto(Member m, int gracePeriodDays) => new(
         m.Id, m.UserId, m.User.Email ?? string.Empty, m.FirstName, m.MiddleName, m.LastName, m.Suffix,
-        m.Birthdate, m.Gender, m.Address, m.MembershipNo, m.PrcLicenseNo, m.PrcIdVerified,
-        m.PendingPrcLicenseNo, m.PrcVerificationRejectedReason, m.Chapter, m.Company, m.MemberType,
+        m.Birthdate, m.Gender, m.CivilStatus, m.Address, m.MobileNumber,
+        m.HousePhone, m.Website, m.FacebookUrl, m.LinkedInUrl, m.XUrl, m.InstagramUrl,
+        m.MembershipNo, m.PrcLicenseNo,
+        m.PtrNumber, m.Tin, m.PrcIdVerified,
+        m.PendingPrcLicenseNo, m.PrcVerificationRejectedReason, m.Chapter,
+        m.EmploymentStatus, m.Company, m.Position, m.BusinessAddress, m.YearsOfPractice, m.Specialization, m.Skills,
+        m.MemberType,
         m.Status, m.RenewalDueDate, m.NationalDuesReferenceNo, m.ApprovedAt, m.SubmittedAt,
         ComputeIsInGracePeriod(m, gracePeriodDays), m.CreatedAt, m.UpdatedAt);
 
@@ -144,10 +150,26 @@ public class MemberService(IApplicationDbContext db) : IMemberService
             Suffix = request.Suffix,
             Birthdate = request.Birthdate,
             Gender = request.Gender,
+            CivilStatus = request.CivilStatus,
             Address = request.Address,
+            MobileNumber = request.MobileNumber,
+            HousePhone = request.HousePhone,
+            Website = request.Website,
+            FacebookUrl = request.FacebookUrl,
+            LinkedInUrl = request.LinkedInUrl,
+            XUrl = request.XUrl,
+            InstagramUrl = request.InstagramUrl,
             PrcLicenseNo = request.PrcLicenseNo,
+            PtrNumber = request.PtrNumber,
+            Tin = request.Tin,
             Chapter = request.Chapter,
+            EmploymentStatus = request.EmploymentStatus,
             Company = request.Company,
+            Position = request.Position,
+            BusinessAddress = request.BusinessAddress,
+            YearsOfPractice = request.YearsOfPractice,
+            Specialization = request.Specialization,
+            Skills = request.Skills,
             MemberType = request.MemberType,
             Status = MembershipStatus.Pending,
             // Admin-entered profiles never go through the self-service wizard's draft phase -
@@ -177,10 +199,26 @@ public class MemberService(IApplicationDbContext db) : IMemberService
         member.Suffix = request.Suffix;
         member.Birthdate = request.Birthdate;
         member.Gender = request.Gender;
+        member.CivilStatus = request.CivilStatus;
         member.Address = request.Address;
+        member.MobileNumber = request.MobileNumber;
+        member.HousePhone = request.HousePhone;
+        member.Website = request.Website;
+        member.FacebookUrl = request.FacebookUrl;
+        member.LinkedInUrl = request.LinkedInUrl;
+        member.XUrl = request.XUrl;
+        member.InstagramUrl = request.InstagramUrl;
         member.PrcLicenseNo = request.PrcLicenseNo;
+        member.PtrNumber = request.PtrNumber;
+        member.Tin = request.Tin;
         member.Chapter = request.Chapter;
+        member.EmploymentStatus = request.EmploymentStatus;
         member.Company = request.Company;
+        member.Position = request.Position;
+        member.BusinessAddress = request.BusinessAddress;
+        member.YearsOfPractice = request.YearsOfPractice;
+        member.Specialization = request.Specialization;
+        member.Skills = request.Skills;
         member.MemberType = request.MemberType;
         member.Status = request.Status;
         member.RenewalDueDate = request.RenewalDueDate;
@@ -309,9 +347,27 @@ public class MemberService(IApplicationDbContext db) : IMemberService
         if (string.IsNullOrWhiteSpace(member.LastName)) missing.Add("Last name");
         if (string.IsNullOrWhiteSpace(member.Chapter)) missing.Add("Chapter");
         if (string.IsNullOrWhiteSpace(member.MemberType)) missing.Add("Member type");
+        if (string.IsNullOrWhiteSpace(member.PrcLicenseNo)) missing.Add("PRC License No.");
+        if (string.IsNullOrWhiteSpace(member.Gender)) missing.Add("Gender");
+        if (string.IsNullOrWhiteSpace(member.CivilStatus)) missing.Add("Civil status");
+        if (string.IsNullOrWhiteSpace(member.Address)) missing.Add("Address");
+        if (string.IsNullOrWhiteSpace(member.MobileNumber)) missing.Add("Mobile number");
+        if (string.IsNullOrWhiteSpace(member.PtrNumber)) missing.Add("PTR number");
+        if (member.Birthdate is null) missing.Add("Birthdate");
+        if (!await db.MemberUploads.AnyAsync(u => u.UserId == userId && u.Kind == UploadKind.PrcId, cancellationToken))
+        {
+            missing.Add("PRC ID document");
+        }
         if (missing.Count > 0)
         {
             return Result.Failure($"Complete the following before submitting: {string.Join(", ", missing)}.");
+        }
+
+        // Checked only once the field is confirmed present above - a missing Birthdate already
+        // produced its own message, so this never doubles up with the missing-fields list.
+        if (member.Birthdate!.Value > DateOnly.FromDateTime(DateTime.UtcNow).AddYears(-18))
+        {
+            return Result.Failure("You must be at least 18 years old to submit a membership application.");
         }
 
         if (member.SubmittedAt is null)
@@ -324,8 +380,61 @@ public class MemberService(IApplicationDbContext db) : IMemberService
         return Result.Success();
     }
 
+    private static readonly Regex PhMobileNumberPattern = new(@"^(\+63|0)9\d{9}$", RegexOptions.Compiled);
+    // Lenient PH landline - format varies by area code length (e.g. "(02) 8123 4567", "032-2551234"),
+    // so this just checks digits/spaces/dashes/parens with 7-11 digits, not an exact pattern.
+    private static readonly Regex HousePhonePattern = new(@"^[\d\s\-()]{7,15}$", RegexOptions.Compiled);
+
+    private static bool IsValidTin(string value)
+    {
+        var digitsOnly = value.Replace("-", string.Empty);
+        return digitsOnly.Length is >= 9 and <= 12 && digitsOnly.All(char.IsDigit);
+    }
+
+    private static bool IsValidHousePhone(string value)
+    {
+        var digitsOnly = value.Count(char.IsDigit);
+        return HousePhonePattern.IsMatch(value) && digitsOnly is >= 7 and <= 11;
+    }
+
+    private static bool IsValidUrl(string value) =>
+        Uri.TryCreate(value, UriKind.Absolute, out var uri) && (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps);
+
     public async Task<Result<MemberDto>> UpsertMyProfileAsync(Guid userId, UpdateMyProfileRequest request, CancellationToken cancellationToken = default)
     {
+        if (!string.IsNullOrWhiteSpace(request.MobileNumber) && !PhMobileNumberPattern.IsMatch(request.MobileNumber))
+        {
+            return Result<MemberDto>.Failure("Mobile number must be in the format +639XXXXXXXXX or 09XXXXXXXXX.");
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.Tin) && !IsValidTin(request.Tin))
+        {
+            return Result<MemberDto>.Failure("TIN must be 9-12 digits, with dashes allowed as separators.");
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.HousePhone) && !IsValidHousePhone(request.HousePhone))
+        {
+            return Result<MemberDto>.Failure("House phone must be a valid landline number.");
+        }
+
+        var urlFields = new (string? Value, string Label)[]
+        {
+            (request.Website, "Website"), (request.FacebookUrl, "Facebook URL"), (request.LinkedInUrl, "LinkedIn URL"),
+            (request.XUrl, "X URL"), (request.InstagramUrl, "Instagram URL"),
+        };
+        foreach (var (value, label) in urlFields)
+        {
+            if (!string.IsNullOrWhiteSpace(value) && !IsValidUrl(value))
+            {
+                return Result<MemberDto>.Failure($"{label} must be a valid URL (starting with http:// or https://).");
+            }
+        }
+
+        if (request.YearsOfPractice is < 0)
+        {
+            return Result<MemberDto>.Failure("Years of practice cannot be negative.");
+        }
+
         var member = await db.Members.FirstOrDefaultAsync(m => m.UserId == userId, cancellationToken);
         var isDraft = member is null || member.SubmittedAt is null;
         // Captured before any mutation below - this save's own UpdatedAt must never be used as the
@@ -387,8 +496,26 @@ public class MemberService(IApplicationDbContext db) : IMemberService
         member.Suffix = request.Suffix;
         member.Birthdate = request.Birthdate;
         member.Gender = request.Gender;
+        member.CivilStatus = request.CivilStatus;
         member.Address = request.Address;
+        member.MobileNumber = request.MobileNumber;
+        member.HousePhone = request.HousePhone;
+        member.Website = request.Website;
+        member.FacebookUrl = request.FacebookUrl;
+        member.LinkedInUrl = request.LinkedInUrl;
+        member.XUrl = request.XUrl;
+        member.InstagramUrl = request.InstagramUrl;
+        member.PtrNumber = request.PtrNumber;
+        member.Tin = request.Tin;
+        // Professional Information is entirely optional and never locked post-submission - a
+        // member can fill it in (or change it) at any time, unlike MemberType/Chapter/PrcLicenseNo.
+        member.EmploymentStatus = request.EmploymentStatus;
         member.Company = request.Company;
+        member.Position = request.Position;
+        member.BusinessAddress = request.BusinessAddress;
+        member.YearsOfPractice = request.YearsOfPractice;
+        member.Specialization = request.Specialization;
+        member.Skills = request.Skills;
         if (isDraft)
         {
             // Free entry during the wizard, no reupload gating or staging - matches today.
@@ -424,5 +551,46 @@ public class MemberService(IApplicationDbContext db) : IMemberService
     {
         var count = await db.Members.CountAsync(cancellationToken);
         return (count + 1).ToString("D6");
+    }
+
+    /// <summary>
+    /// Baseline 50% once submitted (Steps 1-3 registration is done) plus up to 50% more split
+    /// evenly across 5 optional completeness signals: Professional Information, Valid Government
+    /// ID, 2x2 Formal Photo, Signature, and at least one Certificate. Deliberately excludes PRC ID
+    /// from this optional split - that one is already required to submit, so it's always true by
+    /// the time this can return a non-zero percent.
+    /// </summary>
+    public async Task<ProfileCompletenessDto?> GetProfileCompletenessAsync(Guid userId, CancellationToken cancellationToken = default)
+    {
+        var member = await db.Members.AsNoTracking().FirstOrDefaultAsync(m => m.UserId == userId, cancellationToken);
+        if (member is null)
+        {
+            return null;
+        }
+
+        var uploadKinds = await db.MemberUploads.AsNoTracking()
+            .Where(u => u.UserId == userId)
+            .Select(u => u.Kind)
+            .ToListAsync(cancellationToken);
+        var hasPrcId = uploadKinds.Contains(UploadKind.PrcId);
+        var hasValidGovernmentId = uploadKinds.Contains(UploadKind.ValidGovernmentId);
+        var hasFormalPhoto = uploadKinds.Contains(UploadKind.FormalPhoto);
+        var hasSignature = uploadKinds.Contains(UploadKind.Signature);
+        var certificateCount = await db.MemberCertificates.AsNoTracking().CountAsync(c => c.UserId == userId, cancellationToken);
+
+        var hasProfessionalInfo = !string.IsNullOrWhiteSpace(member.EmploymentStatus)
+            || !string.IsNullOrWhiteSpace(member.Position)
+            || !string.IsNullOrWhiteSpace(member.BusinessAddress)
+            || member.YearsOfPractice is not null
+            || !string.IsNullOrWhiteSpace(member.Specialization)
+            || !string.IsNullOrWhiteSpace(member.Skills);
+
+        const int baselinePercent = 50;
+        var isSubmitted = member.SubmittedAt is not null;
+        var optionalItemsDone = new[] { hasProfessionalInfo, hasValidGovernmentId, hasFormalPhoto, hasSignature, certificateCount > 0 }.Count(x => x);
+        var percent = isSubmitted ? baselinePercent + (int)Math.Round(optionalItemsDone / 5.0 * (100 - baselinePercent)) : 0;
+
+        return new ProfileCompletenessDto(
+            percent, isSubmitted, hasPrcId, hasValidGovernmentId, hasFormalPhoto, hasSignature, certificateCount, hasProfessionalInfo);
     }
 }

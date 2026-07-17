@@ -13,6 +13,7 @@ public static class DependencyInjection
         services.AddScoped<ILayoutService, LayoutService>();
         services.AddScoped<IMemberService, MemberService>();
         services.AddScoped<IMemberUploadService, MemberUploadService>();
+        services.AddScoped<IMemberCertificateService, MemberCertificateService>();
         return services;
     }
 }
