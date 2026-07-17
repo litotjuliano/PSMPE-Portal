@@ -1,21 +1,21 @@
-name: Deploy (staging)
+name: Deploy (uat)
 
-# Deploys to the Droplet whenever the staging branch is updated. Building happens on the
+# Deploys to the Droplet whenever the uat branch is updated. Building happens on the
 # Droplet itself (docker compose build), so this workflow only needs SSH access.
 
 on:
   push:
-    branches: [staging]
+    branches: [uat]
   workflow_dispatch: {}
 
 concurrency:
-  group: deploy-staging
+  group: deploy-uat
   cancel-in-progress: false
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    environment: staging
+    environment: uat
     steps:
       - name: Deploy over SSH
         uses: appleboy/ssh-action@v1.2.0
@@ -28,8 +28,8 @@ jobs:
           script: |
             set -euo pipefail
             cd "${{ secrets.DEPLOY_PATH }}"
-            git fetch origin staging
-            git checkout staging
-            git reset --hard origin/staging
-            docker compose -p psmpe-staging -f docker-compose.yml -f docker-compose.override.yml up -d --build
+            git fetch origin uat
+            git checkout uat
+            git reset --hard origin/uat
+            docker compose -p psmpe-uat -f docker-compose.yml -f docker-compose.ports.yml up -d --build
             docker image prune -f
