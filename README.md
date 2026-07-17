@@ -3,7 +3,7 @@
 An enterprise Portal/CMS starter: a .NET 8 Clean Architecture backend (ASP.NET Core
 Identity + JWT auth, role- and ownership-based authorization, PostgreSQL/EF Core, an
 OpenAI SDK stub) paired with a React + Vite + TypeScript + Tailwind CSS frontend,
-Dockerized for local dev, and wired for CI/CD to DigitalOcean App Platform.
+Dockerized for local dev and for deployment via Docker Compose over SSH.
 
 This is a **starter**, not a finished product — advanced/optional features are marked
 `// TODO:` in code and called out below rather than implemented speculatively.
@@ -19,8 +19,8 @@ This is a **starter**, not a finished product — advanced/optional features are
   UI, integrated with the licensed Tailwick admin dashboard template
   (`src/integrations/template/`) for layout, dashboard, login, and CMS page styling.
 - **Docs**: `openspecs/` — lightweight per-feature API/contract notes.
-- **Infra**: `docker-compose.yml` for local dev, `infra/digitalocean/` for App Platform
-  deployment, `.github/workflows/` for CI/CD.
+- **Infra**: `docker-compose.yml` for local dev and deployment, `.github/workflows/` for
+  CI (`ci.yml`) and CD (`deploy-uat.yml`, `deploy-production.yml`).
 
 ## Folder structure
 
@@ -39,8 +39,7 @@ PSMPE Portal/
 │       ├── core/                     # Auth, API client, CMS pages (data-fetching)
 │       └── integrations/template/    # Licensed Tailwick template — layout, dashboard, styling
 ├── openspecs/                    # Per-feature API/contract docs
-├── infra/digitalocean/           # App Platform spec + deployment notes
-├── .github/workflows/            # ci.yml, cd.yml
+├── .github/workflows/            # ci.yml (build + test), deploy-uat.yml, deploy-production.yml
 ├── docker-compose.yml
 └── .env.example
 ```
@@ -188,10 +187,19 @@ port more of it later.
 ## Deployment
 
 CI (`.github/workflows/ci.yml`) builds/tests both stacks on every PR and push to
-`main`/`develop`. CD (`.github/workflows/cd.yml`) builds and pushes Docker images to
-DigitalOcean Container Registry and deploys to App Platform on push to `main` — see
-[`infra/digitalocean/README.md`](infra/digitalocean/README.md) for one-time setup
-(registry, app creation, required secrets).
+`main`/`uat`/`develop` — a safety check before merge; it does not deploy.
+
+Deployment runs on a single droplet via Docker Compose over SSH, triggered by GitHub Actions
+on push: [`.github/workflows/deploy-uat.yml`](.github/workflows/deploy-uat.yml) (branch `uat`
+→ uatpsmpe.litxus.com) and
+[`.github/workflows/deploy-production.yml`](.github/workflows/deploy-production.yml) (branch
+`main` → prodpsmpe.litxus.com). Each workflow SSHes into the droplet, pulls the branch, and
+runs `docker compose up -d --build` against [`docker-compose.yml`](docker-compose.yml) — the
+droplet builds the images itself, no container registry or `doctl` involved. `uat` also layers
+`docker-compose.ports.yml` (untracked, droplet-local) for port overrides. Both branches
+auto-deploy on every push — there's no manual gate. Environment configuration (secrets,
+`Frontend__BaseUrl`, etc.) lives in a `.env` file per environment directly on the droplet, not
+in git.
 
 ## Branching
 
