@@ -1,0 +1,82 @@
+# DigitalOcean App Platform spec — UAT (UatPSMPE.litxus.com)
+#
+# Deployed by .github/workflows/cd-uat.yml on every push to the `uat` branch:
+#   doctl apps update <DO_APP_ID_UAT> --spec infra/digitalocean/app.uat.yaml
+#
+# One-time setup (see infra/digitalocean/README.md):
+#   1. Replace <YOUR_DO_REGISTRY> with your DigitalOcean Container Registry name.
+#   2. doctl apps create --spec infra/digitalocean/app.uat.yaml (note the app id
+#      it returns and store it as the DO_APP_ID_UAT GitHub secret).
+#   3. Set the SECRET-type env vars below in the DO dashboard (doctl creates the app
+#      shape, not secret values).
+
+name: psmpe-portal-uat
+region: nyc
+
+domains:
+  - domain: UatPSMPE.litxus.com
+    type: PRIMARY
+
+services:
+  - name: backend
+    image:
+      registry_type: DOCR
+      registry: <YOUR_DO_REGISTRY>
+      repository: psmpe-backend
+      tag: uat
+    deploy_on_push:
+      enabled: true
+    instance_size_slug: basic-xxs
+    instance_count: 1
+    http_port: 8080
+    health_check:
+      http_path: /health
+    routes:
+      - path: /api
+      - path: /swagger
+    envs:
+      - key: ASPNETCORE_ENVIRONMENT
+        value: UAT
+      - key: ASPNETCORE_URLS
+        value: http://+:8080
+      - key: ConnectionStrings__DefaultConnection
+        value: ${db.DATABASE_URL}
+        type: SECRET
+      - key: Jwt__Key
+        type: SECRET
+      - key: Jwt__Issuer
+        value: PSMPE.Portal
+      - key: Jwt__Audience
+        value: PSMPE.Portal.Client
+      - key: Jwt__ExpiryMinutes
+        value: "60"
+      - key: Seed__Enabled
+        value: "true"
+      - key: SEED_ADMIN_EMAIL
+        type: SECRET
+      - key: SEED_ADMIN_PASSWORD
+        type: SECRET
+      - key: OpenAI__ApiKey
+        type: SECRET
+      - key: OpenAI__Model
+        value: gpt-4o-mini
+
+  - name: frontend
+    image:
+      registry_type: DOCR
+      registry: <YOUR_DO_REGISTRY>
+      repository: psmpe-frontend
+      tag: uat
+    deploy_on_push:
+      enabled: true
+    instance_size_slug: basic-xxs
+    instance_count: 1
+    http_port: 80
+    routes:
+      - path: /
+
+databases:
+  - name: db
+    engine: PG
+    version: "16"
+    production: false # dev-tier database is fine for UAT
