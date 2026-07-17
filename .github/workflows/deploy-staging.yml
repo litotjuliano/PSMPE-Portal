@@ -1,0 +1,35 @@
+name: Deploy (staging)
+
+# Deploys to the Droplet whenever the staging branch is updated. Building happens on the
+# Droplet itself (docker compose build), so this workflow only needs SSH access.
+
+on:
+  push:
+    branches: [staging]
+  workflow_dispatch: {}
+
+concurrency:
+  group: deploy-staging
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: staging
+    steps:
+      - name: Deploy over SSH
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          port: ${{ secrets.DEPLOY_PORT || 22 }}
+          script_stop: true
+          script: |
+            set -euo pipefail
+            cd "${{ secrets.DEPLOY_PATH }}"
+            git fetch origin staging
+            git checkout staging
+            git reset --hard origin/staging
+            docker compose -p psmpe-staging -f docker-compose.yml -f docker-compose.override.yml up -d --build
+            docker image prune -f
