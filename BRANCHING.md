@@ -13,7 +13,9 @@ This project uses a simple three-tier branching model.
 1. Branch off `develop`: `git checkout -b feature/short-description develop`
 2. Commit and push your work, open a PR into `develop`.
 3. CI (`.github/workflows/ci.yml`) must pass before merging.
-4. Periodically, `develop` is merged into `main` via a release PR, which triggers CD (`.github/workflows/cd.yml`) to deploy to DigitalOcean App Platform.
+4. Periodically, `develop` is merged into `main` via a release PR. Pushing to `main` triggers
+   `.github/workflows/deploy-production.yml`, which deploys to the production droplet over SSH
+   (`uat` deploys the same way via `deploy-uat.yml`).
 
 ## Hotfixes
 
