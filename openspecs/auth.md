@@ -59,14 +59,13 @@ not skippable. Uses ASP.NET Core Identity's built-in support directly
 `AddDefaultTokenProviders()` already registered) - no custom token logic.
 
 - **`IEmailSender`** (`Application.Common.Interfaces`) abstracts *how* the email actually gets
-  sent. **`ConsoleEmailSender`** (`Infrastructure.Services`) is the only implementation today - it
-  just logs the email via `ILogger`, since no SMTP/SendGrid credentials exist yet. The interface
-  seam is what makes swapping in a real provider later a contained change (same pattern as
-  `IFileStorageService`).
-- Since there's no real email provider, **the verification link is also returned directly in API
-  responses** (`Register`, `resend-verification-email`) whenever `!env.IsProduction()` - covering
-  Development *and* the `Testing` environment `CustomWebApplicationFactory` uses, so the whole flow
-  is exercisable in tests without a real inbox.
+  sent (same pattern as `IFileStorageService`). `DependencyInjection.AddInfrastructure` picks the
+  implementation based on config: **`SmtpEmailSender`** (MailKit) when `Smtp:Host` is set, else
+  **`ConsoleEmailSender`** (just logs via `ILogger`) so local dev works without real credentials.
+- Regardless of which `IEmailSender` is active, **the verification link is also returned directly
+  in API responses** (`Register`, `resend-verification-email`) whenever `!env.IsProduction()` -
+  covering Development *and* the `Testing` environment `CustomWebApplicationFactory` uses, so the
+  whole flow is exercisable in tests without a real inbox.
 - The link points at the **frontend**, not the API (`{Frontend:BaseUrl}/verify-email?userId=...
   &token=...`, URL-encoded) - `Frontend:BaseUrl` is a new config key (`appsettings.json`/`.env`,
   default `http://localhost:5173`), since the API needs to know the frontend's origin to build it.
@@ -89,5 +88,3 @@ None beyond credential validation — all endpoints are anonymous by design.
 - Refresh token rotation (currently a short-lived access token only, see `Jwt:ExpiryMinutes`).
 - Password reset flow (Identity supports this too; not wired up yet - same shape as email
   verification, would reuse `IEmailSender`).
-- `IEmailSender` needs a real implementation (SMTP/SendGrid/etc.) before production - see
-  `ConsoleEmailSender`'s doc comment.
