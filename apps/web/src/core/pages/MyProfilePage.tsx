@@ -38,11 +38,20 @@ function buildEmptyWizardState(displayName: string): MembershipApplicationState 
     suffix: '',
     birthdate: '',
     gender: '',
+    civilStatus: '',
     chapter: '',
     memberType: MemberTypes.Regular,
     prcLicenseNo: '',
+    ptrNumber: '',
+    tin: '',
     address: '',
-    company: '',
+    mobileNumber: '',
+    housePhone: '',
+    website: '',
+    facebookUrl: '',
+    linkedInUrl: '',
+    xUrl: '',
+    instagramUrl: '',
     agreedToTerms: false,
   }
 }
@@ -55,18 +64,45 @@ function toWizardState(member: Member): MembershipApplicationState {
     suffix: member.suffix ?? '',
     birthdate: member.birthdate ?? '',
     gender: member.gender ?? '',
+    civilStatus: member.civilStatus ?? '',
     chapter: member.chapter,
     memberType: member.memberType || MemberTypes.Regular,
     prcLicenseNo: member.prcLicenseNo ?? '',
+    ptrNumber: member.ptrNumber ?? '',
+    tin: member.tin ?? '',
     address: member.address ?? '',
-    company: member.company ?? '',
+    mobileNumber: member.mobileNumber ?? '',
+    housePhone: member.housePhone ?? '',
+    website: member.website ?? '',
+    facebookUrl: member.facebookUrl ?? '',
+    linkedInUrl: member.linkedInUrl ?? '',
+    xUrl: member.xUrl ?? '',
+    instagramUrl: member.instagramUrl ?? '',
     agreedToTerms: false,
   }
 }
 
-/** Personal Info's required fields are all that's needed to move past step 0 on resume. */
+/** Step 0 (Personal Information)'s required fields are all that's needed to move past it on
+ *  resume - kept in sync with the wizard's Step 1 field set. */
 function hasCompletedPersonalInfo(member: Member): boolean {
-  return Boolean(member.firstName && member.lastName && member.chapter && member.memberType)
+  return Boolean(
+    member.firstName && member.lastName && member.chapter && member.memberType && member.birthdate && member.gender && member.civilStatus,
+  )
+}
+
+/** Step 1 (Contact Information)'s required fields - kept in sync with the wizard's Step 2 field
+ *  set. */
+function hasCompletedContactInfo(member: Member): boolean {
+  return Boolean(member.address && member.mobileNumber)
+}
+
+/** How far into the 3-step wizard (0-2) an in-progress draft has already gotten, each step
+ *  building on the previous - same shallow field-based approach hasCompletedPersonalInfo already
+ *  used, not an upload-existence check (consistent with today's precedent). */
+function furthestStepReached(member: Member): number {
+  if (!hasCompletedPersonalInfo(member)) return 0
+  if (!hasCompletedContactInfo(member)) return 1
+  return 2
 }
 
 /**
@@ -109,7 +145,7 @@ export function MyProfilePage() {
       .then((member) => {
         setExisting(member)
         setWizardState(toWizardState(member))
-        const initialStep = hasCompletedPersonalInfo(member) ? 1 : 0
+        const initialStep = furthestStepReached(member)
         setWizardStep(initialStep)
         setMaxStepReached(initialStep)
       })
@@ -124,6 +160,9 @@ export function MyProfilePage() {
     setWizardState((current) => ({ ...current, [field]: value }))
   }
 
+  // Professional Information is entirely post-approval (see MyProfileTabsCard's Professional tab)
+  // and never edited by this wizard - passed through unchanged from whatever's already saved so a
+  // draft save here can never clobber it (see the "existing draft data is preserved" requirement).
   const saveDraft = () =>
     memberApi.updateMyProfile({
       firstName: wizardState.firstName,
@@ -132,10 +171,26 @@ export function MyProfilePage() {
       suffix: wizardState.suffix || null,
       birthdate: wizardState.birthdate || null,
       gender: wizardState.gender || null,
+      civilStatus: wizardState.civilStatus || null,
       address: wizardState.address || null,
+      mobileNumber: wizardState.mobileNumber || null,
+      housePhone: wizardState.housePhone || null,
+      website: wizardState.website || null,
+      facebookUrl: wizardState.facebookUrl || null,
+      linkedInUrl: wizardState.linkedInUrl || null,
+      xUrl: wizardState.xUrl || null,
+      instagramUrl: wizardState.instagramUrl || null,
       prcLicenseNo: wizardState.prcLicenseNo || null,
+      ptrNumber: wizardState.ptrNumber || null,
+      tin: wizardState.tin || null,
       chapter: wizardState.chapter,
-      company: wizardState.company || null,
+      employmentStatus: existing?.employmentStatus ?? null,
+      company: existing?.company ?? null,
+      position: existing?.position ?? null,
+      businessAddress: existing?.businessAddress ?? null,
+      yearsOfPractice: existing?.yearsOfPractice ?? null,
+      specialization: existing?.specialization ?? null,
+      skills: existing?.skills ?? null,
       memberType: wizardState.memberType,
       // The wizard only ever runs pre-submission, where PRC License No. isn't locked yet - no
       // re-upload proof is required at this stage (see MemberService.UpsertMyProfileAsync).
@@ -151,7 +206,8 @@ export function MyProfilePage() {
       // Editing a previously-completed step (jumped to via the stepper) returns to the furthest
       // step already reached, rather than just advancing one step past wherever we started -
       // otherwise fixing step 1 from step 4 would strand the applicant on step 2.
-      const next = wizardStep < maxStepReached ? maxStepReached : Math.min(wizardStep + 1, 3)
+      // Wizard has 3 steps (indices 0-2) - see MembershipApplicationWizardCard's `steps` array.
+      const next = wizardStep < maxStepReached ? maxStepReached : Math.min(wizardStep + 1, 2)
       setWizardStep(next)
       setMaxStepReached((current) => Math.max(current, next))
     } catch (err) {
@@ -227,13 +283,12 @@ export function MyProfilePage() {
             onStepClick={handleStepClick}
             onSubmit={handleWizardSubmit}
             accountEmail={user?.email ?? ''}
-            accountDisplayName={user?.displayName ?? ''}
             error={wizardError}
             submitting={submitting}
             navigating={navigating}
           />
         ) : (
-          <MyProfileTabsCard existing={existing as Member} accountDisplayName={user?.displayName ?? ''} onUpdated={setExisting} />
+          <MyProfileTabsCard existing={existing as Member} onUpdated={setExisting} />
         )}
       </main>
     </>

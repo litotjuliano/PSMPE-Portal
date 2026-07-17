@@ -39,8 +39,16 @@ async function fetchBlobUrl(url: string): Promise<FetchedBlob | null> {
 export const uploadApi = {
   uploadMyPhoto: (file: File) => uploadFile('/api/members/me/photo', file),
   uploadMyPrcId: (file: File) => uploadFile('/api/members/me/prc-id', file),
+  uploadMyValidGovernmentId: (file: File) => uploadFile('/api/members/me/valid-government-id', file),
+  uploadMyFormalPhoto: (file: File) => uploadFile('/api/members/me/formal-photo', file),
+  uploadMySignature: (file: File) => uploadFile('/api/members/me/signature', file),
+  uploadMyCertificate: (file: File) => uploadFile('/api/members/me/certificates', file),
   fetchMyPhotoUrl: () => fetchBlobUrl('/api/members/me/photo'),
   fetchMyPrcIdUrl: () => fetchBlobUrl('/api/members/me/prc-id'),
+  fetchMyValidGovernmentIdUrl: () => fetchBlobUrl('/api/members/me/valid-government-id'),
+  fetchMyFormalPhotoUrl: () => fetchBlobUrl('/api/members/me/formal-photo'),
+  fetchMySignatureUrl: () => fetchBlobUrl('/api/members/me/signature'),
+  fetchMyCertificateUrl: (certificateId: string) => fetchBlobUrl(`/api/members/me/certificates/${certificateId}`),
   /** Admin viewing (members:view permission) - used by the PRC Verifications review queue. */
   fetchMemberPrcIdUrl: (memberId: string) => fetchBlobUrl(`/api/members/${memberId}/prc-id`),
 }

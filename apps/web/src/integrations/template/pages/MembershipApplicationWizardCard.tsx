@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState, type ChangeEvent, type FormEvent } from 'react'
 import { isAxiosError } from 'axios'
 import { LuUpload, LuUserRound } from 'react-icons/lu'
-import { Chapters, MemberTypes } from '../../../core/types/member'
+import { Chapters, CivilStatuses, MemberTypes } from '../../../core/types/member'
 import { uploadApi } from '../../../core/api/endpoints/uploadApi'
+import { PipeStepper } from '../components/shared/PipeStepper'
 
 // Matches the backend's MemberUploadService caps - checked client-side first so an oversized
 // file gets an immediate, friendly message instead of a round trip that risks a raw connection
@@ -10,6 +11,45 @@ import { uploadApi } from '../../../core/api/endpoints/uploadApi'
 // rather than returning a clean 4xx - see MembersController's upload endpoints).
 const MaxImageBytes = 24 * 1024 * 1024
 const MaxPdfBytes = 2 * 1024 * 1024
+
+// Mirrors MemberService's server-side checks - purely for fast client-side feedback, the server
+// is still the source of truth (MemberService.UpsertMyProfileAsync/SubmitMyProfileAsync).
+const PH_MOBILE_PATTERN = /^(\+63|0)9\d{9}$/
+
+function isValidPhMobile(value: string): boolean {
+  return PH_MOBILE_PATTERN.test(value)
+}
+
+/** Lenient - PH landline formats vary by area code length, so this only checks that what's left
+ *  after stripping punctuation is a plausible 7-11 digit phone number (matches MemberService's
+ *  IsValidHousePhone). */
+function isValidHousePhone(value: string): boolean {
+  if (!/^[\d\s\-()]+$/.test(value)) return false
+  const digits = value.replace(/\D/g, '')
+  return digits.length >= 7 && digits.length <= 11
+}
+
+function isValidUrl(value: string): boolean {
+  try {
+    const url = new URL(value)
+    return url.protocol === 'http:' || url.protocol === 'https:'
+  } catch {
+    return false
+  }
+}
+
+function isAtLeast18(birthdate: string): boolean {
+  const dob = new Date(birthdate)
+  const eighteenYearsAgo = new Date()
+  eighteenYearsAgo.setFullYear(eighteenYearsAgo.getFullYear() - 18)
+  return dob <= eighteenYearsAgo
+}
+
+const maxBirthdate = (() => {
+  const d = new Date()
+  d.setFullYear(d.getFullYear() - 18)
+  return d.toISOString().slice(0, 10)
+})()
 
 function describeUploadError(err: unknown, fallback: string): string {
   if (isAxiosError(err)) {
@@ -29,11 +69,20 @@ export interface MembershipApplicationState {
   suffix: string
   birthdate: string
   gender: string
+  civilStatus: string
   chapter: string
   memberType: string
   prcLicenseNo: string
+  ptrNumber: string
+  tin: string
   address: string
-  company: string
+  mobileNumber: string
+  housePhone: string
+  website: string
+  facebookUrl: string
+  linkedInUrl: string
+  xUrl: string
+  instagramUrl: string
   agreedToTerms: boolean
 }
 
@@ -49,7 +98,6 @@ interface MembershipApplicationWizardCardProps {
   onStepClick: (step: number) => void
   onSubmit: (event: FormEvent) => void
   accountEmail: string
-  accountDisplayName: string
   error: string | null
   submitting: boolean
   /** True while a stepper-click or Back save is in flight - disables navigation to prevent
@@ -57,53 +105,7 @@ interface MembershipApplicationWizardCardProps {
   navigating: boolean
 }
 
-const steps = ['Personal Information', 'Contact Information', 'Account Information', 'Additional Information']
-
-function StepIndicator({
-  step,
-  maxStepReached,
-  onStepClick,
-  navigating,
-}: {
-  step: number
-  maxStepReached: number
-  onStepClick: (step: number) => void
-  navigating: boolean
-}) {
-  return (
-    <div className="flex items-center gap-2 mb-6">
-      {steps.map((label, i) => {
-        const isCurrent = i === step
-        const isCompleted = i <= maxStepReached && !isCurrent
-        const isFuture = i > maxStepReached
-        return (
-          <div key={label} className="flex items-center gap-2 flex-1">
-            <button
-              type="button"
-              onClick={() => onStepClick(i)}
-              disabled={isCurrent || isFuture || navigating}
-              aria-current={isCurrent ? 'step' : undefined}
-              aria-label={`Step ${i + 1}: ${label}${isCompleted ? ' (completed - click to edit)' : isFuture ? ' (not yet reached)' : ''}`}
-              className={`shrink-0 size-10 rounded-full flex items-center justify-center text-sm font-semibold transition ${
-                isCurrent
-                  ? 'bg-primary text-white cursor-default'
-                  : isCompleted
-                    ? 'bg-success text-white hover:bg-success/80 cursor-pointer disabled:cursor-not-allowed disabled:opacity-60'
-                    : 'bg-default-150 text-default-400 cursor-not-allowed'
-              }`}
-            >
-              {i + 1}
-            </button>
-            <span className={`text-xs whitespace-nowrap ${isCurrent ? 'text-default-900 font-medium' : isFuture ? 'text-default-400' : 'text-default-500'}`}>
-              {label}
-            </span>
-            {i < steps.length - 1 && <div className="h-px bg-default-200 flex-1" />}
-          </div>
-        )
-      })}
-    </div>
-  )
-}
+const steps = ['Personal Information', 'Contact Information', 'PRC Information']
 
 export const MembershipApplicationWizardCard = ({
   step,
@@ -115,7 +117,6 @@ export const MembershipApplicationWizardCard = ({
   onStepClick,
   onSubmit,
   accountEmail,
-  accountDisplayName,
   error,
   submitting,
   navigating,
@@ -127,6 +128,7 @@ export const MembershipApplicationWizardCard = ({
   const [uploadError, setUploadError] = useState<string | null>(null)
   const [photoPreviewUrl, setPhotoPreviewUrl] = useState<string | null>(null)
   const [hasPrcId, setHasPrcId] = useState(false)
+  const [clientError, setClientError] = useState<string | null>(null)
 
   // Restore previews for an in-progress draft (files already uploaded in an earlier session) -
   // fetched via apiClient (carries the auth header), not a plain <img src>/URL string, since
@@ -202,19 +204,68 @@ export const MembershipApplicationWizardCard = ({
     }
   }
 
+  /** Fast client-side feedback for fields the member has actually filled in - the server
+   *  independently re-validates everything, this only saves a round trip on an obvious mistake.
+   *  Scoped to exactly the fields owned by the current step, per-step. */
+  const validateStep = (): string | null => {
+    if (step === 0) {
+      if (state.birthdate && !isAtLeast18(state.birthdate)) {
+        return 'You must be at least 18 years old.'
+      }
+      return null
+    }
+    if (step === 1) {
+      if (state.housePhone && !isValidHousePhone(state.housePhone)) {
+        return 'House phone must be a valid landline number.'
+      }
+      if (state.mobileNumber && !isValidPhMobile(state.mobileNumber)) {
+        return 'Mobile number must be in the format +639XXXXXXXXX or 09XXXXXXXXX.'
+      }
+      if (state.website && !isValidUrl(state.website)) {
+        return 'Website must be a valid URL, e.g. https://example.com.'
+      }
+      if (state.facebookUrl && !isValidUrl(state.facebookUrl)) {
+        return 'Facebook must be a valid profile URL.'
+      }
+      if (state.linkedInUrl && !isValidUrl(state.linkedInUrl)) {
+        return 'LinkedIn must be a valid profile URL.'
+      }
+      if (state.xUrl && !isValidUrl(state.xUrl)) {
+        return 'X (Twitter) must be a valid profile URL.'
+      }
+      if (state.instagramUrl && !isValidUrl(state.instagramUrl)) {
+        return 'Instagram must be a valid profile URL.'
+      }
+      return null
+    }
+    if (state.tin && !/^[\d-]{9,12}$/.test(state.tin)) {
+      return 'TIN must be 9-12 digits, with dashes allowed as separators.'
+    }
+    if (step === steps.length - 1 && !hasPrcId) {
+      return 'Please upload your PRC ID.'
+    }
+    return null
+  }
+
   return (
     <div className="card max-w-3xl">
       <div className="card-header">
         <h6 className="card-title">Complete Your Membership Application</h6>
       </div>
       <div className="card-body">
-        <StepIndicator step={step} maxStepReached={maxStepReached} onStepClick={onStepClick} navigating={navigating} />
+        <PipeStepper steps={steps} step={step} maxStepReached={maxStepReached} onStepClick={onStepClick} navigating={navigating} />
 
-        {error && <p className="text-sm text-danger mb-4">{error}</p>}
+        {(clientError || error) && <p className="text-sm text-danger mb-4">{clientError || error}</p>}
 
         <form
           onSubmit={(e) => {
             e.preventDefault()
+            const validationError = validateStep()
+            if (validationError) {
+              setClientError(validationError)
+              return
+            }
+            setClientError(null)
             if (step < steps.length - 1) {
               onNext()
             } else {
@@ -246,6 +297,10 @@ export const MembershipApplicationWizardCard = ({
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 flex-1">
                 {uploadError && <p className="md:col-span-2 text-sm text-danger">{uploadError}</p>}
+                <div className="md:col-span-2">
+                  <span className="block font-medium text-default-900 text-sm mb-2">Email</span>
+                  <span className="text-sm font-semibold text-default-800">{accountEmail}</span>
+                </div>
                 <div>
                   <label className="block font-medium text-default-900 text-sm mb-2">Member Type</label>
                   <select className="form-input" required value={state.memberType} onChange={(e) => onChange('memberType', e.target.value)}>
@@ -286,7 +341,13 @@ export const MembershipApplicationWizardCard = ({
                 </div>
                 <div>
                   <label className="block font-medium text-default-900 text-sm mb-2">Date of Birth</label>
-                  <input type="date" className="form-input" value={state.birthdate} onChange={(e) => onChange('birthdate', e.target.value)} />
+                  <input
+                    type="date"
+                    className="form-input"
+                    max={maxBirthdate}
+                    value={state.birthdate}
+                    onChange={(e) => onChange('birthdate', e.target.value)}
+                  />
                 </div>
                 <div>
                   <label className="block font-medium text-default-900 text-sm mb-2">Gender</label>
@@ -314,9 +375,106 @@ export const MembershipApplicationWizardCard = ({
                   </div>
                 </div>
                 <div>
+                  <label className="block font-medium text-default-900 text-sm mb-2">Civil Status</label>
+                  <select className="form-input" value={state.civilStatus} onChange={(e) => onChange('civilStatus', e.target.value)}>
+                    <option value="">Select civil status…</option>
+                    {Object.values(CivilStatuses).map((c) => (
+                      <option key={c} value={c}>
+                        {c}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {step === 1 && (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block font-medium text-default-900 text-sm mb-2">House Phone (optional)</label>
+                <input
+                  className="form-input"
+                  placeholder="e.g. (02) 8123 4567"
+                  value={state.housePhone}
+                  onChange={(e) => onChange('housePhone', e.target.value)}
+                />
+              </div>
+              <div>
+                <label className="block font-medium text-default-900 text-sm mb-2">Mobile Number</label>
+                <input
+                  className="form-input"
+                  required
+                  placeholder="09XXXXXXXXX"
+                  value={state.mobileNumber}
+                  onChange={(e) => onChange('mobileNumber', e.target.value)}
+                />
+              </div>
+              <div className="md:col-span-2">
+                <span className="block font-medium text-default-900 text-sm mb-2">Email Address</span>
+                <span className="text-sm font-semibold text-default-800">{accountEmail}</span>
+              </div>
+              <div className="md:col-span-2">
+                <label className="block font-medium text-default-900 text-sm mb-2">Website (optional)</label>
+                <input
+                  className="form-input"
+                  placeholder="https://example.com"
+                  value={state.website}
+                  onChange={(e) => onChange('website', e.target.value)}
+                />
+              </div>
+              <div>
+                <label className="block font-medium text-default-900 text-sm mb-2">Facebook (optional)</label>
+                <input
+                  className="form-input"
+                  placeholder="https://facebook.com/yourprofile"
+                  value={state.facebookUrl}
+                  onChange={(e) => onChange('facebookUrl', e.target.value)}
+                />
+              </div>
+              <div>
+                <label className="block font-medium text-default-900 text-sm mb-2">LinkedIn (optional)</label>
+                <input
+                  className="form-input"
+                  placeholder="https://linkedin.com/in/yourprofile"
+                  value={state.linkedInUrl}
+                  onChange={(e) => onChange('linkedInUrl', e.target.value)}
+                />
+              </div>
+              <div>
+                <label className="block font-medium text-default-900 text-sm mb-2">X (optional)</label>
+                <input
+                  className="form-input"
+                  placeholder="https://x.com/yourprofile"
+                  value={state.xUrl}
+                  onChange={(e) => onChange('xUrl', e.target.value)}
+                />
+              </div>
+              <div>
+                <label className="block font-medium text-default-900 text-sm mb-2">Instagram (optional)</label>
+                <input
+                  className="form-input"
+                  placeholder="https://instagram.com/yourprofile"
+                  value={state.instagramUrl}
+                  onChange={(e) => onChange('instagramUrl', e.target.value)}
+                />
+              </div>
+              <div className="md:col-span-2">
+                <label className="block font-medium text-default-900 text-sm mb-2">Home Address</label>
+                <input className="form-input" required value={state.address} onChange={(e) => onChange('address', e.target.value)} />
+              </div>
+            </div>
+          )}
+
+          {step === 2 && (
+            <div className="flex flex-col gap-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {uploadError && <p className="md:col-span-2 text-sm text-danger">{uploadError}</p>}
+                <div>
                   <label className="block font-medium text-default-900 text-sm mb-2">PRC License No.</label>
                   <input
                     className="form-input"
+                    required
                     value={state.prcLicenseNo}
                     onChange={(e) => onChange('prcLicenseNo', e.target.value)}
                   />
@@ -345,59 +503,61 @@ export const MembershipApplicationWizardCard = ({
                     </span>
                   </div>
                 </div>
+                <div>
+                  <label className="block font-medium text-default-900 text-sm mb-2">PTR Number</label>
+                  <input className="form-input" required value={state.ptrNumber} onChange={(e) => onChange('ptrNumber', e.target.value)} />
+                </div>
+                <div>
+                  <label className="block font-medium text-default-900 text-sm mb-2">TIN (optional)</label>
+                  <input
+                    className="form-input"
+                    placeholder="000-000-000-000"
+                    value={state.tin}
+                    onChange={(e) => onChange('tin', e.target.value)}
+                  />
+                </div>
               </div>
-            </div>
-          )}
 
-          {step === 1 && (
-            <div className="grid grid-cols-1 gap-4">
-              <div>
-                <label className="block font-medium text-default-900 text-sm mb-2">Address</label>
-                <input className="form-input" value={state.address} onChange={(e) => onChange('address', e.target.value)} />
+              <div className="border-t border-default-200 pt-4">
+                <h6 className="font-semibold text-default-800 mb-3">Review your application</h6>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-2 text-sm">
+                  <div>
+                    <span className="text-default-500">Name</span>{' '}
+                    <span className="font-semibold text-default-800">
+                      {state.firstName} {state.middleName} {state.lastName} {state.suffix}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-default-500">Member Type</span>{' '}
+                    <span className="font-semibold text-default-800">{state.memberType}</span>
+                  </div>
+                  <div>
+                    <span className="text-default-500">Chapter</span>{' '}
+                    <span className="font-semibold text-default-800">{state.chapter}</span>
+                  </div>
+                  <div>
+                    <span className="text-default-500">Birthdate</span>{' '}
+                    <span className="font-semibold text-default-800">{state.birthdate || '-'}</span>
+                  </div>
+                  <div>
+                    <span className="text-default-500">Mobile Number</span>{' '}
+                    <span className="font-semibold text-default-800">{state.mobileNumber || '-'}</span>
+                  </div>
+                  <div className="md:col-span-2">
+                    <span className="text-default-500">Address</span>{' '}
+                    <span className="font-semibold text-default-800">{state.address || '-'}</span>
+                  </div>
+                  <div>
+                    <span className="text-default-500">PRC License No.</span>{' '}
+                    <span className="font-semibold text-default-800">{state.prcLicenseNo || '-'}</span>
+                  </div>
+                  <div>
+                    <span className="text-default-500">PTR Number</span>{' '}
+                    <span className="font-semibold text-default-800">{state.ptrNumber || '-'}</span>
+                  </div>
+                </div>
               </div>
-            </div>
-          )}
 
-          {step === 2 && (
-            <div className="grid grid-cols-1 gap-4 text-sm">
-              <p className="text-default-500">Your account was already created at sign-up - nothing to change here.</p>
-              <div>
-                <span className="text-default-500">Email</span>{' '}
-                <span className="font-semibold text-default-800">{accountEmail}</span>
-              </div>
-              <div>
-                <span className="text-default-500">Display Name</span>{' '}
-                <span className="font-semibold text-default-800">{accountDisplayName}</span>
-              </div>
-            </div>
-          )}
-
-          {step === 3 && (
-            <div className="flex flex-col gap-4">
-              <div>
-                <label className="block font-medium text-default-900 text-sm mb-2">Company</label>
-                <input className="form-input" value={state.company} onChange={(e) => onChange('company', e.target.value)} />
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-2 text-sm">
-                <div>
-                  <span className="text-default-500">Name</span>{' '}
-                  <span className="font-semibold text-default-800">
-                    {state.firstName} {state.middleName} {state.lastName} {state.suffix}
-                  </span>
-                </div>
-                <div>
-                  <span className="text-default-500">Member Type</span>{' '}
-                  <span className="font-semibold text-default-800">{state.memberType}</span>
-                </div>
-                <div>
-                  <span className="text-default-500">Chapter</span>{' '}
-                  <span className="font-semibold text-default-800">{state.chapter}</span>
-                </div>
-                <div>
-                  <span className="text-default-500">Address</span>{' '}
-                  <span className="font-semibold text-default-800">{state.address || '-'}</span>
-                </div>
-              </div>
               <label className="flex items-center gap-2 text-sm">
                 <input
                   type="checkbox"

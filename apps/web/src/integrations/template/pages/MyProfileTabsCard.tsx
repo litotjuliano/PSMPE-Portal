@@ -2,24 +2,26 @@ import { useState } from 'react'
 import type { Member } from '../../../core/types/member'
 import { PersonalInformationSection } from './profile-sections/PersonalInformationSection'
 import { ContactInformationSection } from './profile-sections/ContactInformationSection'
-import { AccountInformationSection } from './profile-sections/AccountInformationSection'
-import { AdditionalInformationSection } from './profile-sections/AdditionalInformationSection'
+import { PrcInformationSection } from './profile-sections/PrcInformationSection'
+import { ProfessionalInformationSection } from './profile-sections/ProfessionalInformationSection'
+import { DocumentsSection } from './profile-sections/DocumentsSection'
 
 interface MyProfileTabsCardProps {
   existing: Member
-  accountDisplayName: string
   onUpdated: (member: Member) => void
 }
 
 const statusLabels: Record<number, string> = { 0: 'Pending', 1: 'Active', 2: 'Expired', 3: 'Deactivated' }
-const tabs = ['Personal Information', 'Contact Information', 'Account Information', 'Additional Information']
+const tabs = ['Personal Information', 'Contact Information', 'PRC Information', 'Professional Information', 'Documents']
 
 /**
  * Replaces the old always-editable MyProfileCard once an application is submitted (same boundary
  * MyProfilePage already used) - each tab below owns its own View/Edit state and Save action
- * independently, per the post-approval profile-continuity change.
+ * independently, per the post-approval profile-continuity change. Professional Information and
+ * Documents are entirely post-approval - empty until the member fills them in here, never part of
+ * registration (see the registration wizard restructure).
  */
-export const MyProfileTabsCard = ({ existing, accountDisplayName, onUpdated }: MyProfileTabsCardProps) => {
+export const MyProfileTabsCard = ({ existing, onUpdated }: MyProfileTabsCardProps) => {
   const [activeTab, setActiveTab] = useState(0)
 
   return (
@@ -71,8 +73,9 @@ export const MyProfileTabsCard = ({ existing, accountDisplayName, onUpdated }: M
 
           {activeTab === 0 && <PersonalInformationSection member={existing} onUpdated={onUpdated} />}
           {activeTab === 1 && <ContactInformationSection member={existing} onUpdated={onUpdated} />}
-          {activeTab === 2 && <AccountInformationSection member={existing} accountDisplayName={accountDisplayName} />}
-          {activeTab === 3 && <AdditionalInformationSection member={existing} onUpdated={onUpdated} />}
+          {activeTab === 2 && <PrcInformationSection member={existing} onUpdated={onUpdated} />}
+          {activeTab === 3 && <ProfessionalInformationSection member={existing} onUpdated={onUpdated} />}
+          {activeTab === 4 && <DocumentsSection />}
         </div>
       </div>
     </div>

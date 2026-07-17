@@ -20,7 +20,8 @@ namespace PSMPE.Portal.WebAPI.Controllers;
 [Authorize]
 [Route("api/members")]
 public class MembersController(
-    IMemberService memberService, IMemberUploadService memberUploadService, UserManager<ApplicationUser> userManager) : ControllerBase
+    IMemberService memberService, IMemberUploadService memberUploadService,
+    IMemberCertificateService memberCertificateService, UserManager<ApplicationUser> userManager) : ControllerBase
 {
     [HttpGet]
     [RequirePermission(Permissions.Members.View)]
@@ -204,11 +205,32 @@ public class MembersController(
     public Task<IActionResult> UploadMyPrcId(IFormFile file, CancellationToken cancellationToken) =>
         UploadMyFileAsync(UploadKind.PrcId, file, cancellationToken);
 
+    [HttpPost("me/valid-government-id")]
+    public Task<IActionResult> UploadMyValidGovernmentId(IFormFile file, CancellationToken cancellationToken) =>
+        UploadMyFileAsync(UploadKind.ValidGovernmentId, file, cancellationToken);
+
+    [HttpPost("me/formal-photo")]
+    public Task<IActionResult> UploadMyFormalPhoto(IFormFile file, CancellationToken cancellationToken) =>
+        UploadMyFileAsync(UploadKind.FormalPhoto, file, cancellationToken);
+
+    [HttpPost("me/signature")]
+    public Task<IActionResult> UploadMySignature(IFormFile file, CancellationToken cancellationToken) =>
+        UploadMyFileAsync(UploadKind.Signature, file, cancellationToken);
+
     [HttpGet("me/photo")]
     public Task<IActionResult> GetMyPhoto(CancellationToken cancellationToken) => GetMyFileAsync(UploadKind.Photo, cancellationToken);
 
     [HttpGet("me/prc-id")]
     public Task<IActionResult> GetMyPrcId(CancellationToken cancellationToken) => GetMyFileAsync(UploadKind.PrcId, cancellationToken);
+
+    [HttpGet("me/valid-government-id")]
+    public Task<IActionResult> GetMyValidGovernmentId(CancellationToken cancellationToken) => GetMyFileAsync(UploadKind.ValidGovernmentId, cancellationToken);
+
+    [HttpGet("me/formal-photo")]
+    public Task<IActionResult> GetMyFormalPhoto(CancellationToken cancellationToken) => GetMyFileAsync(UploadKind.FormalPhoto, cancellationToken);
+
+    [HttpGet("me/signature")]
+    public Task<IActionResult> GetMySignature(CancellationToken cancellationToken) => GetMyFileAsync(UploadKind.Signature, cancellationToken);
 
     [HttpGet("{id:guid}/photo")]
     [RequirePermission(Permissions.Members.View)]
@@ -217,6 +239,113 @@ public class MembersController(
     [HttpGet("{id:guid}/prc-id")]
     [RequirePermission(Permissions.Members.View)]
     public Task<IActionResult> GetMemberPrcId(Guid id, CancellationToken cancellationToken) => GetMemberFileAsync(id, UploadKind.PrcId, cancellationToken);
+
+    [HttpGet("{id:guid}/valid-government-id")]
+    [RequirePermission(Permissions.Members.View)]
+    public Task<IActionResult> GetMemberValidGovernmentId(Guid id, CancellationToken cancellationToken) =>
+        GetMemberFileAsync(id, UploadKind.ValidGovernmentId, cancellationToken);
+
+    [HttpGet("{id:guid}/formal-photo")]
+    [RequirePermission(Permissions.Members.View)]
+    public Task<IActionResult> GetMemberFormalPhoto(Guid id, CancellationToken cancellationToken) =>
+        GetMemberFileAsync(id, UploadKind.FormalPhoto, cancellationToken);
+
+    [HttpGet("{id:guid}/signature")]
+    [RequirePermission(Permissions.Members.View)]
+    public Task<IActionResult> GetMemberSignature(Guid id, CancellationToken cancellationToken) =>
+        GetMemberFileAsync(id, UploadKind.Signature, cancellationToken);
+
+    [HttpPost("me/certificates")]
+    public async Task<IActionResult> UploadMyCertificate(IFormFile file, CancellationToken cancellationToken)
+    {
+        var userId = CurrentUserId;
+        if (userId is null)
+        {
+            return Unauthorized();
+        }
+
+        await using var stream = file.OpenReadStream();
+        var result = await memberCertificateService.UploadAsync(userId.Value, stream, file.FileName, file.Length, cancellationToken);
+        return ToActionResult(result);
+    }
+
+    [HttpGet("me/certificates")]
+    public async Task<ActionResult<IReadOnlyList<MemberCertificateDto>>> GetMyCertificates(CancellationToken cancellationToken)
+    {
+        var userId = CurrentUserId;
+        if (userId is null)
+        {
+            return Unauthorized();
+        }
+
+        return Ok(await memberCertificateService.ListAsync(userId.Value, cancellationToken));
+    }
+
+    [HttpGet("me/certificates/{certificateId:guid}")]
+    public async Task<IActionResult> GetMyCertificate(Guid certificateId, CancellationToken cancellationToken)
+    {
+        var userId = CurrentUserId;
+        if (userId is null)
+        {
+            return Unauthorized();
+        }
+
+        var file = await memberCertificateService.GetAsync(userId.Value, certificateId, cancellationToken);
+        return file is null ? NotFound() : File(file.Value.Content, file.Value.ContentType, file.Value.FileName);
+    }
+
+    [HttpDelete("me/certificates/{certificateId:guid}")]
+    public async Task<IActionResult> DeleteMyCertificate(Guid certificateId, CancellationToken cancellationToken)
+    {
+        var userId = CurrentUserId;
+        if (userId is null)
+        {
+            return Unauthorized();
+        }
+
+        var result = await memberCertificateService.DeleteAsync(userId.Value, certificateId, cancellationToken);
+        return ToActionResult(result);
+    }
+
+    [HttpGet("{id:guid}/certificates")]
+    [RequirePermission(Permissions.Members.View)]
+    public async Task<ActionResult<IReadOnlyList<MemberCertificateDto>>> GetMemberCertificates(Guid id, CancellationToken cancellationToken)
+    {
+        var member = await memberService.GetByIdAsync(id, cancellationToken);
+        if (member is null || await IsSystemAccountAsync(member.UserId))
+        {
+            return NotFound();
+        }
+
+        return Ok(await memberCertificateService.ListAsync(member.UserId, cancellationToken));
+    }
+
+    [HttpGet("me/completeness")]
+    public async Task<ActionResult<ProfileCompletenessDto>> GetMyProfileCompleteness(CancellationToken cancellationToken)
+    {
+        var userId = CurrentUserId;
+        if (userId is null)
+        {
+            return Unauthorized();
+        }
+
+        var completeness = await memberService.GetProfileCompletenessAsync(userId.Value, cancellationToken);
+        return completeness is null ? NotFound() : Ok(completeness);
+    }
+
+    [HttpGet("{id:guid}/completeness")]
+    [RequirePermission(Permissions.Members.View)]
+    public async Task<ActionResult<ProfileCompletenessDto>> GetMemberProfileCompleteness(Guid id, CancellationToken cancellationToken)
+    {
+        var member = await memberService.GetByIdAsync(id, cancellationToken);
+        if (member is null || await IsSystemAccountAsync(member.UserId))
+        {
+            return NotFound();
+        }
+
+        var completeness = await memberService.GetProfileCompletenessAsync(member.UserId, cancellationToken);
+        return completeness is null ? NotFound() : Ok(completeness);
+    }
 
     private async Task<IActionResult> UploadMyFileAsync(UploadKind kind, IFormFile file, CancellationToken cancellationToken)
     {

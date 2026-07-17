@@ -21,4 +21,5 @@ public interface IMemberService
     Task<Result> DeleteAsync(Guid id, CancellationToken cancellationToken = default);
     Task<Result> ApprovePrcVerificationAsync(Guid memberId, Guid decidedByUserId, CancellationToken cancellationToken = default);
     Task<Result> RejectPrcVerificationAsync(Guid memberId, string reason, Guid decidedByUserId, CancellationToken cancellationToken = default);
+    Task<ProfileCompletenessDto?> GetProfileCompletenessAsync(Guid userId, CancellationToken cancellationToken = default);
 }

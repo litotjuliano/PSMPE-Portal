@@ -14,6 +14,7 @@ public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options
     public DbSet<SystemConfig> SystemConfigs => Set<SystemConfig>();
     public DbSet<Member> Members => Set<Member>();
     public DbSet<MemberUpload> MemberUploads => Set<MemberUpload>();
+    public DbSet<MemberCertificate> MemberCertificates => Set<MemberCertificate>();
     public DbSet<PrcVerificationHistory> PrcVerificationHistories => Set<PrcVerificationHistory>();
 
     protected override void OnModelCreating(ModelBuilder builder)

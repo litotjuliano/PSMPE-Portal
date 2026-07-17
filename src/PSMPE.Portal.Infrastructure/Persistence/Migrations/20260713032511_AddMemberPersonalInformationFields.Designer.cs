@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using PSMPE.Portal.Infrastructure.Persistence;
@@ -11,9 +12,11 @@ using PSMPE.Portal.Infrastructure.Persistence;
 namespace PSMPE.Portal.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    partial class ApplicationDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260713032511_AddMemberPersonalInformationFields")]
+    partial class AddMemberPersonalInformationFields
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -315,10 +318,6 @@ namespace PSMPE.Portal.Infrastructure.Persistence.Migrations
                     b.Property<DateOnly?>("Birthdate")
                         .HasColumnType("date");
 
-                    b.Property<string>("BusinessAddress")
-                        .HasMaxLength(512)
-                        .HasColumnType("character varying(512)");
-
                     b.Property<string>("Chapter")
                         .IsRequired()
                         .HasMaxLength(64)
@@ -335,14 +334,6 @@ namespace PSMPE.Portal.Infrastructure.Persistence.Migrations
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
-                    b.Property<string>("EmploymentStatus")
-                        .HasMaxLength(32)
-                        .HasColumnType("character varying(32)");
-
-                    b.Property<string>("FacebookUrl")
-                        .HasMaxLength(256)
-                        .HasColumnType("character varying(256)");
-
                     b.Property<string>("FirstName")
                         .IsRequired()
                         .HasMaxLength(128)
@@ -351,22 +342,10 @@ namespace PSMPE.Portal.Infrastructure.Persistence.Migrations
                     b.Property<string>("Gender")
                         .HasColumnType("text");
 
-                    b.Property<string>("HousePhone")
-                        .HasMaxLength(32)
-                        .HasColumnType("character varying(32)");
-
-                    b.Property<string>("InstagramUrl")
-                        .HasMaxLength(256)
-                        .HasColumnType("character varying(256)");
-
                     b.Property<string>("LastName")
                         .IsRequired()
                         .HasMaxLength(128)
                         .HasColumnType("character varying(128)");
-
-                    b.Property<string>("LinkedInUrl")
-                        .HasMaxLength(256)
-                        .HasColumnType("character varying(256)");
 
                     b.Property<string>("MemberType")
                         .IsRequired()
@@ -394,10 +373,6 @@ namespace PSMPE.Portal.Infrastructure.Persistence.Migrations
                         .HasMaxLength(64)
                         .HasColumnType("character varying(64)");
 
-                    b.Property<string>("Position")
-                        .HasMaxLength(128)
-                        .HasColumnType("character varying(128)");
-
                     b.Property<bool>("PrcIdVerified")
                         .HasColumnType("boolean");
 
@@ -415,14 +390,6 @@ namespace PSMPE.Portal.Infrastructure.Persistence.Migrations
 
                     b.Property<DateOnly?>("RenewalDueDate")
                         .HasColumnType("date");
-
-                    b.Property<string>("Skills")
-                        .HasMaxLength(512)
-                        .HasColumnType("character varying(512)");
-
-                    b.Property<string>("Specialization")
-                        .HasMaxLength(256)
-                        .HasColumnType("character varying(256)");
 
                     b.Property<int>("Status")
                         .HasColumnType("integer");
@@ -444,17 +411,6 @@ namespace PSMPE.Portal.Infrastructure.Persistence.Migrations
                     b.Property<Guid>("UserId")
                         .HasColumnType("uuid");
 
-                    b.Property<string>("Website")
-                        .HasMaxLength(256)
-                        .HasColumnType("character varying(256)");
-
-                    b.Property<string>("XUrl")
-                        .HasMaxLength(256)
-                        .HasColumnType("character varying(256)");
-
-                    b.Property<int?>("YearsOfPractice")
-                        .HasColumnType("integer");
-
                     b.HasKey("Id");
 
                     b.HasIndex("MembershipNo")
@@ -464,46 +420,6 @@ namespace PSMPE.Portal.Infrastructure.Persistence.Migrations
                         .IsUnique();
 
                     b.ToTable("Members");
-                });
-
-            modelBuilder.Entity("PSMPE.Portal.Domain.Entities.MemberCertificate", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("ContentType")
-                        .IsRequired()
-                        .HasMaxLength(128)
-                        .HasColumnType("character varying(128)");
-
-                    b.Property<DateTimeOffset>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("FileName")
-                        .IsRequired()
-                        .HasMaxLength(256)
-                        .HasColumnType("character varying(256)");
-
-                    b.Property<long>("FileSizeBytes")
-                        .HasColumnType("bigint");
-
-                    b.Property<string>("StorageKey")
-                        .IsRequired()
-                        .HasMaxLength(512)
-                        .HasColumnType("character varying(512)");
-
-                    b.Property<DateTimeOffset?>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid>("UserId")
-                        .HasColumnType("uuid");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("UserId");
-
-                    b.ToTable("MemberCertificates");
                 });
 
             modelBuilder.Entity("PSMPE.Portal.Domain.Entities.MemberUpload", b =>

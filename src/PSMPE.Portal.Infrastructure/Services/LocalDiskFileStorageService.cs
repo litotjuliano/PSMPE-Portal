@@ -45,5 +45,16 @@ public class LocalDiskFileStorageService(IWebHostEnvironment env) : IFileStorage
         return Task.FromResult<Stream?>(File.OpenRead(filePath));
     }
 
+    public Task DeleteAsync(string key, CancellationToken cancellationToken = default)
+    {
+        var filePath = ResolvePath(key);
+        if (File.Exists(filePath))
+        {
+            File.Delete(filePath);
+        }
+
+        return Task.CompletedTask;
+    }
+
     private string ResolvePath(string key) => Path.Combine(UploadsDirectory, key);
 }

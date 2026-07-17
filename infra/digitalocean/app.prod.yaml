@@ -1,0 +1,85 @@
+# DigitalOcean App Platform spec — PRODUCTION (ProdPSMPE.litxus.com)
+#
+# App Platform builds the images itself, straight from this GitHub repo — no container
+# registry, no doctl, no GitHub Actions deploy step.
+#
+# deploy_on_push is FALSE here on purpose: production does NOT auto-deploy. After you've
+# verified a change on staging and merged it to `main`, deploy prod with one click in the
+# DO dashboard (app → "Deploy" / "Create Deployment"). That click is your production gate.
+#
+# One-time setup (see infra/digitalocean/README.md): create the app from this spec,
+# authorize DigitalOcean's access to the GitHub repo, then set the SECRET-type env vars.
+
+name: psmpe-portal-prod
+region: nyc
+
+domains:
+  - domain: ProdPSMPE.litxus.com
+    type: PRIMARY
+
+services:
+  - name: backend
+    github:
+      repo: litotjuliano/PSMPE-Portal
+      branch: main
+      deploy_on_push: false # manual deploy = production gate
+    source_dir: src
+    dockerfile_path: src/PSMPE.Portal.WebAPI/Dockerfile
+    instance_size_slug: basic-xxs
+    instance_count: 1
+    http_port: 8080
+    health_check:
+      http_path: /health
+    routes:
+      - path: /api
+      - path: /swagger
+    envs:
+      - key: ASPNETCORE_ENVIRONMENT
+        value: Production
+      - key: ASPNETCORE_URLS
+        value: http://+:8080
+      - key: ConnectionStrings__DefaultConnection
+        value: ${db.DATABASE_URL}
+        type: SECRET
+      - key: Jwt__Key
+        type: SECRET
+      - key: Jwt__Issuer
+        value: PSMPE.Portal
+      - key: Jwt__Audience
+        value: PSMPE.Portal.Client
+      - key: Jwt__ExpiryMinutes
+        value: "60"
+      - key: Seed__Enabled
+        value: "true"
+      - key: SEED_ADMIN_EMAIL
+        type: SECRET
+      - key: SEED_ADMIN_PASSWORD
+        type: SECRET
+      - key: OpenAI__ApiKey
+        type: SECRET
+      - key: OpenAI__Model
+        value: gpt-4o-mini
+
+  - name: frontend
+    github:
+      repo: litotjuliano/PSMPE-Portal
+      branch: main
+      deploy_on_push: false # manual deploy = production gate
+    source_dir: apps/web
+    dockerfile_path: apps/web/Dockerfile
+    instance_size_slug: basic-xxs
+    instance_count: 1
+    http_port: 80
+    routes:
+      - path: /
+    envs:
+      - key: VITE_API_BASE_URL
+        value: https://ProdPSMPE.litxus.com
+        scope: BUILD_TIME
+
+databases:
+  - name: db
+    engine: PG
+    version: "16"
+    # TODO: pick an appropriately sized paid plan for real traffic.
+    production: true

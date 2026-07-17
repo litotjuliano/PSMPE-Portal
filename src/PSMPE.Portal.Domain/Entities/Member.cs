@@ -20,10 +20,22 @@ public class Member : BaseEntity
 
     public DateOnly? Birthdate { get; set; }
     public string? Gender { get; set; }
+    public string? CivilStatus { get; set; }
     public string? Address { get; set; }
+    public string? MobileNumber { get; set; }
+
+    // Contact Information (wizard Step 2) - all optional.
+    public string? HousePhone { get; set; }
+    public string? Website { get; set; }
+    public string? FacebookUrl { get; set; }
+    public string? LinkedInUrl { get; set; }
+    public string? XUrl { get; set; }
+    public string? InstagramUrl { get; set; }
 
     public string MembershipNo { get; set; } = string.Empty;
     public string? PrcLicenseNo { get; set; }
+    public string? PtrNumber { get; set; }
+    public string? Tin { get; set; }
 
     /// <summary>
     /// Whether an admin has reviewed and approved the member's current PrcLicenseNo/PRC ID
@@ -49,8 +61,19 @@ public class Member : BaseEntity
     public string? PrcVerificationRejectedReason { get; set; }
 
     public string Chapter { get; set; } = string.Empty;
-    public string? Company { get; set; }
     public string MemberType { get; set; } = string.Empty;
+
+    // Professional Information - post-approval, entirely optional (see My Profile's Professional
+    // Information tab). EmploymentStatus gates which of Company/Position/BusinessAddress are
+    // meaningful (Employed -> Company+Position; Self-Employed/Business Owner -> BusinessAddress),
+    // enforced client-side only - the server never requires any of these.
+    public string? EmploymentStatus { get; set; }
+    public string? Company { get; set; }
+    public string? Position { get; set; }
+    public string? BusinessAddress { get; set; }
+    public int? YearsOfPractice { get; set; }
+    public string? Specialization { get; set; }
+    public string? Skills { get; set; }
 
     public MembershipStatus Status { get; set; } = MembershipStatus.Pending;
     public DateOnly? RenewalDueDate { get; set; }

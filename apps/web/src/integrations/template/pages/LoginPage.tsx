@@ -5,6 +5,7 @@ import logoDark from '../assets/images/logo-dark.png'
 import logoLight from '../assets/images/logo-light.png'
 import IconifyIcon from '../components/shared/IconifyIcon'
 import PageMeta from '../components/shared/PageMeta'
+import { BlueprintBg } from '../components/shared/BlueprintBg'
 import { useAuth } from '../../../core/auth/useAuth'
 import { authApi } from '../../../core/api/endpoints/authApi'
 
@@ -195,16 +196,7 @@ export const LoginPage = () => {
           </div>
         )}
 
-        <div className="absolute inset-0 overflow-hidden">
-          <svg aria-hidden="true" className="absolute inset-0 size-full fill-black/2 stroke-black/5 dark:fill-white/2.5 dark:stroke-white/2.5">
-            <defs>
-              <pattern id="authPattern" width="56" height="56" patternUnits="userSpaceOnUse" x="50%" y="16">
-                <path d="M.5 56V.5H72" fill="none"></path>
-              </pattern>
-            </defs>
-            <rect width="100%" height="100%" strokeWidth="0" fill="url(#authPattern)"></rect>
-          </svg>
-        </div>
+        <BlueprintBg />
       </div>
     </>
   )

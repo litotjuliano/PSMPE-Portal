@@ -40,7 +40,7 @@ PSMPE Portal/
 │       └── integrations/template/    # Licensed Tailwick template — layout, dashboard, styling
 ├── openspecs/                    # Per-feature API/contract docs
 ├── infra/digitalocean/           # App Platform spec + deployment notes
-├── .github/workflows/            # ci.yml, cd.yml
+├── .github/workflows/            # ci.yml (build + test)
 ├── docker-compose.yml
 └── .env.example
 ```
@@ -188,10 +188,14 @@ port more of it later.
 ## Deployment
 
 CI (`.github/workflows/ci.yml`) builds/tests both stacks on every PR and push to
-`main`/`develop`. CD (`.github/workflows/cd.yml`) builds and pushes Docker images to
-DigitalOcean Container Registry and deploys to App Platform on push to `main` — see
+`main`/`staging`/`develop` — a safety check before merge; it does not deploy.
+
+Deployment is handled by DigitalOcean App Platform, which builds the images directly from
+this repo (no container registry, no `doctl`). Two apps: pushing to `staging` auto-deploys
+to StagingPSMPE.litxus.com; `main` deploys to ProdPSMPE.litxus.com **manually** (one click
+in the DO dashboard) so production ships deliberately. See
 [`infra/digitalocean/README.md`](infra/digitalocean/README.md) for one-time setup
-(registry, app creation, required secrets).
+(app creation from GitHub, env vars, DNS).
 
 ## Branching
 
