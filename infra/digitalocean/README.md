@@ -9,7 +9,7 @@ Two independent environments, each its own App Platform app, database, and domai
 
 | Git branch | App spec | Deploys | URL |
 | ---------- | ---------------- | ------------------------- | ----------------------- |
-| `staging`  | `app.staging.yaml` | automatically on every push | StagingPSMPE.litxus.com |
+| `staging`  | `app.staging.yaml` | automatically on every push | uatpsmpe.litxus.com |
 | `main`     | `app.prod.yaml`    | **manually** (one click in DO) | ProdPSMPE.litxus.com  |
 
 Production is set to **not** auto-deploy (`deploy_on_push: false`), so shipping to prod is a
@@ -31,7 +31,7 @@ Do this once for staging, once for prod:
    hold their values): `Jwt__Key`, `SEED_ADMIN_EMAIL`, `SEED_ADMIN_PASSWORD`,
    `OpenAI__ApiKey`. (`ConnectionStrings__DefaultConnection` is injected automatically from
    the managed DB via `${db.DATABASE_URL}`.)
-5. **DNS:** add the domain (StagingPSMPE / ProdPSMPE .litxus.com) under the app's Settings,
+5. **DNS:** add the domain (uatpsmpe / ProdPSMPE .litxus.com) under the app's Settings,
    then create the CNAME record DO shows you. Managed TLS is issued automatically once it
    resolves.
 

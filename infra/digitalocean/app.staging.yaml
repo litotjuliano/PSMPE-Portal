@@ -1,4 +1,4 @@
-# DigitalOcean App Platform spec — STAGING (StagingPSMPE.litxus.com)
+# DigitalOcean App Platform spec — STAGING/UAT (uatpsmpe.litxus.com)
 #
 # App Platform builds the images itself, straight from this GitHub repo — no container
 # registry, no doctl, no GitHub Actions deploy step. Because deploy_on_push is true,
@@ -13,7 +13,7 @@ name: psmpe-portal-staging
 region: nyc
 
 domains:
-  - domain: StagingPSMPE.litxus.com
+  - domain: uatpsmpe.litxus.com
     type: PRIMARY
 
 services:
@@ -48,6 +48,8 @@ services:
         value: PSMPE.Portal.Client
       - key: Jwt__ExpiryMinutes
         value: "60"
+      - key: Frontend__BaseUrl
+        value: https://uatpsmpe.litxus.com
       - key: Seed__Enabled
         value: "true"
       - key: SEED_ADMIN_EMAIL
@@ -75,7 +77,7 @@ services:
       # Baked into the built JS. The frontend and backend share this domain and the API
       # client already prefixes requests with /api, so point at the app's own origin.
       - key: VITE_API_BASE_URL
-        value: https://StagingPSMPE.litxus.com
+        value: https://uatpsmpe.litxus.com
         scope: BUILD_TIME
 
 databases:

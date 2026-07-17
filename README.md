@@ -192,7 +192,7 @@ CI (`.github/workflows/ci.yml`) builds/tests both stacks on every PR and push to
 
 Deployment is handled by DigitalOcean App Platform, which builds the images directly from
 this repo (no container registry, no `doctl`). Two apps: pushing to `staging` auto-deploys
-to StagingPSMPE.litxus.com; `main` deploys to ProdPSMPE.litxus.com **manually** (one click
+to uatpsmpe.litxus.com; `main` deploys to ProdPSMPE.litxus.com **manually** (one click
 in the DO dashboard) so production ships deliberately. See
 [`infra/digitalocean/README.md`](infra/digitalocean/README.md) for one-time setup
 (app creation from GitHub, env vars, DNS).

@@ -49,6 +49,8 @@ services:
         value: PSMPE.Portal.Client
       - key: Jwt__ExpiryMinutes
         value: "60"
+      - key: Frontend__BaseUrl
+        value: https://ProdPSMPE.litxus.com
       - key: Seed__Enabled
         value: "true"
       - key: SEED_ADMIN_EMAIL
