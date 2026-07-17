@@ -38,6 +38,7 @@ services:
       Jwt__Issuer: ${Jwt__Issuer:-PSMPE.Portal}
       Jwt__Audience: ${Jwt__Audience:-PSMPE.Portal.Client}
       Jwt__ExpiryMinutes: ${Jwt__ExpiryMinutes:-60}
+      Frontend__BaseUrl: ${Frontend__BaseUrl:-http://localhost:5173}
       Seed__Enabled: ${Seed__Enabled:-true}
       SEED_ADMIN_EMAIL: ${SEED_ADMIN_EMAIL}
       SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD}
