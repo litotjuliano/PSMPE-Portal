@@ -10,6 +10,27 @@ import IconifyIcon from '../../integrations/template/components/shared/IconifyIc
 
 type UsernameAvailability = 'idle' | 'checking' | 'available' | 'taken'
 
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+
+// Mirrors the backend's Identity password policy (see DependencyInjection.AddInfrastructure):
+// RequiredLength = 8, RequireNonAlphanumeric = false; RequireDigit/Uppercase/Lowercase are
+// Identity's unmodified defaults (true).
+function passwordErrors(password: string): string[] {
+  const errors: string[] = []
+  if (password.length < 8) errors.push('Password must be at least 8 characters.')
+  if (!/[0-9]/.test(password)) errors.push('Password must contain at least one digit.')
+  if (!/[A-Z]/.test(password)) errors.push('Password must contain at least one uppercase letter.')
+  if (!/[a-z]/.test(password)) errors.push('Password must contain at least one lowercase letter.')
+  return errors
+}
+
+interface FieldErrors {
+  displayName?: string
+  email?: string
+  password?: string
+  confirmPassword?: string
+}
+
 export function RegisterPage() {
   const { register } = useAuth()
   const navigate = useNavigate()
@@ -19,6 +40,8 @@ export function RegisterPage() {
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
+  const [fieldErrors, setFieldErrors] = useState<FieldErrors>({})
+  const [serverErrors, setServerErrors] = useState<string[]>([])
   const [error, setError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const [usernameAvailability, setUsernameAvailability] = useState<UsernameAvailability>('idle')
@@ -49,9 +72,17 @@ export function RegisterPage() {
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault()
     setError(null)
+    setServerErrors([])
 
-    if (password !== confirmPassword) {
-      setError('Passwords do not match.')
+    const nextFieldErrors: FieldErrors = {}
+    if (!displayName.trim()) nextFieldErrors.displayName = 'Full name is required.'
+    if (!EMAIL_PATTERN.test(email)) nextFieldErrors.email = 'Enter a valid email address.'
+    const passwordIssues = passwordErrors(password)
+    if (passwordIssues.length > 0) nextFieldErrors.password = passwordIssues.join(' ')
+    if (password !== confirmPassword) nextFieldErrors.confirmPassword = 'Passwords do not match.'
+
+    setFieldErrors(nextFieldErrors)
+    if (Object.keys(nextFieldErrors).length > 0) {
       return
     }
 
@@ -62,6 +93,9 @@ export function RegisterPage() {
     } catch (err) {
       if (isAxiosError(err) && err.response?.status === 409) {
         setError(err.response.data?.message ?? 'An account with this email or username already exists.')
+      } else if (isAxiosError(err) && err.response?.status === 400 && err.response.data?.errors) {
+        const messages = Object.values(err.response.data.errors as Record<string, string[]>).flat()
+        setServerErrors(messages.length > 0 ? messages : ['Please check the highlighted fields and try again.'])
       } else {
         setError('Something went wrong creating your account. Please try again.')
       }
@@ -97,6 +131,7 @@ export function RegisterPage() {
                   value={displayName}
                   onChange={(e) => setDisplayName(e.target.value)}
                 />
+                {fieldErrors.displayName && <p className="text-xs text-danger mt-1">{fieldErrors.displayName}</p>}
               </div>
 
               <div className="mb-4">
@@ -108,6 +143,7 @@ export function RegisterPage() {
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                 />
+                {fieldErrors.email && <p className="text-xs text-danger mt-1">{fieldErrors.email}</p>}
               </div>
 
               <div className="mb-4">
@@ -127,6 +163,10 @@ export function RegisterPage() {
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                 />
+                <p className="text-xs text-default-500 mt-1">
+                  At least 8 characters, with an uppercase letter, a lowercase letter, and a digit.
+                </p>
+                {fieldErrors.password && <p className="text-xs text-danger mt-1">{fieldErrors.password}</p>}
               </div>
 
               <div className="mb-4">
@@ -138,9 +178,17 @@ export function RegisterPage() {
                   value={confirmPassword}
                   onChange={(e) => setConfirmPassword(e.target.value)}
                 />
+                {fieldErrors.confirmPassword && <p className="text-xs text-danger mt-1">{fieldErrors.confirmPassword}</p>}
               </div>
 
               {error && <p className="text-sm text-danger mb-4">{error}</p>}
+              {serverErrors.length > 0 && (
+                <ul className="text-sm text-danger mb-4 list-disc pl-5">
+                  {serverErrors.map((message) => (
+                    <li key={message}>{message}</li>
+                  ))}
+                </ul>
+              )}
 
               <p className="italic text-sm font-medium text-default-500">
                 By registering you agree to the PSMPE Portal <Link to="#" className="underline">Terms of Use</Link>
