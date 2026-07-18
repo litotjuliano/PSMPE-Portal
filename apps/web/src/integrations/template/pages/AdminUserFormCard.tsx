@@ -1,5 +1,6 @@
 import type { FormEvent } from 'react'
 import { AssignableRoles, type Role } from '../../../core/types/auth'
+import type { AdminUserFormFieldErrors } from '../../../core/pages/AdminUserFormPage'
 
 interface AdminUserFormCardProps {
   isNew: boolean
@@ -8,6 +9,10 @@ interface AdminUserFormCardProps {
   password: string
   newPassword: string
   role: Role
+  fieldErrors?: AdminUserFormFieldErrors
+  serverErrors?: string[]
+  error?: string | null
+  submitting?: boolean
   onDisplayNameChange: (value: string) => void
   onEmailChange: (value: string) => void
   onPasswordChange: (value: string) => void
@@ -23,6 +28,10 @@ export const AdminUserFormCard = ({
   password,
   newPassword,
   role,
+  fieldErrors = {},
+  serverErrors = [],
+  error = null,
+  submitting = false,
   onDisplayNameChange,
   onEmailChange,
   onPasswordChange,
@@ -48,6 +57,7 @@ export const AdminUserFormCard = ({
             value={displayName}
             onChange={(e) => onDisplayNameChange(e.target.value)}
           />
+          {fieldErrors.displayName && <p className="text-xs text-danger mt-1">{fieldErrors.displayName}</p>}
         </div>
 
         <div>
@@ -62,6 +72,7 @@ export const AdminUserFormCard = ({
             value={email}
             onChange={(e) => onEmailChange(e.target.value)}
           />
+          {fieldErrors.email && <p className="text-xs text-danger mt-1">{fieldErrors.email}</p>}
         </div>
 
         {isNew ? (
@@ -79,6 +90,10 @@ export const AdminUserFormCard = ({
                 value={password}
                 onChange={(e) => onPasswordChange(e.target.value)}
               />
+              <p className="text-xs text-default-500 mt-1">
+                At least 8 characters, with an uppercase letter, a lowercase letter, and a digit.
+              </p>
+              {fieldErrors.password && <p className="text-xs text-danger mt-1">{fieldErrors.password}</p>}
             </div>
 
             <div>
@@ -108,11 +123,24 @@ export const AdminUserFormCard = ({
               value={newPassword}
               onChange={(e) => onNewPasswordChange(e.target.value)}
             />
+            <p className="text-xs text-default-500 mt-1">
+              At least 8 characters, with an uppercase letter, a lowercase letter, and a digit.
+            </p>
+            {fieldErrors.password && <p className="text-xs text-danger mt-1">{fieldErrors.password}</p>}
           </div>
         )}
 
-        <button type="submit" className="btn bg-primary text-white">
-          Save
+        {error && <p className="text-sm text-danger">{error}</p>}
+        {serverErrors.length > 0 && (
+          <ul className="text-sm text-danger list-disc pl-5">
+            {serverErrors.map((message) => (
+              <li key={message}>{message}</li>
+            ))}
+          </ul>
+        )}
+
+        <button type="submit" className="btn bg-primary text-white" disabled={submitting}>
+          {submitting ? 'Saving…' : 'Save'}
         </button>
       </form>
     </div>
