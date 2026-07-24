@@ -1,19 +1,7 @@
-import { isAxiosError } from 'axios'
 import type { Member } from '../../../../core/types/member'
 import type { UpdateMyProfileRequest } from '../../../../core/api/endpoints/memberApi'
 
-/** Same shape as MyProfilePage's/the wizard's own copy - this codebase duplicates this small
- *  helper per feature rather than sharing a single generic error module. */
-export function describeError(err: unknown, fallback: string): string {
-  if (isAxiosError(err)) {
-    if (err.response) {
-      const message = (err.response.data as { message?: string } | undefined)?.message
-      return message ?? `Server error (${err.response.status}). Please try again.`
-    }
-    return 'Could not reach the server. Please check your connection and try again.'
-  }
-  return fallback
-}
+export { describeError } from '../../../../core/utils/apiError'
 
 /**
  * Builds a full UpdateMyProfileRequest from the member's current saved values, so each profile

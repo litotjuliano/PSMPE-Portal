@@ -138,8 +138,19 @@ public class MemberService(IApplicationDbContext db) : IMemberService
     public Task<bool> MembershipNoExistsAsync(string membershipNo, CancellationToken cancellationToken = default) =>
         db.Members.AsNoTracking().AnyAsync(m => m.MembershipNo == membershipNo, cancellationToken);
 
-    public async Task<MemberDto> CreateAsync(CreateMemberRequest request, CancellationToken cancellationToken = default)
+    public async Task<Result<MemberDto>> CreateAsync(CreateMemberRequest request, CancellationToken cancellationToken = default)
     {
+        var lengthError = ValidateMemberFieldLengths(
+            request.FirstName, request.MiddleName, request.LastName, request.Suffix,
+            request.CivilStatus, request.Address, request.Chapter, request.MemberType,
+            request.PrcLicenseNo, request.PtrNumber, request.Company, request.Position,
+            request.BusinessAddress, request.Specialization, request.Skills, request.EmploymentStatus,
+            request.Website, request.FacebookUrl, request.LinkedInUrl, request.XUrl, request.InstagramUrl);
+        if (lengthError is not null)
+        {
+            return Result<MemberDto>.Failure(lengthError);
+        }
+
         var member = new Member
         {
             UserId = request.UserId,
@@ -182,11 +193,23 @@ public class MemberService(IApplicationDbContext db) : IMemberService
 
         db.Members.Add(member);
         await db.SaveChangesAsync(cancellationToken);
-        return await GetByIdAsync(member.Id, cancellationToken) ?? throw new InvalidOperationException("Member was not persisted.");
+        var dto = await GetByIdAsync(member.Id, cancellationToken) ?? throw new InvalidOperationException("Member was not persisted.");
+        return Result<MemberDto>.Success(dto);
     }
 
     public async Task<Result> UpdateAsync(Guid id, UpdateMemberRequest request, CancellationToken cancellationToken = default)
     {
+        var lengthError = ValidateMemberFieldLengths(
+            request.FirstName, request.MiddleName, request.LastName, request.Suffix,
+            request.CivilStatus, request.Address, request.Chapter, request.MemberType,
+            request.PrcLicenseNo, request.PtrNumber, request.Company, request.Position,
+            request.BusinessAddress, request.Specialization, request.Skills, request.EmploymentStatus,
+            request.Website, request.FacebookUrl, request.LinkedInUrl, request.XUrl, request.InstagramUrl);
+        if (lengthError is not null)
+        {
+            return Result.Failure(lengthError);
+        }
+
         var member = await db.Members.FirstOrDefaultAsync(m => m.Id == id, cancellationToken);
         if (member is null)
         {
@@ -300,6 +323,11 @@ public class MemberService(IApplicationDbContext db) : IMemberService
     /// </summary>
     public async Task<Result> RejectPrcVerificationAsync(Guid memberId, string reason, Guid decidedByUserId, CancellationToken cancellationToken = default)
     {
+        if (string.IsNullOrWhiteSpace(reason))
+        {
+            return Result.Failure("A reason is required to reject a PRC License No. change.");
+        }
+
         var member = await db.Members.FirstOrDefaultAsync(m => m.Id == memberId, cancellationToken);
         if (member is null)
         {
@@ -400,6 +428,51 @@ public class MemberService(IApplicationDbContext db) : IMemberService
     private static bool IsValidUrl(string value) =>
         Uri.TryCreate(value, UriKind.Absolute, out var uri) && (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps);
 
+    /// <summary>
+    /// Mirrors the HasMaxLength constraints already declared in MemberConfiguration.cs - without
+    /// this, an over-length value falls through to an uncaught DbUpdateException at
+    /// SaveChangesAsync (a generic 500) instead of a clean validation failure. Shared by every
+    /// write path (self-service and admin) since they all persist the same Member entity.
+    /// </summary>
+    private static string? ValidateMemberFieldLengths(
+        string firstName, string? middleName, string lastName, string? suffix,
+        string? civilStatus, string? address, string chapter, string memberType,
+        string? prcLicenseNo, string? ptrNumber, string? company, string? position,
+        string? businessAddress, string? specialization, string? skills, string? employmentStatus,
+        string? website, string? facebookUrl, string? linkedInUrl, string? xUrl, string? instagramUrl)
+    {
+        // Requiredness itself is intentionally NOT checked here - the wizard's per-step autosave
+        // (UpsertMyProfileAsync) must tolerate empty values for an in-progress draft; actual
+        // required-to-submit enforcement lives in SubmitMyProfileAsync. This only guards length.
+        if (firstName.Length > 128) return "First name must be 128 characters or fewer.";
+        if (lastName.Length > 128) return "Last name must be 128 characters or fewer.";
+        if (middleName?.Length > 128) return "Middle name must be 128 characters or fewer.";
+        if (suffix?.Length > 32) return "Suffix must be 32 characters or fewer.";
+        if (civilStatus?.Length > 32) return "Civil status must be 32 characters or fewer.";
+        if (address?.Length > 512) return "Address must be 512 characters or fewer.";
+        if (chapter.Length > 64) return "Chapter must be 64 characters or fewer.";
+        if (memberType.Length > 64) return "Member type must be 64 characters or fewer.";
+        if (prcLicenseNo?.Length > 64) return "PRC License No. must be 64 characters or fewer.";
+        if (ptrNumber?.Length > 64) return "PTR number must be 64 characters or fewer.";
+        if (company?.Length > 256) return "Company must be 256 characters or fewer.";
+        if (position?.Length > 128) return "Position must be 128 characters or fewer.";
+        if (businessAddress?.Length > 512) return "Business address must be 512 characters or fewer.";
+        if (specialization?.Length > 256) return "Specialization must be 256 characters or fewer.";
+        if (skills?.Length > 512) return "Skills must be 512 characters or fewer.";
+        if (employmentStatus?.Length > 32) return "Employment status must be 32 characters or fewer.";
+
+        foreach (var (value, label) in new (string? Value, string Label)[]
+        {
+            (website, "Website"), (facebookUrl, "Facebook URL"), (linkedInUrl, "LinkedIn URL"),
+            (xUrl, "X URL"), (instagramUrl, "Instagram URL"),
+        })
+        {
+            if (value?.Length > 256) return $"{label} must be 256 characters or fewer.";
+        }
+
+        return null;
+    }
+
     public async Task<Result<MemberDto>> UpsertMyProfileAsync(Guid userId, UpdateMyProfileRequest request, CancellationToken cancellationToken = default)
     {
         if (!string.IsNullOrWhiteSpace(request.MobileNumber) && !PhMobileNumberPattern.IsMatch(request.MobileNumber))
@@ -433,6 +506,17 @@ public class MemberService(IApplicationDbContext db) : IMemberService
         if (request.YearsOfPractice is < 0)
         {
             return Result<MemberDto>.Failure("Years of practice cannot be negative.");
+        }
+
+        var lengthError = ValidateMemberFieldLengths(
+            request.FirstName, request.MiddleName, request.LastName, request.Suffix,
+            request.CivilStatus, request.Address, request.Chapter, request.MemberType,
+            request.PrcLicenseNo, request.PtrNumber, request.Company, request.Position,
+            request.BusinessAddress, request.Specialization, request.Skills, request.EmploymentStatus,
+            request.Website, request.FacebookUrl, request.LinkedInUrl, request.XUrl, request.InstagramUrl);
+        if (lengthError is not null)
+        {
+            return Result<MemberDto>.Failure(lengthError);
         }
 
         var member = await db.Members.FirstOrDefaultAsync(m => m.UserId == userId, cancellationToken);
@@ -535,6 +619,14 @@ public class MemberService(IApplicationDbContext db) : IMemberService
         if (member is null)
         {
             return Result.NotFound($"Member '{id}' was not found.");
+        }
+
+        // PrcVerificationHistory.MemberId is a Restrict FK - deleting a member with any PRC
+        // verification history would otherwise throw a raw DbUpdateException; checked here so it
+        // surfaces as a clean, expected failure instead.
+        if (await db.PrcVerificationHistories.AnyAsync(h => h.MemberId == id, cancellationToken))
+        {
+            return Result.Failure("Cannot delete a member with PRC verification history.");
         }
 
         db.Members.Remove(member);

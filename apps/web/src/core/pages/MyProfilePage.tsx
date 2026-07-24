@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react'
-import { isAxiosError } from 'axios'
 import { memberApi } from '../api/endpoints/memberApi'
 import { useAuth } from '../auth/useAuth'
 import { MemberTypes } from '../types/member'
 import type { Member } from '../types/member'
+import { describeError } from '../utils/apiError'
 import {
   MembershipApplicationWizardCard,
   type MembershipApplicationState,
@@ -44,6 +44,7 @@ function buildEmptyWizardState(displayName: string): MembershipApplicationState 
     prcLicenseNo: '',
     ptrNumber: '',
     tin: '',
+    company: '',
     address: '',
     mobileNumber: '',
     housePhone: '',
@@ -70,6 +71,7 @@ function toWizardState(member: Member): MembershipApplicationState {
     prcLicenseNo: member.prcLicenseNo ?? '',
     ptrNumber: member.ptrNumber ?? '',
     tin: member.tin ?? '',
+    company: member.company ?? '',
     address: member.address ?? '',
     mobileNumber: member.mobileNumber ?? '',
     housePhone: member.housePhone ?? '',
@@ -83,10 +85,18 @@ function toWizardState(member: Member): MembershipApplicationState {
 }
 
 /** Step 0 (Personal Information)'s required fields are all that's needed to move past it on
- *  resume - kept in sync with the wizard's Step 1 field set. */
+ *  resume - kept in sync with the wizard's Step 1 field set (now including PRC License No.,
+ *  which moved into this step). */
 function hasCompletedPersonalInfo(member: Member): boolean {
   return Boolean(
-    member.firstName && member.lastName && member.chapter && member.memberType && member.birthdate && member.gender && member.civilStatus,
+    member.firstName &&
+      member.lastName &&
+      member.chapter &&
+      member.memberType &&
+      member.birthdate &&
+      member.gender &&
+      member.civilStatus &&
+      member.prcLicenseNo,
   )
 }
 
@@ -96,29 +106,21 @@ function hasCompletedContactInfo(member: Member): boolean {
   return Boolean(member.address && member.mobileNumber)
 }
 
-/** How far into the 3-step wizard (0-2) an in-progress draft has already gotten, each step
+/** Step 3 (Additional Information)'s required field - kept in sync with the wizard's Step 4
+ *  field set. Step 2 (Account Information) has no required fields of its own, so it's never a
+ *  distinct gate: once Contact Information is complete, Account Information is too. */
+function hasCompletedAdditionalInfo(member: Member): boolean {
+  return Boolean(member.ptrNumber)
+}
+
+/** How far into the 4-step wizard (0-3) an in-progress draft has already gotten, each step
  *  building on the previous - same shallow field-based approach hasCompletedPersonalInfo already
  *  used, not an upload-existence check (consistent with today's precedent). */
 function furthestStepReached(member: Member): number {
   if (!hasCompletedPersonalInfo(member)) return 0
   if (!hasCompletedContactInfo(member)) return 1
-  return 2
-}
-
-/**
- * Surfaces the actual cause instead of a generic "something went wrong" - distinguishes a real
- * field-validation message from the server, an unrelated server error, and the backend being
- * unreachable entirely (e.g. Postgres/API not running), same as LoginPage's error handling.
- */
-function describeError(err: unknown, fallback: string): string {
-  if (isAxiosError(err)) {
-    if (err.response) {
-      const message = (err.response.data as { message?: string } | undefined)?.message
-      return message ?? `Server error (${err.response.status}). Please try again.`
-    }
-    return 'Could not reach the server. Please check your connection and try again.'
-  }
-  return fallback
+  if (!hasCompletedAdditionalInfo(member)) return 3
+  return 3
 }
 
 export function MyProfilePage() {
@@ -160,9 +162,11 @@ export function MyProfilePage() {
     setWizardState((current) => ({ ...current, [field]: value }))
   }
 
-  // Professional Information is entirely post-approval (see MyProfileTabsCard's Professional tab)
+  // Employment Status/Position/Business Address/Years of Practice/Specialization/Skills are
+  // entirely post-approval (see Additional Information's Professional half, MyProfileTabsCard)
   // and never edited by this wizard - passed through unchanged from whatever's already saved so a
-  // draft save here can never clobber it (see the "existing draft data is preserved" requirement).
+  // draft save here can never clobber them (see the "existing draft data is preserved"
+  // requirement). Company is the exception - it's wizard-native, same as PrcLicenseNo/PtrNumber/Tin.
   const saveDraft = () =>
     memberApi.updateMyProfile({
       firstName: wizardState.firstName,
@@ -183,9 +187,9 @@ export function MyProfilePage() {
       prcLicenseNo: wizardState.prcLicenseNo || null,
       ptrNumber: wizardState.ptrNumber || null,
       tin: wizardState.tin || null,
+      company: wizardState.company || null,
       chapter: wizardState.chapter,
       employmentStatus: existing?.employmentStatus ?? null,
-      company: existing?.company ?? null,
       position: existing?.position ?? null,
       businessAddress: existing?.businessAddress ?? null,
       yearsOfPractice: existing?.yearsOfPractice ?? null,
@@ -206,8 +210,8 @@ export function MyProfilePage() {
       // Editing a previously-completed step (jumped to via the stepper) returns to the furthest
       // step already reached, rather than just advancing one step past wherever we started -
       // otherwise fixing step 1 from step 4 would strand the applicant on step 2.
-      // Wizard has 3 steps (indices 0-2) - see MembershipApplicationWizardCard's `steps` array.
-      const next = wizardStep < maxStepReached ? maxStepReached : Math.min(wizardStep + 1, 2)
+      // Wizard has 4 steps (indices 0-3) - see MembershipApplicationWizardCard's `steps` array.
+      const next = wizardStep < maxStepReached ? maxStepReached : Math.min(wizardStep + 1, 3)
       setWizardStep(next)
       setMaxStepReached((current) => Math.max(current, next))
     } catch (err) {

@@ -1,14 +1,13 @@
 import { useEffect, useRef, useState, type ChangeEvent } from 'react'
-import { LuSquarePen, LuUserRound } from 'react-icons/lu'
+import { LuEye, LuSquarePen, LuTriangleAlert, LuUpload, LuUserRound } from 'react-icons/lu'
 import type { Member } from '../../../../core/types/member'
 import { CivilStatuses } from '../../../../core/types/member'
 import { memberApi } from '../../../../core/api/endpoints/memberApi'
 import { uploadApi } from '../../../../core/api/endpoints/uploadApi'
+import { MAX_IMAGE_BYTES, MAX_PDF_BYTES } from '../../../../core/constants/uploadLimits'
 import { StandardButton } from '../../components/shared/StandardButton'
+import { FilePreviewModal } from '../../components/shared/FilePreviewModal'
 import { buildFullProfileRequest, describeError } from './shared'
-
-// Matches the backend's MemberUploadService caps - see MembershipApplicationWizardCard.tsx.
-const MaxImageBytes = 24 * 1024 * 1024
 
 interface PersonalInformationSectionProps {
   member: Member
@@ -23,6 +22,9 @@ interface FormState {
   birthdate: string
   gender: string
   civilStatus: string
+  prcLicenseNo: string
+  ptrNumber: string
+  tin: string
 }
 
 function toFormState(member: Member): FormState {
@@ -34,7 +36,19 @@ function toFormState(member: Member): FormState {
     birthdate: member.birthdate ?? '',
     gender: member.gender ?? '',
     civilStatus: member.civilStatus ?? '',
+    prcLicenseNo: member.prcLicenseNo ?? '',
+    ptrNumber: member.ptrNumber ?? '',
+    tin: member.tin ?? '',
   }
+}
+
+/** Fields required to submit a new application - existing members are only ever nudged to
+ *  complete these, never blocked from saving unrelated changes (see MemberService.SubmitMyProfileAsync). */
+function missingRequiredFields(member: Member): string[] {
+  const missing: string[] = []
+  if (!member.prcLicenseNo) missing.push('PRC License No.')
+  if (!member.ptrNumber) missing.push('PTR Number')
+  return missing
 }
 
 export const PersonalInformationSection = ({ member, onUpdated }: PersonalInformationSectionProps) => {
@@ -47,10 +61,24 @@ export const PersonalInformationSection = ({ member, onUpdated }: PersonalInform
   const [uploadingPhoto, setUploadingPhoto] = useState(false)
   const [photoPreviewUrl, setPhotoPreviewUrl] = useState<string | null>(null)
 
+  const prcIdInputRef = useRef<HTMLInputElement>(null)
+  const [uploadingPrcId, setUploadingPrcId] = useState(false)
+  const [hasPrcId, setHasPrcId] = useState(false)
+  const [prcIdPreviewOpen, setPrcIdPreviewOpen] = useState(false)
+  // Tracks whether the PRC ID was re-uploaded during *this* Edit Mode session - reset whenever
+  // Edit Mode is (re-)entered, since a change made in an earlier session doesn't count.
+  const [prcIdJustReuploaded, setPrcIdJustReuploaded] = useState(false)
+
   useEffect(() => {
     let cancelled = false
     uploadApi.fetchMyPhotoUrl().then((result) => {
       if (!cancelled && result) setPhotoPreviewUrl(result.url)
+    })
+    uploadApi.fetchMyPrcIdUrl().then((result) => {
+      if (!cancelled && result) {
+        setHasPrcId(true)
+        URL.revokeObjectURL(result.url)
+      }
     })
     return () => {
       cancelled = true
@@ -65,6 +93,7 @@ export const PersonalInformationSection = ({ member, onUpdated }: PersonalInform
 
   const startEditing = () => {
     setForm(toFormState(member))
+    setPrcIdJustReuploaded(false)
     setError(null)
     setEditing(true)
   }
@@ -83,7 +112,7 @@ export const PersonalInformationSection = ({ member, onUpdated }: PersonalInform
     const file = event.target.files?.[0]
     if (!file) return
     setError(null)
-    if (file.size > MaxImageBytes) {
+    if (file.size > MAX_IMAGE_BYTES) {
       setError('That photo is too large (max 24 MB). Please choose a smaller file.')
       event.target.value = ''
       return
@@ -102,8 +131,46 @@ export const PersonalInformationSection = ({ member, onUpdated }: PersonalInform
     }
   }
 
+  const handlePrcIdSelected = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    if (!file) return
+    setError(null)
+    const isPdf = file.name.toLowerCase().endsWith('.pdf')
+    const maxBytes = isPdf ? MAX_PDF_BYTES : MAX_IMAGE_BYTES
+    if (file.size > maxBytes) {
+      setError(
+        isPdf ? 'That PDF is too large (max 2 MB). Please choose a smaller file.' : 'That file is too large (max 24 MB). Please choose a smaller file.',
+      )
+      event.target.value = ''
+      return
+    }
+
+    setUploadingPrcId(true)
+    try {
+      await uploadApi.uploadMyPrcId(file)
+      setHasPrcId(true)
+      setPrcIdJustReuploaded(true)
+    } catch (err) {
+      setError(describeError(err, 'Could not upload PRC ID. Make sure it is a JPG, PNG, or PDF under the size limit.'))
+    } finally {
+      setUploadingPrcId(false)
+    }
+  }
+
+  const prcLicenseNoChanged = form.prcLicenseNo !== (member.prcLicenseNo ?? '')
+  const blockedByMissingReupload = prcLicenseNoChanged && !prcIdJustReuploaded
+
   const handleSave = async () => {
     setError(null)
+    if (blockedByMissingReupload) {
+      setError('Upload a new PRC ID document to save this change to PRC License No.')
+      return
+    }
+    if (form.tin && !/^[\d-]{9,12}$/.test(form.tin)) {
+      setError('TIN must be 9-12 digits, with dashes allowed as separators.')
+      return
+    }
+
     setSaving(true)
     try {
       const updated = await memberApi.updateMyProfile(
@@ -115,6 +182,10 @@ export const PersonalInformationSection = ({ member, onUpdated }: PersonalInform
           birthdate: form.birthdate || null,
           gender: form.gender || null,
           civilStatus: form.civilStatus || null,
+          prcLicenseNo: form.prcLicenseNo || null,
+          ptrNumber: form.ptrNumber || null,
+          tin: form.tin || null,
+          prcIdReuploaded: prcLicenseNoChanged && prcIdJustReuploaded,
         }),
       )
       onUpdated(updated)
@@ -125,6 +196,8 @@ export const PersonalInformationSection = ({ member, onUpdated }: PersonalInform
       setSaving(false)
     }
   }
+
+  const missing = missingRequiredFields(member)
 
   return (
     <div className="flex flex-col gap-4">
@@ -138,6 +211,19 @@ export const PersonalInformationSection = ({ member, onUpdated }: PersonalInform
       </div>
 
       {error && <p className="text-sm text-danger">{error}</p>}
+
+      {!editing && missing.length > 0 && (
+        <p className="text-sm text-warning bg-warning/10 rounded-lg px-3 py-2 flex items-start gap-2">
+          <LuTriangleAlert className="size-4 shrink-0 mt-0.5" />
+          Please complete the following: {missing.join(', ')}.
+        </p>
+      )}
+
+      {member.prcVerificationRejectedReason && (
+        <p className="text-sm text-danger bg-danger/10 rounded-lg px-3 py-2">
+          Your requested PRC License No. change was not approved: {member.prcVerificationRejectedReason}
+        </p>
+      )}
 
       <div className="flex flex-col md:flex-row gap-6">
         <div className="flex flex-col items-center gap-2 shrink-0">
@@ -196,7 +282,28 @@ export const PersonalInformationSection = ({ member, onUpdated }: PersonalInform
               </div>
               <div>
                 <label className="block font-medium text-default-900 text-sm mb-2">Gender</label>
-                <input className="form-input" value={form.gender} onChange={(e) => handleChange('gender', e.target.value)} />
+                <div className="flex items-center gap-4 h-[42px]">
+                  <label className="flex items-center gap-2 text-sm">
+                    <input
+                      type="radio"
+                      name="gender"
+                      className="form-radio"
+                      checked={form.gender === 'Male'}
+                      onChange={() => handleChange('gender', 'Male')}
+                    />
+                    Male
+                  </label>
+                  <label className="flex items-center gap-2 text-sm">
+                    <input
+                      type="radio"
+                      name="gender"
+                      className="form-radio"
+                      checked={form.gender === 'Female'}
+                      onChange={() => handleChange('gender', 'Female')}
+                    />
+                    Female
+                  </label>
+                </div>
               </div>
               <div>
                 <label className="block font-medium text-default-900 text-sm mb-2">Civil Status</label>
@@ -208,6 +315,50 @@ export const PersonalInformationSection = ({ member, onUpdated }: PersonalInform
                     </option>
                   ))}
                 </select>
+              </div>
+              <div>
+                <label className="block font-medium text-default-900 text-sm mb-2">PRC License No.</label>
+                <input className="form-input" value={form.prcLicenseNo} onChange={(e) => handleChange('prcLicenseNo', e.target.value)} />
+                {prcLicenseNoChanged && (
+                  <p className="text-xs text-warning mt-1">
+                    {prcIdJustReuploaded ? 'New PRC ID uploaded - ready to save.' : 'Upload a new PRC ID document below to save this change.'}
+                  </p>
+                )}
+              </div>
+              <div>
+                <label className="block font-medium text-default-900 text-sm mb-2">PTR Number</label>
+                <input className="form-input" value={form.ptrNumber} onChange={(e) => handleChange('ptrNumber', e.target.value)} />
+              </div>
+              <div>
+                <label className="block font-medium text-default-900 text-sm mb-2">TIN</label>
+                <input
+                  className="form-input"
+                  placeholder="000-000-000-000"
+                  value={form.tin}
+                  onChange={(e) => handleChange('tin', e.target.value)}
+                />
+              </div>
+              <div className="md:col-span-2">
+                <span className="block font-medium text-default-900 text-sm mb-2">PRC ID Document</span>
+                <div className="flex items-center gap-3">
+                  {hasPrcId ? (
+                    <StandardButton variant="view" icon={LuEye} onClick={() => setPrcIdPreviewOpen(true)}>
+                      View PRC ID
+                    </StandardButton>
+                  ) : (
+                    <span className="text-default-500">No PRC ID uploaded yet.</span>
+                  )}
+                  <input ref={prcIdInputRef} type="file" accept=".jpg,.jpeg,.png,.pdf" className="hidden" onChange={handlePrcIdSelected} />
+                  <StandardButton
+                    variant="secondary"
+                    icon={LuUpload}
+                    onClick={() => prcIdInputRef.current?.click()}
+                    loading={uploadingPrcId}
+                    loadingLabel="Uploading…"
+                  >
+                    {hasPrcId ? 'Replace file' : 'Upload'}
+                  </StandardButton>
+                </div>
               </div>
             </>
           ) : (
@@ -240,6 +391,34 @@ export const PersonalInformationSection = ({ member, onUpdated }: PersonalInform
                 <span className="block font-medium text-default-900 text-sm mb-2">Civil Status</span>
                 <span className="font-semibold text-default-800">{member.civilStatus || '-'}</span>
               </div>
+              <div>
+                <span className="block font-medium text-default-900 text-sm mb-2">PRC License No.</span>
+                <span className="font-semibold text-default-800">{member.prcLicenseNo || '-'}</span>
+                {member.pendingPrcLicenseNo ? (
+                  <p className="text-xs text-warning mt-1">New value "{member.pendingPrcLicenseNo}" - pending admin verification.</p>
+                ) : (
+                  !member.prcIdVerified &&
+                  member.prcLicenseNo && <p className="text-xs text-warning mt-1">Pending admin verification.</p>
+                )}
+              </div>
+              <div>
+                <span className="block font-medium text-default-900 text-sm mb-2">PTR Number</span>
+                <span className="font-semibold text-default-800">{member.ptrNumber || '-'}</span>
+              </div>
+              <div>
+                <span className="block font-medium text-default-900 text-sm mb-2">TIN</span>
+                <span className="font-semibold text-default-800">{member.tin || '-'}</span>
+              </div>
+              <div className="md:col-span-2">
+                <span className="block font-medium text-default-900 text-sm mb-2">PRC ID Document</span>
+                {hasPrcId ? (
+                  <StandardButton variant="view" icon={LuEye} onClick={() => setPrcIdPreviewOpen(true)}>
+                    View PRC ID
+                  </StandardButton>
+                ) : (
+                  <span className="text-default-500">No PRC ID uploaded yet.</span>
+                )}
+              </div>
             </>
           )}
         </div>
@@ -247,7 +426,7 @@ export const PersonalInformationSection = ({ member, onUpdated }: PersonalInform
 
       {editing && (
         <div className="flex items-center gap-2">
-          <StandardButton onClick={handleSave} loading={saving} loadingLabel="Saving…">
+          <StandardButton onClick={handleSave} disabled={blockedByMissingReupload} loading={saving} loadingLabel="Saving…">
             Save
           </StandardButton>
           <StandardButton variant="secondary" onClick={cancelEditing} disabled={saving}>
@@ -255,6 +434,13 @@ export const PersonalInformationSection = ({ member, onUpdated }: PersonalInform
           </StandardButton>
         </div>
       )}
+
+      <FilePreviewModal
+        isOpen={prcIdPreviewOpen}
+        title="PRC ID Document"
+        fetchFile={() => uploadApi.fetchMyPrcIdUrl()}
+        onClose={() => setPrcIdPreviewOpen(false)}
+      />
     </div>
   )
 }

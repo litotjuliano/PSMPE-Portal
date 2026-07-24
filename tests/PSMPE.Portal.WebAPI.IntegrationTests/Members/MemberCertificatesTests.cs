@@ -5,9 +5,9 @@ using System.Text;
 using System.Text.Json;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.Extensions.DependencyInjection;
-using PSMPE.Portal.Application.Auth;
 using PSMPE.Portal.Domain.Entities;
 using PSMPE.Portal.Domain.Enums;
+using PSMPE.Portal.WebAPI.IntegrationTests.TestSupport;
 using Xunit;
 
 namespace PSMPE.Portal.WebAPI.IntegrationTests.Members;
@@ -41,25 +41,7 @@ public class MemberCertificatesTests : IClassFixture<CustomWebApplicationFactory
         return Task.CompletedTask;
     }
 
-    private async Task<string> RegisterAndLoginAsync()
-    {
-        var email = $"{Guid.NewGuid()}@example.com";
-        var register = await _client.PostAsJsonAsync("/api/auth/register",
-            new RegisterRequest(email, "Password123!", "Certificate Tester"));
-        var registerBody = await register.Content.ReadFromJsonAsync<RegisterResponse>();
-
-        var (userId, token) = ParseVerificationLink(registerBody!.DevVerificationLink!);
-        var verify = await _client.PostAsJsonAsync("/api/auth/verify-email", new VerifyEmailRequest(userId, token));
-        var verifyBody = await verify.Content.ReadFromJsonAsync<AuthResponse>();
-        return verifyBody!.Token;
-    }
-
-    private static (Guid UserId, string Token) ParseVerificationLink(string link)
-    {
-        var uri = new Uri(link);
-        var query = Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(uri.Query);
-        return (Guid.Parse(query["userId"]!), query["token"]!);
-    }
+    private Task<string> RegisterAndLoginAsync() => _client.RegisterAndLoginAsync("Certificate Tester");
 
     private static HttpRequestMessage BuildUploadRequest(string url, string token, byte[] bytes, string fileName, string contentType)
     {
@@ -240,15 +222,6 @@ public class MemberCertificatesTests : IClassFixture<CustomWebApplicationFactory
         Assert.Equal(1, certificates.GetArrayLength());
     }
 
-    private async Task<(Guid UserId, string Token)> CreatePrivilegedUserAsync(string role)
-    {
-        var email = $"{Guid.NewGuid()}@example.com";
-        var user = new ApplicationUser { UserName = email, Email = email, DisplayName = "Privileged Tester", EmailConfirmed = true };
-        await _userManager.CreateAsync(user, "Password123!");
-        await _userManager.AddToRoleAsync(user, role);
-
-        var login = await _client.PostAsJsonAsync("/api/auth/login", new LoginRequest(email, "Password123!"));
-        var body = await login.Content.ReadFromJsonAsync<AuthResponse>();
-        return (user.Id, body!.Token);
-    }
+    private Task<(Guid UserId, string Token)> CreatePrivilegedUserAsync(string role) =>
+        _client.CreatePrivilegedUserAsync(_userManager, role);
 }

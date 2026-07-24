@@ -14,5 +14,13 @@ public class PrcVerificationHistoryConfiguration : IEntityTypeConfiguration<PrcV
         builder.Property(h => h.Reason).HasMaxLength(512);
 
         builder.HasIndex(h => h.MemberId);
+
+        // Restrict (not Cascade) - a member's audit trail must never be silently deleted alongside
+        // them. MemberService.DeleteAsync pre-checks for history rows and returns a clean failure
+        // rather than letting this constraint surface as a raw DbUpdateException.
+        builder.HasOne<Member>()
+            .WithMany()
+            .HasForeignKey(h => h.MemberId)
+            .OnDelete(DeleteBehavior.Restrict);
     }
 }
