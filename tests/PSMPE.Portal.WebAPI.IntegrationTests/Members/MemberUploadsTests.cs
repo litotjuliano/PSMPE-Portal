@@ -5,9 +5,9 @@ using System.Text;
 using System.Text.Json;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.Extensions.DependencyInjection;
-using PSMPE.Portal.Application.Auth;
 using PSMPE.Portal.Domain.Entities;
 using PSMPE.Portal.Domain.Enums;
+using PSMPE.Portal.WebAPI.IntegrationTests.TestSupport;
 using SkiaSharp;
 using Xunit;
 
@@ -52,43 +52,10 @@ public class MemberUploadsTests : IClassFixture<CustomWebApplicationFactory>, IA
         return data.ToArray();
     }
 
-    /// <summary>Registers, then completes the required email-verification step via the
-    /// dev-only verification link (no real email provider exists - see AuthController), so the
-    /// resulting token actually works.</summary>
-    private async Task<string> RegisterAndLoginAsync()
-    {
-        var email = $"{Guid.NewGuid()}@example.com";
-        var register = await _client.PostAsJsonAsync("/api/auth/register",
-            new RegisterRequest(email, "Password123!", "Upload Tester"));
-        var registerBody = await register.Content.ReadFromJsonAsync<RegisterResponse>();
+    private Task<string> RegisterAndLoginAsync() => _client.RegisterAndLoginAsync("Upload Tester");
 
-        var (userId, token) = ParseVerificationLink(registerBody!.DevVerificationLink!);
-        var verify = await _client.PostAsJsonAsync("/api/auth/verify-email", new VerifyEmailRequest(userId, token));
-        var verifyBody = await verify.Content.ReadFromJsonAsync<AuthResponse>();
-        return verifyBody!.Token;
-    }
-
-    private static (Guid UserId, string Token) ParseVerificationLink(string link)
-    {
-        var uri = new Uri(link);
-        var query = Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(uri.Query);
-        return (Guid.Parse(query["userId"]!), query["token"]!);
-    }
-
-    /// <summary>Bypasses the public register endpoint (always Member-only) to get a real token
-    /// for a privileged role, via a real login so the JWT carries genuine permission claims.
-    /// EmailConfirmed is set directly since this shortcut also bypasses the verification flow.</summary>
-    private async Task<(Guid UserId, string Token)> CreatePrivilegedUserAsync(string role)
-    {
-        var email = $"{Guid.NewGuid()}@example.com";
-        var user = new ApplicationUser { UserName = email, Email = email, DisplayName = "Privileged Tester", EmailConfirmed = true };
-        await _userManager.CreateAsync(user, "Password123!");
-        await _userManager.AddToRoleAsync(user, role);
-
-        var login = await _client.PostAsJsonAsync("/api/auth/login", new LoginRequest(email, "Password123!"));
-        var body = await login.Content.ReadFromJsonAsync<AuthResponse>();
-        return (user.Id, body!.Token);
-    }
+    private Task<(Guid UserId, string Token)> CreatePrivilegedUserAsync(string role) =>
+        _client.CreatePrivilegedUserAsync(_userManager, role);
 
     private static HttpRequestMessage BuildUploadRequest(string url, string token, byte[] bytes, string fileName, string contentType)
     {

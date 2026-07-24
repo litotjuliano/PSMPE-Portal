@@ -2,9 +2,8 @@ import { useState } from 'react'
 import type { Member } from '../../../core/types/member'
 import { PersonalInformationSection } from './profile-sections/PersonalInformationSection'
 import { ContactInformationSection } from './profile-sections/ContactInformationSection'
-import { PrcInformationSection } from './profile-sections/PrcInformationSection'
-import { ProfessionalInformationSection } from './profile-sections/ProfessionalInformationSection'
-import { DocumentsSection } from './profile-sections/DocumentsSection'
+import { AccountInformationSection } from './profile-sections/AccountInformationSection'
+import { AdditionalInformationSection } from './profile-sections/AdditionalInformationSection'
 
 interface MyProfileTabsCardProps {
   existing: Member
@@ -12,14 +11,13 @@ interface MyProfileTabsCardProps {
 }
 
 const statusLabels: Record<number, string> = { 0: 'Pending', 1: 'Active', 2: 'Expired', 3: 'Deactivated' }
-const tabs = ['Personal Information', 'Contact Information', 'PRC Information', 'Professional Information', 'Documents']
+const tabs = ['Personal Information', 'Contact Information', 'Account Information', 'Additional Information']
 
 /**
  * Replaces the old always-editable MyProfileCard once an application is submitted (same boundary
  * MyProfilePage already used) - each tab below owns its own View/Edit state and Save action
- * independently, per the post-approval profile-continuity change. Professional Information and
- * Documents are entirely post-approval - empty until the member fills them in here, never part of
- * registration (see the registration wizard restructure).
+ * independently, mirroring the 4-step registration wizard. Account Information has no Edit
+ * action at all (Email/Display Name aren't self-service-editable anywhere in the product).
  */
 export const MyProfileTabsCard = ({ existing, onUpdated }: MyProfileTabsCardProps) => {
   const [activeTab, setActiveTab] = useState(0)
@@ -73,9 +71,8 @@ export const MyProfileTabsCard = ({ existing, onUpdated }: MyProfileTabsCardProp
 
           {activeTab === 0 && <PersonalInformationSection member={existing} onUpdated={onUpdated} />}
           {activeTab === 1 && <ContactInformationSection member={existing} onUpdated={onUpdated} />}
-          {activeTab === 2 && <PrcInformationSection member={existing} onUpdated={onUpdated} />}
-          {activeTab === 3 && <ProfessionalInformationSection member={existing} onUpdated={onUpdated} />}
-          {activeTab === 4 && <DocumentsSection />}
+          {activeTab === 2 && <AccountInformationSection />}
+          {activeTab === 3 && <AdditionalInformationSection member={existing} onUpdated={onUpdated} />}
         </div>
       </div>
     </div>

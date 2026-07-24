@@ -13,7 +13,7 @@ public interface IMemberService
     Task<MemberDto?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default);
     Task<MemberDto?> GetByUserIdAsync(Guid userId, CancellationToken cancellationToken = default);
     Task<bool> MembershipNoExistsAsync(string membershipNo, CancellationToken cancellationToken = default);
-    Task<MemberDto> CreateAsync(CreateMemberRequest request, CancellationToken cancellationToken = default);
+    Task<Result<MemberDto>> CreateAsync(CreateMemberRequest request, CancellationToken cancellationToken = default);
     Task<Result> UpdateAsync(Guid id, UpdateMemberRequest request, CancellationToken cancellationToken = default);
     Task<Result> ApproveAsync(Guid id, CancellationToken cancellationToken = default);
     Task<Result<MemberDto>> UpsertMyProfileAsync(Guid userId, UpdateMyProfileRequest request, CancellationToken cancellationToken = default);

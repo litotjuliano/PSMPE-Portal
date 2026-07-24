@@ -81,8 +81,8 @@ public class MembersController(
             return Conflict(new { message = $"Membership No. '{request.MembershipNo}' is already in use." });
         }
 
-        var created = await memberService.CreateAsync(request, cancellationToken);
-        return Ok(created);
+        var result = await memberService.CreateAsync(request, cancellationToken);
+        return ToActionResult(result);
     }
 
     [HttpPut("{id:guid}")]

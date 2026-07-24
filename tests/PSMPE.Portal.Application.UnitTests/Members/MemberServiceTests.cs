@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using PSMPE.Portal.Application.Common.Models;
 using PSMPE.Portal.Application.Members;
 using PSMPE.Portal.Application.Members.Dtos;
 using PSMPE.Portal.Application.UnitTests.TestSupport;
@@ -12,14 +13,16 @@ public class MemberServiceTests
 {
     private static UpdateMyProfileRequest BuildRequest(
         string chapter = Chapters.Ncr, string memberType = MemberTypes.Regular,
-        string? prcLicenseNo = null, bool prcIdReuploaded = false) => new(
-        FirstName: "Juan", MiddleName: null, LastName: "Dela Cruz", Suffix: null,
+        string? prcLicenseNo = null, bool prcIdReuploaded = false,
+        string firstName = "Juan", string lastName = "Dela Cruz", string? address = "123 Main St",
+        string? company = null, string? website = null) => new(
+        FirstName: firstName, MiddleName: null, LastName: lastName, Suffix: null,
         Birthdate: new DateOnly(1990, 1, 1), Gender: "Male", CivilStatus: "Single",
-        Address: "123 Main St", MobileNumber: "09171234567",
-        HousePhone: null, Website: null, FacebookUrl: null, LinkedInUrl: null, XUrl: null, InstagramUrl: null,
+        Address: address, MobileNumber: "09171234567",
+        HousePhone: null, Website: website, FacebookUrl: null, LinkedInUrl: null, XUrl: null, InstagramUrl: null,
         PrcLicenseNo: prcLicenseNo, PtrNumber: "PTR-0012345", Tin: null,
         Chapter: chapter,
-        EmploymentStatus: null, Company: null, Position: null, BusinessAddress: null, YearsOfPractice: null, Specialization: null, Skills: null,
+        EmploymentStatus: null, Company: company, Position: null, BusinessAddress: null, YearsOfPractice: null, Specialization: null, Skills: null,
         MemberType: memberType,
         PrcIdReuploaded: prcIdReuploaded);
 
@@ -363,6 +366,27 @@ public class MemberServiceTests
         Assert.Equal(1, result.TotalCount);
     }
 
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    public async Task RejectPrcVerificationAsync_WithEmptyOrWhitespaceReason_FailsAndRecordsNoHistory(string reason)
+    {
+        using var db = TestDbContext.CreateInMemory();
+        var service = new MemberService(db);
+        var member = await SeedSubmittedMemberAsync(db, prcLicenseNo: "MP-1");
+        member.PrcIdVerified = true;
+        member.PendingPrcLicenseNo = "MP-2";
+        await db.SaveChangesAsync();
+
+        var result = await service.RejectPrcVerificationAsync(member.Id, reason, Guid.NewGuid());
+
+        Assert.False(result.Succeeded);
+        var updated = await service.GetByIdAsync(member.Id);
+        Assert.Equal("MP-2", updated!.PendingPrcLicenseNo);
+        Assert.Null(updated.PrcVerificationRejectedReason);
+        Assert.Empty(db.PrcVerificationHistories);
+    }
+
     [Fact]
     public async Task RejectPrcVerificationAsync_ForNeverVerifiedMember_KeepsThemInTheQueue()
     {
@@ -637,5 +661,164 @@ public class MemberServiceTests
         var completeness = await service.GetProfileCompletenessAsync(Guid.NewGuid());
 
         Assert.Null(completeness);
+    }
+
+    [Fact]
+    public async Task UpsertMyProfileAsync_OverlongFirstName_ReturnsFailure_WithoutPersisting()
+    {
+        using var db = TestDbContext.CreateInMemory();
+        var service = new MemberService(db);
+        var member = await SeedDraftMemberAsync(db);
+
+        var result = await service.UpsertMyProfileAsync(member.UserId, BuildRequest(firstName: new string('A', 129)));
+
+        Assert.False(result.Succeeded);
+        var updated = await service.GetByIdAsync(member.Id);
+        Assert.Equal("Juan", updated!.FirstName);
+    }
+
+    [Fact]
+    public async Task UpsertMyProfileAsync_OverlongAddress_ReturnsFailure()
+    {
+        using var db = TestDbContext.CreateInMemory();
+        var service = new MemberService(db);
+        var member = await SeedDraftMemberAsync(db);
+
+        var result = await service.UpsertMyProfileAsync(member.UserId, BuildRequest(address: new string('A', 513)));
+
+        Assert.False(result.Succeeded);
+    }
+
+    [Fact]
+    public async Task UpsertMyProfileAsync_OverlongCompany_ReturnsFailure()
+    {
+        using var db = TestDbContext.CreateInMemory();
+        var service = new MemberService(db);
+        var member = await SeedDraftMemberAsync(db);
+
+        var result = await service.UpsertMyProfileAsync(member.UserId, BuildRequest(company: new string('A', 257)));
+
+        Assert.False(result.Succeeded);
+    }
+
+    [Fact]
+    public async Task UpsertMyProfileAsync_OverlongWebsite_ReturnsFailure()
+    {
+        using var db = TestDbContext.CreateInMemory();
+        var service = new MemberService(db);
+        var member = await SeedDraftMemberAsync(db);
+
+        var result = await service.UpsertMyProfileAsync(member.UserId, BuildRequest(website: "https://example.com/" + new string('a', 250)));
+
+        Assert.False(result.Succeeded);
+    }
+
+    [Fact]
+    public async Task UpsertMyProfileAsync_EmptyFirstName_StillSucceeds_DraftAutosaveTolerance()
+    {
+        // Requiredness is enforced at SubmitMyProfileAsync, not here - an in-progress wizard draft
+        // must be able to autosave partially-filled steps.
+        using var db = TestDbContext.CreateInMemory();
+        var service = new MemberService(db);
+        var member = await SeedDraftMemberAsync(db);
+
+        var result = await service.UpsertMyProfileAsync(member.UserId, BuildRequest(firstName: ""));
+
+        Assert.True(result.Succeeded);
+    }
+
+    private static async Task<Guid> SeedApplicationUserAsync(TestDbContext db)
+    {
+        var user = new ApplicationUser { UserName = $"{Guid.NewGuid()}@example.com", Email = $"{Guid.NewGuid()}@example.com" };
+        db.Add(user);
+        await db.SaveChangesAsync();
+        return user.Id;
+    }
+
+    private static CreateMemberRequest BuildCreateRequest(Guid userId, string firstName = "Juan", string? address = "123 Main St") => new(
+        UserId: userId, MembershipNo: "000099", FirstName: firstName, MiddleName: null, LastName: "Dela Cruz", Suffix: null,
+        Birthdate: new DateOnly(1990, 1, 1), Gender: "Male", CivilStatus: "Single",
+        Address: address, MobileNumber: "09171234567",
+        HousePhone: null, Website: null, FacebookUrl: null, LinkedInUrl: null, XUrl: null, InstagramUrl: null,
+        PrcLicenseNo: null, PtrNumber: null, Tin: null,
+        Chapter: Chapters.Ncr,
+        EmploymentStatus: null, Company: null, Position: null, BusinessAddress: null, YearsOfPractice: null, Specialization: null, Skills: null,
+        MemberType: MemberTypes.Regular, RenewalDueDate: null, NationalDuesReferenceNo: null);
+
+    [Fact]
+    public async Task CreateAsync_OverlongFirstName_ReturnsFailure_WithoutPersisting()
+    {
+        using var db = TestDbContext.CreateInMemory();
+        var service = new MemberService(db);
+        var userId = await SeedApplicationUserAsync(db);
+
+        var result = await service.CreateAsync(BuildCreateRequest(userId, firstName: new string('A', 129)));
+
+        Assert.False(result.Succeeded);
+        Assert.Empty(db.Members);
+    }
+
+    [Fact]
+    public async Task CreateAsync_ValidRequest_Succeeds()
+    {
+        using var db = TestDbContext.CreateInMemory();
+        var service = new MemberService(db);
+        var userId = await SeedApplicationUserAsync(db);
+
+        var result = await service.CreateAsync(BuildCreateRequest(userId));
+
+        Assert.True(result.Succeeded);
+        Assert.Equal("Juan", result.Value!.FirstName);
+    }
+
+    private static UpdateMemberRequest BuildUpdateRequest(string? address = "123 Main St") => new(
+        FirstName: "Juan", MiddleName: null, LastName: "Dela Cruz", Suffix: null,
+        Birthdate: new DateOnly(1990, 1, 1), Gender: "Male", CivilStatus: "Single",
+        Address: address, MobileNumber: "09171234567",
+        HousePhone: null, Website: null, FacebookUrl: null, LinkedInUrl: null, XUrl: null, InstagramUrl: null,
+        PrcLicenseNo: null, PtrNumber: null, Tin: null,
+        Chapter: Chapters.Ncr,
+        EmploymentStatus: null, Company: null, Position: null, BusinessAddress: null, YearsOfPractice: null, Specialization: null, Skills: null,
+        MemberType: MemberTypes.Regular, Status: MembershipStatus.Pending, RenewalDueDate: null, NationalDuesReferenceNo: null);
+
+    [Fact]
+    public async Task UpdateAsync_OverlongAddress_ReturnsFailure_WithoutPersisting()
+    {
+        using var db = TestDbContext.CreateInMemory();
+        var service = new MemberService(db);
+        var member = await SeedDraftMemberAsync(db);
+
+        var result = await service.UpdateAsync(member.Id, BuildUpdateRequest(address: new string('A', 513)));
+
+        Assert.False(result.Succeeded);
+        var updated = await service.GetByIdAsync(member.Id);
+        Assert.Null(updated!.Address);
+    }
+
+    [Fact]
+    public async Task DeleteAsync_MemberWithNoPrcVerificationHistory_Succeeds()
+    {
+        using var db = TestDbContext.CreateInMemory();
+        var service = new MemberService(db);
+        var member = await SeedSubmittedMemberAsync(db, prcLicenseNo: "MP-1");
+
+        var result = await service.DeleteAsync(member.Id);
+
+        Assert.True(result.Succeeded);
+        Assert.Null(await service.GetByIdAsync(member.Id));
+    }
+
+    [Fact]
+    public async Task DeleteAsync_MemberWithPrcVerificationHistory_FailsAndLeavesMemberIntact()
+    {
+        using var db = TestDbContext.CreateInMemory();
+        var service = new MemberService(db);
+        var member = await SeedSubmittedMemberAsync(db, prcLicenseNo: "MP-1");
+        await service.ApprovePrcVerificationAsync(member.Id, Guid.NewGuid());
+
+        var result = await service.DeleteAsync(member.Id);
+
+        Assert.False(result.Succeeded);
+        Assert.NotNull(await service.GetByIdAsync(member.Id));
     }
 }

@@ -1,16 +1,10 @@
 import { useEffect, useRef, useState, type ChangeEvent, type FormEvent } from 'react'
-import { isAxiosError } from 'axios'
 import { LuUpload, LuUserRound } from 'react-icons/lu'
 import { Chapters, CivilStatuses, MemberTypes } from '../../../core/types/member'
 import { uploadApi } from '../../../core/api/endpoints/uploadApi'
+import { describeError } from '../../../core/utils/apiError'
+import { MAX_IMAGE_BYTES, MAX_PDF_BYTES } from '../../../core/constants/uploadLimits'
 import { PipeStepper } from '../components/shared/PipeStepper'
-
-// Matches the backend's MemberUploadService caps - checked client-side first so an oversized
-// file gets an immediate, friendly message instead of a round trip that risks a raw connection
-// reset (Kestrel aborts the connection when a request exceeds its size limit mid-body-read,
-// rather than returning a clean 4xx - see MembersController's upload endpoints).
-const MaxImageBytes = 24 * 1024 * 1024
-const MaxPdfBytes = 2 * 1024 * 1024
 
 // Mirrors MemberService's server-side checks - purely for fast client-side feedback, the server
 // is still the source of truth (MemberService.UpsertMyProfileAsync/SubmitMyProfileAsync).
@@ -51,17 +45,6 @@ const maxBirthdate = (() => {
   return d.toISOString().slice(0, 10)
 })()
 
-function describeUploadError(err: unknown, fallback: string): string {
-  if (isAxiosError(err)) {
-    if (err.response) {
-      const message = (err.response.data as { message?: string } | undefined)?.message
-      return message ?? fallback
-    }
-    return 'Could not reach the server. Please check your connection and try again.'
-  }
-  return fallback
-}
-
 export interface MembershipApplicationState {
   firstName: string
   middleName: string
@@ -75,6 +58,7 @@ export interface MembershipApplicationState {
   prcLicenseNo: string
   ptrNumber: string
   tin: string
+  company: string
   address: string
   mobileNumber: string
   housePhone: string
@@ -105,7 +89,7 @@ interface MembershipApplicationWizardCardProps {
   navigating: boolean
 }
 
-const steps = ['Personal Information', 'Contact Information', 'PRC Information']
+const steps = ['Personal Information', 'Contact Information', 'Account Information', 'Additional Information']
 
 export const MembershipApplicationWizardCard = ({
   step,
@@ -159,7 +143,7 @@ export const MembershipApplicationWizardCard = ({
     const file = event.target.files?.[0]
     if (!file) return
     setUploadError(null)
-    if (file.size > MaxImageBytes) {
+    if (file.size > MAX_IMAGE_BYTES) {
       setUploadError('That photo is too large (max 24 MB). Please choose a smaller file.')
       event.target.value = ''
       return
@@ -173,7 +157,7 @@ export const MembershipApplicationWizardCard = ({
     try {
       await uploadApi.uploadMyPhoto(file)
     } catch (err) {
-      setUploadError(describeUploadError(err, 'Could not upload photo. Make sure it is a JPG or PNG under 24 MB.'))
+      setUploadError(describeError(err, 'Could not upload photo. Make sure it is a JPG or PNG under 24 MB.'))
     } finally {
       setUploadingPhoto(false)
     }
@@ -184,7 +168,7 @@ export const MembershipApplicationWizardCard = ({
     if (!file) return
     setUploadError(null)
     const isPdf = file.name.toLowerCase().endsWith('.pdf')
-    const maxBytes = isPdf ? MaxPdfBytes : MaxImageBytes
+    const maxBytes = isPdf ? MAX_PDF_BYTES : MAX_IMAGE_BYTES
     if (file.size > maxBytes) {
       setUploadError(
         isPdf ? 'That PDF is too large (max 2 MB). Please choose a smaller file.' : 'That file is too large (max 24 MB). Please choose a smaller file.',
@@ -198,7 +182,7 @@ export const MembershipApplicationWizardCard = ({
       await uploadApi.uploadMyPrcId(file)
       setHasPrcId(true)
     } catch (err) {
-      setUploadError(describeUploadError(err, 'Could not upload PRC ID. Make sure it is a JPG, PNG, or PDF under the size limit.'))
+      setUploadError(describeError(err, 'Could not upload PRC ID. Make sure it is a JPG, PNG, or PDF under the size limit.'))
     } finally {
       setUploadingPrcId(false)
     }
@@ -211,6 +195,9 @@ export const MembershipApplicationWizardCard = ({
     if (step === 0) {
       if (state.birthdate && !isAtLeast18(state.birthdate)) {
         return 'You must be at least 18 years old.'
+      }
+      if (!hasPrcId) {
+        return 'Please upload your PRC ID.'
       }
       return null
     }
@@ -238,11 +225,11 @@ export const MembershipApplicationWizardCard = ({
       }
       return null
     }
+    if (step === 2) {
+      return null
+    }
     if (state.tin && !/^[\d-]{9,12}$/.test(state.tin)) {
       return 'TIN must be 9-12 digits, with dashes allowed as separators.'
-    }
-    if (step === steps.length - 1 && !hasPrcId) {
-      return 'Please upload your PRC ID.'
     }
     return null
   }
@@ -385,6 +372,39 @@ export const MembershipApplicationWizardCard = ({
                     ))}
                   </select>
                 </div>
+                <div>
+                  <label className="block font-medium text-default-900 text-sm mb-2">PRC License No.</label>
+                  <input
+                    className="form-input"
+                    required
+                    value={state.prcLicenseNo}
+                    onChange={(e) => onChange('prcLicenseNo', e.target.value)}
+                  />
+                </div>
+                <div className="md:col-span-2">
+                  <label className="block font-medium text-default-900 text-sm mb-2">Upload PRC ID</label>
+                  <div className="flex items-center gap-3">
+                    <input
+                      ref={prcIdInputRef}
+                      type="file"
+                      accept=".jpg,.jpeg,.png,.pdf"
+                      className="hidden"
+                      onChange={handlePrcIdSelected}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => prcIdInputRef.current?.click()}
+                      disabled={uploadingPrcId}
+                      className="btn border border-default-200 disabled:opacity-50 inline-flex items-center gap-2"
+                    >
+                      <LuUpload className="size-4" />
+                      {uploadingPrcId ? 'Uploading…' : hasPrcId ? 'Replace file' : 'Upload'}
+                    </button>
+                    <span className="text-xs text-default-500">
+                      JPG or PNG photos are optimized automatically; PDF files must be under 2 MB.
+                    </span>
+                  </div>
+                </div>
               </div>
             </div>
           )}
@@ -467,42 +487,18 @@ export const MembershipApplicationWizardCard = ({
           )}
 
           {step === 2 && (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="md:col-span-2">
+                <span className="block font-medium text-default-900 text-sm mb-2">Email</span>
+                <span className="text-sm font-semibold text-default-800">{accountEmail}</span>
+                <p className="text-xs text-default-500 mt-1">Nothing to fill in here - this previews your Account Information tab.</p>
+              </div>
+            </div>
+          )}
+
+          {step === 3 && (
             <div className="flex flex-col gap-6">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {uploadError && <p className="md:col-span-2 text-sm text-danger">{uploadError}</p>}
-                <div>
-                  <label className="block font-medium text-default-900 text-sm mb-2">PRC License No.</label>
-                  <input
-                    className="form-input"
-                    required
-                    value={state.prcLicenseNo}
-                    onChange={(e) => onChange('prcLicenseNo', e.target.value)}
-                  />
-                </div>
-                <div className="md:col-span-2">
-                  <label className="block font-medium text-default-900 text-sm mb-2">Upload PRC ID</label>
-                  <div className="flex items-center gap-3">
-                    <input
-                      ref={prcIdInputRef}
-                      type="file"
-                      accept=".jpg,.jpeg,.png,.pdf"
-                      className="hidden"
-                      onChange={handlePrcIdSelected}
-                    />
-                    <button
-                      type="button"
-                      onClick={() => prcIdInputRef.current?.click()}
-                      disabled={uploadingPrcId}
-                      className="btn border border-default-200 disabled:opacity-50 inline-flex items-center gap-2"
-                    >
-                      <LuUpload className="size-4" />
-                      {uploadingPrcId ? 'Uploading…' : hasPrcId ? 'Replace file' : 'Upload'}
-                    </button>
-                    <span className="text-xs text-default-500">
-                      JPG or PNG photos are optimized automatically; PDF files must be under 2 MB.
-                    </span>
-                  </div>
-                </div>
                 <div>
                   <label className="block font-medium text-default-900 text-sm mb-2">PTR Number</label>
                   <input className="form-input" required value={state.ptrNumber} onChange={(e) => onChange('ptrNumber', e.target.value)} />
@@ -515,6 +511,10 @@ export const MembershipApplicationWizardCard = ({
                     value={state.tin}
                     onChange={(e) => onChange('tin', e.target.value)}
                   />
+                </div>
+                <div className="md:col-span-2">
+                  <label className="block font-medium text-default-900 text-sm mb-2">Company (optional)</label>
+                  <input className="form-input" value={state.company} onChange={(e) => onChange('company', e.target.value)} />
                 </div>
               </div>
 
@@ -554,6 +554,10 @@ export const MembershipApplicationWizardCard = ({
                   <div>
                     <span className="text-default-500">PTR Number</span>{' '}
                     <span className="font-semibold text-default-800">{state.ptrNumber || '-'}</span>
+                  </div>
+                  <div>
+                    <span className="text-default-500">Company</span>{' '}
+                    <span className="font-semibold text-default-800">{state.company || '-'}</span>
                   </div>
                 </div>
               </div>
