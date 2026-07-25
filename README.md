@@ -20,7 +20,7 @@ This is a **starter**, not a finished product — advanced/optional features are
   (`src/integrations/template/`) for layout, dashboard, login, and CMS page styling.
 - **Docs**: `openspecs/` — lightweight per-feature API/contract notes.
 - **Infra**: `docker-compose.yml` for local dev and deployment, `.github/workflows/` for
-  CI (`ci.yml`) and CD (`deploy-uat.yml`, `deploy-production.yml`).
+  CI (`ci.yml`) and CD (`deploy-staging.yml`, `deploy-production.yml`).
 
 ## Folder structure
 
@@ -39,7 +39,7 @@ PSMPE Portal/
 │       ├── core/                     # Auth, API client, CMS pages (data-fetching)
 │       └── integrations/template/    # Licensed Tailwick template — layout, dashboard, styling
 ├── openspecs/                    # Per-feature API/contract docs
-├── .github/workflows/            # ci.yml (build + test), deploy-uat.yml, deploy-production.yml
+├── .github/workflows/            # ci.yml (build + test), deploy-staging.yml, deploy-production.yml
 ├── docker-compose.yml
 └── .env.example
 ```
@@ -187,15 +187,15 @@ port more of it later.
 ## Deployment
 
 CI (`.github/workflows/ci.yml`) builds/tests both stacks on every PR and push to
-`main`/`uat`/`develop` — a safety check before merge; it does not deploy.
+`main`/`staging`/`develop` — a safety check before merge; it does not deploy.
 
 Deployment runs on a single droplet via Docker Compose over SSH, triggered by GitHub Actions
-on push: [`.github/workflows/deploy-uat.yml`](.github/workflows/deploy-uat.yml) (branch `uat`
-→ uatpsmpe.litxus.com) and
+on push: [`.github/workflows/deploy-staging.yml`](.github/workflows/deploy-staging.yml) (branch
+`staging` → staging.psmpe.org) and
 [`.github/workflows/deploy-production.yml`](.github/workflows/deploy-production.yml) (branch
-`main` → prodpsmpe.litxus.com). Each workflow SSHes into the droplet, pulls the branch, and
+`main` → portal.psmpe.org). Each workflow SSHes into the droplet, pulls the branch, and
 runs `docker compose up -d --build` against [`docker-compose.yml`](docker-compose.yml) — the
-droplet builds the images itself, no container registry or `doctl` involved. `uat` also layers
+droplet builds the images itself, no container registry or `doctl` involved. `staging` also layers
 `docker-compose.ports.yml` (untracked, droplet-local) for port overrides. Both branches
 auto-deploy on every push — there's no manual gate. Environment configuration (secrets,
 `Frontend__BaseUrl`, etc.) lives in a `.env` file per environment directly on the droplet, not

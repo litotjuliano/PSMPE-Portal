@@ -15,7 +15,7 @@ This project uses a simple three-tier branching model.
 3. CI (`.github/workflows/ci.yml`) must pass before merging.
 4. Periodically, `develop` is merged into `main` via a release PR. Pushing to `main` triggers
    `.github/workflows/deploy-production.yml`, which deploys to the production droplet over SSH
-   (`uat` deploys the same way via `deploy-uat.yml`).
+   (`staging` deploys the same way via `deploy-staging.yml`).
 
 ## Hotfixes
 
