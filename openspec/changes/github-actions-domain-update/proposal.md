@@ -42,10 +42,9 @@ domains.
     trigger is unchanged.
   - Droplet nginx config (`/etc/nginx/sites-available/psmpe.org`) and SSL certs —
     already live and correct, out of scope per "don't touch infra configs."
-  - Docker Compose project naming (`-p psmpe-uat` in the deploy script) — left as
-    infrastructure identifier, not a branch-name reference; renaming it would
-    require re-provisioning containers/volumes on the droplet, which is out of
-    scope and carries data risk.
+  - Docker Compose project naming (`-p psmpe-uat` → `-p psmpe-staging`) — initially
+    left unchanged as infra, then explicitly renamed at the repo owner's request for
+    full consistency (see Decision 2, superseding the original call).
 
 ## Decisions
 
@@ -54,11 +53,21 @@ domains.
    are only referenced in the droplet's nginx config, not parameterized through any
    workflow. Adding them now would be new deployment logic, which the task
    explicitly excludes. Flagged for the repo owner instead of silently added.
-2. **Docker Compose project name kept as `psmpe-uat`.** Renaming it to
-   `psmpe-staging` would mean tearing down and recreating the running containers
-   (including the Postgres volume) on the droplet — an infrastructure change with
-   data risk, out of scope for a "domain references and branch names" update.
+2. **Docker Compose project renamed `psmpe-uat` → `psmpe-staging` (supersedes the
+   original "leave unchanged" call).** The repo owner asked for full consistency
+   rather than a mixed `staging` branch / `uat`-named infra state. Done as a
+   data-preserving migration on the droplet: containers stopped, `Postgres`/uploads
+   volumes copied byte-for-byte to new `psmpe-staging_*` volumes (verified via a
+   temporary Postgres container booting clean — "shut down" not "crash recovery" —
+   with all expected tables and matching data), the checkout directory renamed
+   `/opt/psmpe-portal/uat` → `/opt/psmpe-portal/staging`, the new stack brought up
+   and verified end-to-end (`staging.psmpe.org` → nginx → new container → migrated
+   DB), old containers/volumes/images removed only after verification passed.
+   `DEPLOY_PATH` for the `staging` GitHub Environment must be
+   `/opt/psmpe-portal/staging` (not `/opt/psmpe-portal/uat`).
 3. **GitHub Environment rename (`uat` → `staging`) and branch protection
    verification are manual steps for the repo owner**, not automated here — no
    authenticated `gh`/API access was available in this session to perform them
-   safely.
+   safely. Also discovered along the way: the deploy SSH user is `deploy` (uid 1000,
+   `docker` group), not `root` — the checkout directory is owned by `deploy`, and
+   `root` hits git's "dubious ownership" guard against it.

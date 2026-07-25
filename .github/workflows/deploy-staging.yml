@@ -31,5 +31,5 @@ jobs:
             git fetch origin staging
             git checkout staging
             git reset --hard origin/staging
-            docker compose -p psmpe-uat -f docker-compose.yml -f docker-compose.ports.yml up -d --build
+            docker compose -p psmpe-staging -f docker-compose.yml -f docker-compose.ports.yml up -d --build
             docker image prune -f
