@@ -1,5 +1,6 @@
 using System.Text.RegularExpressions;
 using Microsoft.EntityFrameworkCore;
+using PSMPE.Portal.Application.Common.Caching;
 using PSMPE.Portal.Application.Common.Interfaces;
 using PSMPE.Portal.Application.Common.Models;
 using PSMPE.Portal.Application.Members.Dtos;
@@ -8,17 +9,26 @@ using PSMPE.Portal.Domain.Enums;
 
 namespace PSMPE.Portal.Application.Members;
 
-public class MemberService(IApplicationDbContext db) : IMemberService
+public class MemberService(IApplicationDbContext db, ICacheService? cache = null) : IMemberService
 {
+    // Optional so the 43 existing unit tests that construct MemberService directly
+    // (new MemberService(db)) keep compiling unchanged and get no-op caching - see
+    // ContentService for the same pattern/rationale, and docs/caching-strategy.md.
+    private ICacheService Cache => cache ?? NoOpCacheService.Instance;
+
     private const string GracePeriodConfigKey = "MembershipGracePeriodDays";
     private const int DefaultGracePeriodDays = 30;
+    private const string GracePeriodCacheKey = "config:membership-grace-period-days";
 
-    private async Task<int> GetGracePeriodDaysAsync(CancellationToken cancellationToken)
-    {
-        var config = await db.SystemConfigs.AsNoTracking()
-            .FirstOrDefaultAsync(c => c.Key == GracePeriodConfigKey, cancellationToken);
-        return config is not null && int.TryParse(config.Value, out var days) ? days : DefaultGracePeriodDays;
-    }
+    private Task<int> GetGracePeriodDaysAsync(CancellationToken cancellationToken) =>
+        // No invalidation hook needed - there is no write path to SystemConfigs anywhere in the
+        // app (seeded once at startup, never updated by any endpoint), so this is TTL-only expiry.
+        Cache.GetOrCreateAsync(GracePeriodCacheKey, "Cache:GracePeriodDurationSeconds", 600, async () =>
+        {
+            var config = await db.SystemConfigs.AsNoTracking()
+                .FirstOrDefaultAsync(c => c.Key == GracePeriodConfigKey, cancellationToken);
+            return config is not null && int.TryParse(config.Value, out var days) ? days : DefaultGracePeriodDays;
+        });
 
     /// <summary>
     /// A member keeps limited portal access for GracePeriodDays after RenewalDueDate lapses,

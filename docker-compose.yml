@@ -50,6 +50,10 @@ services:
       SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD}
       OpenAI__ApiKey: ${OpenAI__ApiKey}
       OpenAI__Model: ${OpenAI__Model:-gpt-4o-mini}
+      Cache__Enabled: ${Cache__Enabled:-true}
+      Cache__ContentDurationSeconds: ${Cache__ContentDurationSeconds:-300}
+      Cache__LayoutDurationSeconds: ${Cache__LayoutDurationSeconds:-300}
+      Cache__GracePeriodDurationSeconds: ${Cache__GracePeriodDurationSeconds:-600}
     ports:
       - "5000:8080"
     volumes:

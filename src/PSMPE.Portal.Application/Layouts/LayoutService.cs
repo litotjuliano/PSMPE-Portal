@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using PSMPE.Portal.Application.Common.Caching;
 using PSMPE.Portal.Application.Common.Interfaces;
 using PSMPE.Portal.Application.Common.Models;
 using PSMPE.Portal.Application.Layouts.Dtos;
@@ -7,16 +8,22 @@ using PSMPE.Portal.Domain.Enums;
 
 namespace PSMPE.Portal.Application.Layouts;
 
-public class LayoutService(IApplicationDbContext db, ICurrentUserService currentUser) : ILayoutService
+public class LayoutService(IApplicationDbContext db, ICurrentUserService currentUser, ICacheService? cache = null) : ILayoutService
 {
+    // Optional so the existing unit tests constructing LayoutService directly keep compiling
+    // unchanged and get no-op caching - see ContentService for the same pattern/rationale.
+    private ICacheService Cache => cache ?? NoOpCacheService.Instance;
+    private const string AllCacheKey = "layout:all";
+
     private static LayoutDto ToDto(Layout layout) => new(
         layout.Id, layout.Name, layout.Definition, layout.IsSystemLayout, layout.OwnerId);
 
-    public async Task<IReadOnlyList<LayoutDto>> GetAllAsync(CancellationToken cancellationToken = default)
-    {
-        var layouts = await db.Layouts.AsNoTracking().ToListAsync(cancellationToken);
-        return layouts.Select(ToDto).ToList();
-    }
+    public Task<IReadOnlyList<LayoutDto>> GetAllAsync(CancellationToken cancellationToken = default) =>
+        Cache.GetOrCreateAsync(AllCacheKey, "Cache:LayoutDurationSeconds", 300, async () =>
+        {
+            var layouts = await db.Layouts.AsNoTracking().ToListAsync(cancellationToken);
+            return (IReadOnlyList<LayoutDto>)layouts.Select(ToDto).ToList();
+        });
 
     public async Task<LayoutDto> CreateAsync(CreateLayoutRequest request, CancellationToken cancellationToken = default)
     {
@@ -30,6 +37,7 @@ public class LayoutService(IApplicationDbContext db, ICurrentUserService current
 
         db.Layouts.Add(layout);
         await db.SaveChangesAsync(cancellationToken);
+        Cache.Remove(AllCacheKey);
         return ToDto(layout);
     }
 
@@ -56,6 +64,7 @@ public class LayoutService(IApplicationDbContext db, ICurrentUserService current
 
         db.Layouts.Remove(layout);
         await db.SaveChangesAsync(cancellationToken);
+        Cache.Remove(AllCacheKey);
         return Result.Success();
     }
 }

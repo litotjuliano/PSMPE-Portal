@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using PSMPE.Portal.Application.Common.Caching;
 using PSMPE.Portal.Application.Common.Interfaces;
 using PSMPE.Portal.Application.Common.Models;
 using PSMPE.Portal.Application.Content.Dtos;
@@ -7,24 +8,33 @@ using PSMPE.Portal.Domain.Enums;
 
 namespace PSMPE.Portal.Application.Content;
 
-public class ContentService(IApplicationDbContext db, ICurrentUserService currentUser) : IContentService
+public class ContentService(IApplicationDbContext db, ICurrentUserService currentUser, ICacheService? cache = null) : IContentService
 {
+    // Cache is optional so the 4 existing unit tests that construct ContentService directly
+    // (new ContentService(db, fakeUser)) keep compiling unchanged and get no-op caching - only
+    // the real DI-resolved MemoryCacheService (production) actually caches. See docs/caching-strategy.md.
+    private ICacheService Cache => cache ?? NoOpCacheService.Instance;
+    private const string AllCacheKey = "content:all";
+    private static string ItemCacheKey(Guid id) => $"content:{id}";
+
     private static ContentItemDto ToDto(ContentItem item) => new(
         item.Id, item.Title, item.Body, item.Status, item.OwnerId, item.LayoutId, item.CreatedAt, item.UpdatedAt);
 
     private bool IsAdmin => currentUser.IsInRole(RoleNames.Admin) || currentUser.IsInRole(RoleNames.SuperAdmin);
 
-    public async Task<IReadOnlyList<ContentItemDto>> GetAllAsync(CancellationToken cancellationToken = default)
-    {
-        var items = await db.ContentItems.AsNoTracking().ToListAsync(cancellationToken);
-        return items.Select(ToDto).ToList();
-    }
+    public Task<IReadOnlyList<ContentItemDto>> GetAllAsync(CancellationToken cancellationToken = default) =>
+        Cache.GetOrCreateAsync(AllCacheKey, "Cache:ContentDurationSeconds", 300, async () =>
+        {
+            var items = await db.ContentItems.AsNoTracking().ToListAsync(cancellationToken);
+            return (IReadOnlyList<ContentItemDto>)items.Select(ToDto).ToList();
+        });
 
-    public async Task<ContentItemDto?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default)
-    {
-        var item = await db.ContentItems.AsNoTracking().FirstOrDefaultAsync(c => c.Id == id, cancellationToken);
-        return item is null ? null : ToDto(item);
-    }
+    public Task<ContentItemDto?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default) =>
+        Cache.GetOrCreateAsync(ItemCacheKey(id), "Cache:ContentDurationSeconds", 300, async () =>
+        {
+            var item = await db.ContentItems.AsNoTracking().FirstOrDefaultAsync(c => c.Id == id, cancellationToken);
+            return item is null ? null : ToDto(item);
+        });
 
     public async Task<ContentItemDto> CreateAsync(CreateContentItemRequest request, CancellationToken cancellationToken = default)
     {
@@ -44,6 +54,7 @@ public class ContentService(IApplicationDbContext db, ICurrentUserService curren
 
         db.ContentItems.Add(item);
         await db.SaveChangesAsync(cancellationToken);
+        Cache.Remove(AllCacheKey);
         return ToDto(item);
     }
 
@@ -67,6 +78,8 @@ public class ContentService(IApplicationDbContext db, ICurrentUserService curren
         item.UpdatedAt = DateTimeOffset.UtcNow;
 
         await db.SaveChangesAsync(cancellationToken);
+        Cache.Remove(AllCacheKey);
+        Cache.Remove(ItemCacheKey(id));
         return Result.Success();
     }
 
@@ -85,6 +98,8 @@ public class ContentService(IApplicationDbContext db, ICurrentUserService curren
 
         db.ContentItems.Remove(item);
         await db.SaveChangesAsync(cancellationToken);
+        Cache.Remove(AllCacheKey);
+        Cache.Remove(ItemCacheKey(id));
         return Result.Success();
     }
 }

@@ -81,6 +81,12 @@ public static class DependencyInjection
         services.AddScoped<IPromptExecutionService, OpenAiPromptExecutionService>();
         services.AddScoped<IFileStorageService, LocalDiskFileStorageService>();
 
+        // Singleton, same as IMemoryCache itself - a process-wide cache for read-heavy,
+        // rarely-changing data (CMS content/layouts, the membership grace-period config value).
+        // See docs/caching-strategy.md.
+        services.AddMemoryCache();
+        services.AddSingleton<ICacheService, MemoryCacheService>();
+
         // Falls back to logging-only when no real SMTP host is configured, so local dev keeps
         // working without real credentials - see ConsoleEmailSender / SmtpEmailSender.
         if (string.IsNullOrWhiteSpace(configuration["Smtp:Host"]))
