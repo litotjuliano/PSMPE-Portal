@@ -3,7 +3,6 @@ import { Link, useNavigate } from 'react-router-dom'
 import { isAxiosError } from 'axios'
 import logoDark from '../assets/images/logo-dark.png'
 import logoLight from '../assets/images/logo-light.png'
-import IconifyIcon from '../components/shared/IconifyIcon'
 import PageMeta from '../components/shared/PageMeta'
 import { BlueprintBg } from '../components/shared/BlueprintBg'
 import { useAuth } from '../../../core/auth/useAuth'
@@ -143,22 +142,7 @@ export const LoginPage = () => {
                 </button>
               </div>
 
-              <div className="my-9 relative text-center before:absolute before:top-2.5 before:left-0 before:border-t before:border-t-default-200 before:w-full before:h-0.5 before:right-0 before:-z-0">
-                <h4 className="relative z-1 py-0.5 px-2 inline-block font-medium text-default-600 bg-card">Sign In With</h4>
-              </div>
-
-              <div className="flex w-full justify-center items-center gap-2">
-                {/* TODO: no OAuth backend wired up yet - these are visual placeholders. */}
-                <Link to="#" className="btn border border-default-200 flex-grow hover:bg-default-150 shadow-sm hover:text-default-800">
-                  <IconifyIcon icon={'logos:google-icon'} />
-                  Use Google
-                </Link>
-
-                <Link to="#" className="btn border border-default-200 flex-grow hover:bg-default-150 shadow-sm hover:text-default-800">
-                  <IconifyIcon icon={'logos:apple'} className="text-mono" />
-                  Use Apple
-                </Link>
-              </div>
+              {/* TODO: OAuth sign-in (Google/Apple) hidden until backend is wired up - re-enable then. */}
 
               <p className="mt-6 text-center text-sm text-default-500">
                 Don't have an account?{' '}
