@@ -38,6 +38,10 @@ export function AdminUsersPage() {
     adminApi.deleteUser(id).then(refetch)
   }
 
+  const handleVerifyEmail = (userId: string) => {
+    adminApi.verifyEmail(userId).then(refetch)
+  }
+
   const handleSortChange = (column: NonNullable<GetUsersParams['sortBy']>) => {
     if (column === sortBy) {
       setSortDir((current) => (current === 'asc' ? 'desc' : 'asc'))
@@ -61,6 +65,7 @@ export function AdminUsersPage() {
             canManageRoles={canManageRoles}
             onToggleRole={handleToggleRole}
             onDelete={handleDelete}
+            onVerifyEmail={handleVerifyEmail}
             currentUserEmail={user?.email}
             sortBy={sortBy}
             sortDir={sortDir}

@@ -35,9 +35,9 @@ export function PrcVerificationsPage() {
 
   return (
     <>
-      <PageMeta title="PRC Verifications" />
+      <PageMeta title="RMP Verifications" />
       <main>
-        <PageBreadcrumb title="PRC Verifications" />
+        <PageBreadcrumb title="RMP Verifications" />
         {loading ? (
           <p className="text-sm text-default-500">Loading…</p>
         ) : (

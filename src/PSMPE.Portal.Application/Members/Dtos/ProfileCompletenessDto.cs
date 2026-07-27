@@ -11,7 +11,8 @@ public record ProfileCompletenessDto(
     bool IsSubmitted,
     bool HasPrcId,
     bool HasValidGovernmentId,
-    bool HasFormalPhoto,
+    bool HasPhoto,
     bool HasSignature,
+    bool HasProofOfPayment,
     int CertificateCount,
     bool HasProfessionalInfo);

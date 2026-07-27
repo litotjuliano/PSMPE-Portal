@@ -41,12 +41,30 @@ function buildEmptyWizardState(displayName: string): MembershipApplicationState 
     civilStatus: '',
     chapter: '',
     memberType: MemberTypes.Regular,
+    educationLevel: '',
+    schoolName: '',
+    courseYearGraduated: '',
+    specifiedProfession: '',
     prcLicenseNo: '',
+    prcRegistrationDate: '',
+    prcValidUntilDate: '',
     ptrNumber: '',
     tin: '',
     company: '',
-    address: '',
     mobileNumber: '',
+    houseNo: '',
+    street: '',
+    barangay: '',
+    cityMunicipality: '',
+    province: '',
+    zipCode: '',
+    mailingSameAsResidence: true,
+    mailingHouseNo: '',
+    mailingStreet: '',
+    mailingBarangay: '',
+    mailingCityMunicipality: '',
+    mailingProvince: '',
+    mailingZipCode: '',
     housePhone: '',
     website: '',
     facebookUrl: '',
@@ -54,6 +72,7 @@ function buildEmptyWizardState(displayName: string): MembershipApplicationState 
     xUrl: '',
     instagramUrl: '',
     agreedToTerms: false,
+    dataPrivacyConsent: false,
   }
 }
 
@@ -68,12 +87,32 @@ function toWizardState(member: Member): MembershipApplicationState {
     civilStatus: member.civilStatus ?? '',
     chapter: member.chapter,
     memberType: member.memberType || MemberTypes.Regular,
+    educationLevel: member.educationLevel ?? '',
+    schoolName: member.schoolName ?? '',
+    courseYearGraduated: member.courseYearGraduated ?? '',
+    specifiedProfession: member.specifiedProfession ?? '',
     prcLicenseNo: member.prcLicenseNo ?? '',
+    prcRegistrationDate: member.prcRegistrationDate ?? '',
+    prcValidUntilDate: member.prcValidUntilDate ?? '',
     ptrNumber: member.ptrNumber ?? '',
     tin: member.tin ?? '',
     company: member.company ?? '',
-    address: member.address ?? '',
     mobileNumber: member.mobileNumber ?? '',
+    houseNo: member.houseNo ?? '',
+    street: member.street ?? '',
+    barangay: member.barangay ?? '',
+    cityMunicipality: member.cityMunicipality ?? '',
+    province: member.province ?? '',
+    zipCode: member.zipCode ?? '',
+    // Resuming a draft always shows the mailing fields explicitly (not the "same as residence"
+    // shorthand) - there's no stored flag to know if they were originally mirrored or typed in.
+    mailingSameAsResidence: false,
+    mailingHouseNo: member.mailingHouseNo ?? '',
+    mailingStreet: member.mailingStreet ?? '',
+    mailingBarangay: member.mailingBarangay ?? '',
+    mailingCityMunicipality: member.mailingCityMunicipality ?? '',
+    mailingProvince: member.mailingProvince ?? '',
+    mailingZipCode: member.mailingZipCode ?? '',
     housePhone: member.housePhone ?? '',
     website: member.website ?? '',
     facebookUrl: member.facebookUrl ?? '',
@@ -81,12 +120,12 @@ function toWizardState(member: Member): MembershipApplicationState {
     xUrl: member.xUrl ?? '',
     instagramUrl: member.instagramUrl ?? '',
     agreedToTerms: false,
+    dataPrivacyConsent: false,
   }
 }
 
 /** Step 0 (Personal Information)'s required fields are all that's needed to move past it on
- *  resume - kept in sync with the wizard's Step 1 field set (now including PRC License No.,
- *  which moved into this step). */
+ *  resume - kept in sync with the wizard's Step 1 field set. */
 function hasCompletedPersonalInfo(member: Member): boolean {
   return Boolean(
     member.firstName &&
@@ -96,19 +135,26 @@ function hasCompletedPersonalInfo(member: Member): boolean {
       member.birthdate &&
       member.gender &&
       member.civilStatus &&
-      member.prcLicenseNo,
+      member.educationLevel &&
+      member.schoolName &&
+      member.courseYearGraduated &&
+      member.specifiedProfession &&
+      member.prcLicenseNo &&
+      member.prcRegistrationDate &&
+      member.prcValidUntilDate,
   )
 }
 
 /** Step 1 (Contact Information)'s required fields - kept in sync with the wizard's Step 2 field
- *  set. */
+ *  set. House No. is deliberately not required (see MemberService.SubmitMyProfileAsync). */
 function hasCompletedContactInfo(member: Member): boolean {
-  return Boolean(member.address && member.mobileNumber)
+  return Boolean(member.mobileNumber && member.street && member.barangay && member.cityMunicipality && member.province && member.zipCode)
 }
 
-/** Step 3 (Additional Information)'s required field - kept in sync with the wizard's Step 4
- *  field set. Step 2 (Account Information) has no required fields of its own, so it's never a
- *  distinct gate: once Contact Information is complete, Account Information is too. */
+/** Step 2 (Additional Information)'s required field - kept in sync with the wizard's Step 3 field
+ *  set. Step 3 (Payment Details) has no required Member field of its own (Proof of Payment is an
+ *  upload, and the terms/consent checkboxes are never persisted), so it's never a distinct gate:
+ *  once Additional Information is complete, there's nothing further to check for resume purposes. */
 function hasCompletedAdditionalInfo(member: Member): boolean {
   return Boolean(member.ptrNumber)
 }
@@ -119,7 +165,7 @@ function hasCompletedAdditionalInfo(member: Member): boolean {
 function furthestStepReached(member: Member): number {
   if (!hasCompletedPersonalInfo(member)) return 0
   if (!hasCompletedContactInfo(member)) return 1
-  if (!hasCompletedAdditionalInfo(member)) return 3
+  if (!hasCompletedAdditionalInfo(member)) return 2
   return 3
 }
 
@@ -167,8 +213,28 @@ export function MyProfilePage() {
   // and never edited by this wizard - passed through unchanged from whatever's already saved so a
   // draft save here can never clobber them (see the "existing draft data is preserved"
   // requirement). Company is the exception - it's wizard-native, same as PrcLicenseNo/PtrNumber/Tin.
-  const saveDraft = () =>
-    memberApi.updateMyProfile({
+  const saveDraft = () => {
+    // "Same as Residence Address" is a client-only convenience - there's no stored flag, the
+    // mailing fields are just populated with the residence values at save time.
+    const mailing = wizardState.mailingSameAsResidence
+      ? {
+          mailingHouseNo: wizardState.houseNo || null,
+          mailingStreet: wizardState.street || null,
+          mailingBarangay: wizardState.barangay || null,
+          mailingCityMunicipality: wizardState.cityMunicipality || null,
+          mailingProvince: wizardState.province || null,
+          mailingZipCode: wizardState.zipCode || null,
+        }
+      : {
+          mailingHouseNo: wizardState.mailingHouseNo || null,
+          mailingStreet: wizardState.mailingStreet || null,
+          mailingBarangay: wizardState.mailingBarangay || null,
+          mailingCityMunicipality: wizardState.mailingCityMunicipality || null,
+          mailingProvince: wizardState.mailingProvince || null,
+          mailingZipCode: wizardState.mailingZipCode || null,
+        }
+
+    return memberApi.updateMyProfile({
       firstName: wizardState.firstName,
       middleName: wizardState.middleName || null,
       lastName: wizardState.lastName,
@@ -176,8 +242,18 @@ export function MyProfilePage() {
       birthdate: wizardState.birthdate || null,
       gender: wizardState.gender || null,
       civilStatus: wizardState.civilStatus || null,
-      address: wizardState.address || null,
+      educationLevel: wizardState.educationLevel || null,
+      schoolName: wizardState.schoolName || null,
+      courseYearGraduated: wizardState.courseYearGraduated || null,
+      specifiedProfession: wizardState.specifiedProfession || null,
       mobileNumber: wizardState.mobileNumber || null,
+      houseNo: wizardState.houseNo || null,
+      street: wizardState.street || null,
+      barangay: wizardState.barangay || null,
+      cityMunicipality: wizardState.cityMunicipality || null,
+      province: wizardState.province || null,
+      zipCode: wizardState.zipCode || null,
+      ...mailing,
       housePhone: wizardState.housePhone || null,
       website: wizardState.website || null,
       facebookUrl: wizardState.facebookUrl || null,
@@ -185,6 +261,8 @@ export function MyProfilePage() {
       xUrl: wizardState.xUrl || null,
       instagramUrl: wizardState.instagramUrl || null,
       prcLicenseNo: wizardState.prcLicenseNo || null,
+      prcRegistrationDate: wizardState.prcRegistrationDate || null,
+      prcValidUntilDate: wizardState.prcValidUntilDate || null,
       ptrNumber: wizardState.ptrNumber || null,
       tin: wizardState.tin || null,
       company: wizardState.company || null,
@@ -200,6 +278,7 @@ export function MyProfilePage() {
       // re-upload proof is required at this stage (see MemberService.UpsertMyProfileAsync).
       prcIdReuploaded: false,
     })
+  }
 
   const handleWizardNext = async () => {
     setWizardError(null)

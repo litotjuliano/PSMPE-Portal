@@ -44,7 +44,7 @@ export const PrcVerificationsTable = ({
   return (
     <div className="card">
       <div className="card-header">
-        <h6 className="card-title">PRC License Verifications</h6>
+        <h6 className="card-title">RMP License Verifications</h6>
       </div>
 
       <div className="flex flex-col">
@@ -56,8 +56,8 @@ export const PrcVerificationsTable = ({
                   <tr className="text-sm font-normal text-default-700 whitespace-nowrap">
                     <th className="px-3.5 py-3 text-start">Member No.</th>
                     <th className="px-3.5 py-3 text-start">Name</th>
-                    <th className="px-3.5 py-3 text-start">Current PRC No.</th>
-                    <th className="px-3.5 py-3 text-start">Pending PRC No.</th>
+                    <th className="px-3.5 py-3 text-start">Current RMP No.</th>
+                    <th className="px-3.5 py-3 text-start">Pending RMP No.</th>
                     <th className="px-3.5 py-3 text-start">Actions</th>
                   </tr>
                 </thead>
@@ -95,7 +95,7 @@ export const PrcVerificationsTable = ({
                   {members.length === 0 && (
                     <tr>
                       <td colSpan={5} className="py-6 px-3.5 text-center text-default-500">
-                        No pending PRC verifications.
+                        No pending RMP verifications.
                       </td>
                     </tr>
                   )}
@@ -132,8 +132,8 @@ export const PrcVerificationsTable = ({
 
       <ConfirmationModal
         isOpen={rejectingId !== null}
-        title="Reject PRC verification"
-        message="This will discard the pending PRC change and notify the member with your reason."
+        title="Reject RMP verification"
+        message="This will discard the pending RMP change and notify the member with your reason."
         confirmLabel="Reject"
         confirmVariant="danger"
         reasonRequired
@@ -144,7 +144,7 @@ export const PrcVerificationsTable = ({
       {previewingId && (
         <FilePreviewModal
           isOpen
-          title="PRC ID Document"
+          title="RMP ID Document"
           fetchFile={() => uploadApi.fetchMemberPrcIdUrl(previewingId)}
           onClose={() => setPreviewingId(null)}
         />

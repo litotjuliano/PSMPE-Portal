@@ -62,7 +62,7 @@ export const menuItemsData: MenuItemType[] = [
   },
   {
     key: 'PrcVerifications',
-    label: 'PRC Verifications',
+    label: 'RMP Verifications',
     icon: LuBadgeCheck,
     href: '/prc-verifications',
     requiredRoles: ['Admin', 'Super Admin'],

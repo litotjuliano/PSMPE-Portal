@@ -140,6 +140,22 @@ public class AdminControllerTests : IClassFixture<CustomWebApplicationFactory>, 
     }
 
     [Fact]
+    public async Task GetUsers_SortsByEmailConfirmed_ThenByCreatedAt()
+    {
+        var unverified = await CreateUserAsync(RoleNames.Member, "Unverified-User");
+        var verified = await CreateUserAsync(RoleNames.Member, "Verified-User");
+        await _userManager.ConfirmEmailAsync(verified, await _userManager.GenerateEmailConfirmationTokenAsync(verified));
+
+        var asc = UnwrapPaged(await _controller.GetUsers(page: 1, pageSize: 1000, sortBy: "emailConfirmed", sortDir: "asc"));
+        var ascItems = asc.Items.ToList();
+        Assert.True(ascItems.FindIndex(u => u.Id == unverified.Id) < ascItems.FindIndex(u => u.Id == verified.Id));
+
+        var desc = UnwrapPaged(await _controller.GetUsers(page: 1, pageSize: 1000, sortBy: "emailConfirmed", sortDir: "desc"));
+        var descItems = desc.Items.ToList();
+        Assert.True(descItems.FindIndex(u => u.Id == verified.Id) < descItems.FindIndex(u => u.Id == unverified.Id));
+    }
+
+    [Fact]
     public async Task GetUsers_RespectsPaging()
     {
         for (var i = 0; i < 3; i++)
@@ -378,6 +394,52 @@ public class AdminControllerTests : IClassFixture<CustomWebApplicationFactory>, 
 
         Assert.IsType<ForbidResult>(result);
         Assert.DoesNotContain(RoleNames.Manager, await _userManager.GetRolesAsync(superAdmin));
+    }
+
+    [Fact]
+    public async Task VerifyEmail_UnconfirmedUser_ConfirmsEmail()
+    {
+        var user = await CreateUserAsync(RoleNames.Member);
+        Assert.False(user.EmailConfirmed);
+
+        var result = await _controller.VerifyEmail(user.Id);
+
+        Assert.IsType<NoContentResult>(result);
+        var updated = await _userManager.FindByIdAsync(user.Id.ToString());
+        Assert.True(updated!.EmailConfirmed);
+    }
+
+    [Fact]
+    public async Task VerifyEmail_AlreadyConfirmedUser_IsNoOp()
+    {
+        var user = await CreateUserAsync(RoleNames.Member);
+        await _userManager.ConfirmEmailAsync(user, await _userManager.GenerateEmailConfirmationTokenAsync(user));
+
+        var result = await _controller.VerifyEmail(user.Id);
+
+        Assert.IsType<NoContentResult>(result);
+    }
+
+    [Fact]
+    public async Task VerifyEmail_TargetingSuperAdmin_AsAdmin_ReturnsNotFound()
+    {
+        var superAdmin = await CreateUserAsync(RoleNames.SuperAdmin);
+        var controller = CreateController(callerRoles: RoleNames.Admin);
+
+        var result = await controller.VerifyEmail(superAdmin.Id);
+
+        Assert.IsType<NotFoundResult>(result);
+    }
+
+    [Fact]
+    public async Task VerifyEmail_TargetingSelfAsSuperAdmin_ReturnsForbidden()
+    {
+        var superAdmin = await CreateUserAsync(RoleNames.SuperAdmin);
+        var controller = CreateController(callerId: superAdmin.Id, callerRoles: RoleNames.SuperAdmin);
+
+        var result = await controller.VerifyEmail(superAdmin.Id);
+
+        Assert.IsType<ForbidResult>(result);
     }
 
     [Fact]

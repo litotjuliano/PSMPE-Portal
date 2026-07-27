@@ -4,12 +4,14 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.DependencyInjection;
+using PSMPE.Portal.Application.Common.Interfaces;
 using PSMPE.Portal.Application.Common.Models;
 using PSMPE.Portal.Application.Members;
 using PSMPE.Portal.Application.Members.Dtos;
 using PSMPE.Portal.Domain.Entities;
 using PSMPE.Portal.Domain.Enums;
 using PSMPE.Portal.WebAPI.Controllers;
+using SkiaSharp;
 using Xunit;
 
 namespace PSMPE.Portal.WebAPI.IntegrationTests.Members;
@@ -28,6 +30,7 @@ public class MembersControllerTests : IClassFixture<CustomWebApplicationFactory>
     private readonly IMemberService _memberService;
     private readonly IMemberUploadService _memberUploadService;
     private readonly IMemberCertificateService _memberCertificateService;
+    private readonly IEmailSender _emailSender;
 
     public MembersControllerTests(CustomWebApplicationFactory factory)
     {
@@ -37,6 +40,7 @@ public class MembersControllerTests : IClassFixture<CustomWebApplicationFactory>
         _memberService = _scope.ServiceProvider.GetRequiredService<IMemberService>();
         _memberUploadService = _scope.ServiceProvider.GetRequiredService<IMemberUploadService>();
         _memberCertificateService = _scope.ServiceProvider.GetRequiredService<IMemberCertificateService>();
+        _emailSender = _scope.ServiceProvider.GetRequiredService<IEmailSender>();
     }
 
     public Task InitializeAsync() => _factory.InitializeAsync();
@@ -51,7 +55,7 @@ public class MembersControllerTests : IClassFixture<CustomWebApplicationFactory>
     {
         var claims = new List<Claim> { new(ClaimTypes.NameIdentifier, (callerId ?? Guid.NewGuid()).ToString()) };
         var httpContext = new DefaultHttpContext { User = new ClaimsPrincipal(new ClaimsIdentity(claims, "TestAuth")) };
-        return new MembersController(_memberService, _memberUploadService, _memberCertificateService, _userManager)
+        return new MembersController(_memberService, _memberUploadService, _memberCertificateService, _userManager, _emailSender)
         {
             ControllerContext = new ControllerContext { HttpContext = httpContext }
         };
@@ -80,8 +84,23 @@ public class MembersControllerTests : IClassFixture<CustomWebApplicationFactory>
         Birthdate: new DateOnly(1985, 4, 5),
         Gender: "Male",
         CivilStatus: "Single",
-        Address: "1234 Main St, Quezon City",
+        EducationLevel: "College / University",
+        SchoolName: "Sample University",
+        CourseYearGraduated: "BSCE 2010",
+        SpecifiedProfession: "Master Plumber",
         MobileNumber: "09171234567",
+        HouseNo: null,
+        Street: "1234 Main St",
+        Barangay: "Sample Barangay",
+        CityMunicipality: "Quezon City",
+        Province: "Metro Manila",
+        ZipCode: "1100",
+        MailingHouseNo: null,
+        MailingStreet: null,
+        MailingBarangay: null,
+        MailingCityMunicipality: null,
+        MailingProvince: null,
+        MailingZipCode: null,
         HousePhone: null,
         Website: null,
         FacebookUrl: null,
@@ -89,6 +108,8 @@ public class MembersControllerTests : IClassFixture<CustomWebApplicationFactory>
         XUrl: null,
         InstagramUrl: null,
         PrcLicenseNo: "MP 12345",
+        PrcRegistrationDate: new DateOnly(2020, 1, 1),
+        PrcValidUntilDate: new DateOnly(2030, 1, 1),
         PtrNumber: "PTR-0012345",
         Tin: null,
         Chapter: Chapters.QuezonCity,
@@ -134,9 +155,15 @@ public class MembersControllerTests : IClassFixture<CustomWebApplicationFactory>
 
         var updateRequest = new UpdateMemberRequest(
             FirstName: dto.FirstName, MiddleName: dto.MiddleName, LastName: dto.LastName, Suffix: dto.Suffix,
-            Birthdate: dto.Birthdate, Gender: dto.Gender, CivilStatus: "Married", Address: dto.Address, MobileNumber: "09181234567",
+            Birthdate: dto.Birthdate, Gender: dto.Gender, CivilStatus: "Married",
+            EducationLevel: dto.EducationLevel, SchoolName: dto.SchoolName, CourseYearGraduated: dto.CourseYearGraduated, SpecifiedProfession: dto.SpecifiedProfession,
+            MobileNumber: "09181234567",
+            HouseNo: dto.HouseNo, Street: dto.Street, Barangay: dto.Barangay, CityMunicipality: dto.CityMunicipality, Province: dto.Province, ZipCode: dto.ZipCode,
+            MailingHouseNo: dto.MailingHouseNo, MailingStreet: dto.MailingStreet, MailingBarangay: dto.MailingBarangay,
+            MailingCityMunicipality: dto.MailingCityMunicipality, MailingProvince: dto.MailingProvince, MailingZipCode: dto.MailingZipCode,
             HousePhone: null, Website: null, FacebookUrl: null, LinkedInUrl: null, XUrl: null, InstagramUrl: null,
-            PrcLicenseNo: dto.PrcLicenseNo, PtrNumber: "PTR-9999999", Tin: "123-456-789",
+            PrcLicenseNo: dto.PrcLicenseNo, PrcRegistrationDate: dto.PrcRegistrationDate, PrcValidUntilDate: dto.PrcValidUntilDate,
+            PtrNumber: "PTR-9999999", Tin: "123-456-789",
             Chapter: dto.Chapter, EmploymentStatus: null, Company: dto.Company, Position: null, BusinessAddress: null,
             YearsOfPractice: null, Specialization: null, Skills: null, MemberType: dto.MemberType, Status: dto.Status,
             RenewalDueDate: dto.RenewalDueDate, NationalDuesReferenceNo: dto.NationalDuesReferenceNo);
@@ -243,9 +270,13 @@ public class MembersControllerTests : IClassFixture<CustomWebApplicationFactory>
         var controller = CreateController(user.Id);
         var request = new UpdateMyProfileRequest(
             FirstName: "Maria", MiddleName: null, LastName: "Santos", Suffix: null,
-            Birthdate: null, Gender: "Female", CivilStatus: null, Address: "Cebu City", MobileNumber: null,
+            Birthdate: null, Gender: "Female", CivilStatus: null,
+            EducationLevel: null, SchoolName: null, CourseYearGraduated: null, SpecifiedProfession: null,
+            MobileNumber: null,
+            HouseNo: null, Street: "Cebu City", Barangay: null, CityMunicipality: null, Province: null, ZipCode: null,
+            MailingHouseNo: null, MailingStreet: null, MailingBarangay: null, MailingCityMunicipality: null, MailingProvince: null, MailingZipCode: null,
             HousePhone: null, Website: null, FacebookUrl: null, LinkedInUrl: null, XUrl: null, InstagramUrl: null,
-            PrcLicenseNo: null, PtrNumber: null, Tin: null, Chapter: Chapters.Cebu,
+            PrcLicenseNo: null, PrcRegistrationDate: null, PrcValidUntilDate: null, PtrNumber: null, Tin: null, Chapter: Chapters.Cebu,
             EmploymentStatus: null, Company: null, Position: null, BusinessAddress: null, YearsOfPractice: null, Specialization: null, Skills: null,
             MemberType: MemberTypes.Regular);
 
@@ -267,9 +298,13 @@ public class MembersControllerTests : IClassFixture<CustomWebApplicationFactory>
         var controller = CreateController(user.Id);
         var request = new UpdateMyProfileRequest(
             FirstName: "Ana", MiddleName: null, LastName: "Reyes", Suffix: null,
-            Birthdate: null, Gender: null, CivilStatus: null, Address: null, MobileNumber: null,
+            Birthdate: null, Gender: null, CivilStatus: null,
+            EducationLevel: null, SchoolName: null, CourseYearGraduated: null, SpecifiedProfession: null,
+            MobileNumber: null,
+            HouseNo: null, Street: null, Barangay: null, CityMunicipality: null, Province: null, ZipCode: null,
+            MailingHouseNo: null, MailingStreet: null, MailingBarangay: null, MailingCityMunicipality: null, MailingProvince: null, MailingZipCode: null,
             HousePhone: null, Website: null, FacebookUrl: null, LinkedInUrl: null, XUrl: null, InstagramUrl: null,
-            PrcLicenseNo: null, PtrNumber: null, Tin: null, Chapter: Chapters.Davao,
+            PrcLicenseNo: null, PrcRegistrationDate: null, PrcValidUntilDate: null, PtrNumber: null, Tin: null, Chapter: Chapters.Davao,
             EmploymentStatus: null, Company: null, Position: null, BusinessAddress: null, YearsOfPractice: null, Specialization: null, Skills: null,
             MemberType: MemberTypes.Regular);
 
@@ -290,9 +325,14 @@ public class MembersControllerTests : IClassFixture<CustomWebApplicationFactory>
         var updateRequest = new UpdateMemberRequest(
             FirstName: "Juan", MiddleName: null, LastName: "Dela Cruz", Suffix: null,
             Birthdate: createdDto.Birthdate, Gender: createdDto.Gender, CivilStatus: createdDto.CivilStatus,
-            Address: createdDto.Address, MobileNumber: createdDto.MobileNumber,
+            EducationLevel: createdDto.EducationLevel, SchoolName: createdDto.SchoolName, CourseYearGraduated: createdDto.CourseYearGraduated, SpecifiedProfession: createdDto.SpecifiedProfession,
+            MobileNumber: createdDto.MobileNumber,
+            HouseNo: createdDto.HouseNo, Street: createdDto.Street, Barangay: createdDto.Barangay, CityMunicipality: createdDto.CityMunicipality, Province: createdDto.Province, ZipCode: createdDto.ZipCode,
+            MailingHouseNo: createdDto.MailingHouseNo, MailingStreet: createdDto.MailingStreet, MailingBarangay: createdDto.MailingBarangay,
+            MailingCityMunicipality: createdDto.MailingCityMunicipality, MailingProvince: createdDto.MailingProvince, MailingZipCode: createdDto.MailingZipCode,
             HousePhone: null, Website: null, FacebookUrl: null, LinkedInUrl: null, XUrl: null, InstagramUrl: null,
-            PrcLicenseNo: createdDto.PrcLicenseNo, PtrNumber: createdDto.PtrNumber, Tin: createdDto.Tin,
+            PrcLicenseNo: createdDto.PrcLicenseNo, PrcRegistrationDate: createdDto.PrcRegistrationDate, PrcValidUntilDate: createdDto.PrcValidUntilDate,
+            PtrNumber: createdDto.PtrNumber, Tin: createdDto.Tin,
             Chapter: createdDto.Chapter,
             EmploymentStatus: null, Company: createdDto.Company, Position: null, BusinessAddress: null,
             YearsOfPractice: null, Specialization: null, Skills: null,
@@ -313,9 +353,13 @@ public class MembersControllerTests : IClassFixture<CustomWebApplicationFactory>
         var controller = CreateController();
         var request = new UpdateMemberRequest(
             FirstName: "First", MiddleName: null, LastName: "Last", Suffix: null,
-            Birthdate: null, Gender: null, CivilStatus: null, Address: null, MobileNumber: null,
+            Birthdate: null, Gender: null, CivilStatus: null,
+            EducationLevel: null, SchoolName: null, CourseYearGraduated: null, SpecifiedProfession: null,
+            MobileNumber: null,
+            HouseNo: null, Street: null, Barangay: null, CityMunicipality: null, Province: null, ZipCode: null,
+            MailingHouseNo: null, MailingStreet: null, MailingBarangay: null, MailingCityMunicipality: null, MailingProvince: null, MailingZipCode: null,
             HousePhone: null, Website: null, FacebookUrl: null, LinkedInUrl: null, XUrl: null, InstagramUrl: null,
-            PrcLicenseNo: null, PtrNumber: null, Tin: null, Chapter: Chapters.Ncr,
+            PrcLicenseNo: null, PrcRegistrationDate: null, PrcValidUntilDate: null, PtrNumber: null, Tin: null, Chapter: Chapters.Ncr,
             EmploymentStatus: null, Company: null, Position: null, BusinessAddress: null,
             YearsOfPractice: null, Specialization: null, Skills: null,
             MemberType: MemberTypes.Regular, Status: MembershipStatus.Active, RenewalDueDate: null, NationalDuesReferenceNo: null);
@@ -366,6 +410,40 @@ public class MembersControllerTests : IClassFixture<CustomWebApplicationFactory>
     }
 
     [Fact]
+    public async Task Approve_GeneratesDownloadableReceipt()
+    {
+        var user = await CreateUserAsync();
+        var adminController = CreateController();
+        var created = await adminController.Create(BuildCreateRequest(user.Id), CancellationToken.None);
+        var createdDto = Assert.IsType<MemberDto>(Assert.IsType<OkObjectResult>(created.Result).Value);
+
+        var beforeApprove = await CreateController(user.Id).GetMyReceipt(CancellationToken.None);
+        Assert.IsType<NotFoundResult>(beforeApprove);
+
+        var approveResult = await adminController.Approve(createdDto.Id, CancellationToken.None);
+        Assert.IsType<NoContentResult>(approveResult);
+
+        var afterApprove = await CreateController(user.Id).GetMyReceipt(CancellationToken.None);
+        var fileResult = Assert.IsType<FileStreamResult>(afterApprove);
+        Assert.Equal("image/jpeg", fileResult.ContentType);
+    }
+
+    [Fact]
+    public async Task Approve_Twice_DoesNotFailOnAlreadyGeneratedReceipt()
+    {
+        var user = await CreateUserAsync();
+        var adminController = CreateController();
+        var created = await adminController.Create(BuildCreateRequest(user.Id), CancellationToken.None);
+        var createdDto = Assert.IsType<MemberDto>(Assert.IsType<OkObjectResult>(created.Result).Value);
+
+        Assert.IsType<NoContentResult>(await adminController.Approve(createdDto.Id, CancellationToken.None));
+        Assert.IsType<NoContentResult>(await adminController.Approve(createdDto.Id, CancellationToken.None));
+
+        var afterSecondApprove = await CreateController(user.Id).GetMyReceipt(CancellationToken.None);
+        Assert.IsType<FileStreamResult>(afterSecondApprove);
+    }
+
+    [Fact]
     public async Task Approve_UnknownId_ReturnsNotFound()
     {
         var controller = CreateController();
@@ -388,9 +466,15 @@ public class MembersControllerTests : IClassFixture<CustomWebApplicationFactory>
 
         var activateRequest = new UpdateMemberRequest(
             FirstName: activeDto.FirstName, MiddleName: activeDto.MiddleName, LastName: activeDto.LastName, Suffix: activeDto.Suffix,
-            Birthdate: activeDto.Birthdate, Gender: activeDto.Gender, CivilStatus: activeDto.CivilStatus, Address: activeDto.Address, MobileNumber: activeDto.MobileNumber,
+            Birthdate: activeDto.Birthdate, Gender: activeDto.Gender, CivilStatus: activeDto.CivilStatus,
+            EducationLevel: activeDto.EducationLevel, SchoolName: activeDto.SchoolName, CourseYearGraduated: activeDto.CourseYearGraduated, SpecifiedProfession: activeDto.SpecifiedProfession,
+            MobileNumber: activeDto.MobileNumber,
+            HouseNo: activeDto.HouseNo, Street: activeDto.Street, Barangay: activeDto.Barangay, CityMunicipality: activeDto.CityMunicipality, Province: activeDto.Province, ZipCode: activeDto.ZipCode,
+            MailingHouseNo: activeDto.MailingHouseNo, MailingStreet: activeDto.MailingStreet, MailingBarangay: activeDto.MailingBarangay,
+            MailingCityMunicipality: activeDto.MailingCityMunicipality, MailingProvince: activeDto.MailingProvince, MailingZipCode: activeDto.MailingZipCode,
             HousePhone: activeDto.HousePhone, Website: activeDto.Website, FacebookUrl: activeDto.FacebookUrl, LinkedInUrl: activeDto.LinkedInUrl, XUrl: activeDto.XUrl, InstagramUrl: activeDto.InstagramUrl,
-            PrcLicenseNo: activeDto.PrcLicenseNo, PtrNumber: activeDto.PtrNumber, Tin: activeDto.Tin,
+            PrcLicenseNo: activeDto.PrcLicenseNo, PrcRegistrationDate: activeDto.PrcRegistrationDate, PrcValidUntilDate: activeDto.PrcValidUntilDate,
+            PtrNumber: activeDto.PtrNumber, Tin: activeDto.Tin,
             Chapter: activeDto.Chapter, EmploymentStatus: activeDto.EmploymentStatus, Company: activeDto.Company, Position: activeDto.Position, BusinessAddress: activeDto.BusinessAddress,
             YearsOfPractice: activeDto.YearsOfPractice, Specialization: activeDto.Specialization, Skills: activeDto.Skills,
             MemberType: activeDto.MemberType, Status: MembershipStatus.Active,
@@ -439,9 +523,15 @@ public class MembersControllerTests : IClassFixture<CustomWebApplicationFactory>
         var dueDate = DateOnly.FromDateTime(DateTime.UtcNow.AddDays(dueDateOffsetDays));
         var updateRequest = new UpdateMemberRequest(
             FirstName: createdDto.FirstName, MiddleName: createdDto.MiddleName, LastName: createdDto.LastName, Suffix: createdDto.Suffix,
-            Birthdate: createdDto.Birthdate, Gender: createdDto.Gender, CivilStatus: createdDto.CivilStatus, Address: createdDto.Address, MobileNumber: createdDto.MobileNumber,
+            Birthdate: createdDto.Birthdate, Gender: createdDto.Gender, CivilStatus: createdDto.CivilStatus,
+            EducationLevel: createdDto.EducationLevel, SchoolName: createdDto.SchoolName, CourseYearGraduated: createdDto.CourseYearGraduated, SpecifiedProfession: createdDto.SpecifiedProfession,
+            MobileNumber: createdDto.MobileNumber,
+            HouseNo: createdDto.HouseNo, Street: createdDto.Street, Barangay: createdDto.Barangay, CityMunicipality: createdDto.CityMunicipality, Province: createdDto.Province, ZipCode: createdDto.ZipCode,
+            MailingHouseNo: createdDto.MailingHouseNo, MailingStreet: createdDto.MailingStreet, MailingBarangay: createdDto.MailingBarangay,
+            MailingCityMunicipality: createdDto.MailingCityMunicipality, MailingProvince: createdDto.MailingProvince, MailingZipCode: createdDto.MailingZipCode,
             HousePhone: createdDto.HousePhone, Website: createdDto.Website, FacebookUrl: createdDto.FacebookUrl, LinkedInUrl: createdDto.LinkedInUrl, XUrl: createdDto.XUrl, InstagramUrl: createdDto.InstagramUrl,
-            PrcLicenseNo: createdDto.PrcLicenseNo, PtrNumber: createdDto.PtrNumber, Tin: createdDto.Tin,
+            PrcLicenseNo: createdDto.PrcLicenseNo, PrcRegistrationDate: createdDto.PrcRegistrationDate, PrcValidUntilDate: createdDto.PrcValidUntilDate,
+            PtrNumber: createdDto.PtrNumber, Tin: createdDto.Tin,
             Chapter: createdDto.Chapter, EmploymentStatus: createdDto.EmploymentStatus, Company: createdDto.Company, Position: createdDto.Position, BusinessAddress: createdDto.BusinessAddress,
             YearsOfPractice: createdDto.YearsOfPractice, Specialization: createdDto.Specialization, Skills: createdDto.Skills,
             MemberType: createdDto.MemberType, Status: MembershipStatus.Active,
@@ -472,9 +562,13 @@ public class MembersControllerTests : IClassFixture<CustomWebApplicationFactory>
         var controller = CreateController(user.Id);
         var request = new UpdateMyProfileRequest(
             FirstName: "", MiddleName: null, LastName: "", Suffix: null,
-            Birthdate: null, Gender: null, CivilStatus: null, Address: null, MobileNumber: null,
+            Birthdate: null, Gender: null, CivilStatus: null,
+            EducationLevel: null, SchoolName: null, CourseYearGraduated: null, SpecifiedProfession: null,
+            MobileNumber: null,
+            HouseNo: null, Street: null, Barangay: null, CityMunicipality: null, Province: null, ZipCode: null,
+            MailingHouseNo: null, MailingStreet: null, MailingBarangay: null, MailingCityMunicipality: null, MailingProvince: null, MailingZipCode: null,
             HousePhone: null, Website: null, FacebookUrl: null, LinkedInUrl: null, XUrl: null, InstagramUrl: null,
-            PrcLicenseNo: null, PtrNumber: null, Tin: null, Chapter: "",
+            PrcLicenseNo: null, PrcRegistrationDate: null, PrcValidUntilDate: null, PtrNumber: null, Tin: null, Chapter: "",
             EmploymentStatus: null, Company: null, Position: null, BusinessAddress: null, YearsOfPractice: null, Specialization: null, Skills: null,
             MemberType: "");
         await controller.UpdateMyProfile(request, CancellationToken.None);
@@ -487,12 +581,42 @@ public class MembersControllerTests : IClassFixture<CustomWebApplicationFactory>
     private static UpdateMyProfileRequest BuildCompleteProfileRequest(DateOnly birthdate) => new(
         FirstName: "Draft", MiddleName: null, LastName: "Applicant", Suffix: null,
         Birthdate: birthdate, Gender: "Male", CivilStatus: "Single",
-        Address: "123 Sample St", MobileNumber: "09171234567",
+        EducationLevel: "College / University", SchoolName: "Sample University", CourseYearGraduated: "BSCE 2015", SpecifiedProfession: "Master Plumber",
+        MobileNumber: "09171234567",
+        HouseNo: null, Street: "123 Sample St", Barangay: "Sample Barangay", CityMunicipality: "Sample City", Province: "Sample Province", ZipCode: "1000",
+        MailingHouseNo: null, MailingStreet: null, MailingBarangay: null, MailingCityMunicipality: null, MailingProvince: null, MailingZipCode: null,
         HousePhone: null, Website: null, FacebookUrl: null, LinkedInUrl: null, XUrl: null, InstagramUrl: null,
-        PrcLicenseNo: "MP 99999", PtrNumber: "PTR-0099999", Tin: null,
+        PrcLicenseNo: "MP 99999", PrcRegistrationDate: new DateOnly(2020, 1, 1), PrcValidUntilDate: new DateOnly(2030, 1, 1),
+        PtrNumber: "PTR-0099999", Tin: null,
         Chapter: Chapters.Ncr,
         EmploymentStatus: null, Company: null, Position: null, BusinessAddress: null, YearsOfPractice: null, Specialization: null, Skills: null,
         MemberType: MemberTypes.Regular);
+
+    private static byte[] BuildPng(int width = 50, int height = 50)
+    {
+        using var bitmap = new SKBitmap(width, height);
+        using var canvas = new SKCanvas(bitmap);
+        canvas.Clear(SKColors.CornflowerBlue);
+        using var image = SKImage.FromBitmap(bitmap);
+        using var data = image.Encode(SKEncodedImageFormat.Png, 100);
+        return data.ToArray();
+    }
+
+    private async Task UploadPhotoAsync(Guid userId)
+    {
+        var bytes = BuildPng();
+        await using var stream = new MemoryStream(bytes);
+        var uploadResult = await _memberUploadService.UploadAsync(userId, UploadKind.Photo, stream, "photo.png", stream.Length, CancellationToken.None);
+        Assert.True(uploadResult.Succeeded);
+    }
+
+    private async Task UploadProofOfPaymentAsync(Guid userId)
+    {
+        var bytes = BuildPng();
+        await using var stream = new MemoryStream(bytes);
+        var uploadResult = await _memberUploadService.UploadAsync(userId, UploadKind.ProofOfPayment, stream, "receipt.png", stream.Length, CancellationToken.None);
+        Assert.True(uploadResult.Succeeded);
+    }
 
     [Fact]
     public async Task SubmitMyProfile_BirthdateUnder18_ReturnsBadRequest()
@@ -515,6 +639,8 @@ public class MembersControllerTests : IClassFixture<CustomWebApplicationFactory>
         var exactlyEighteen = DateOnly.FromDateTime(DateTime.UtcNow.AddYears(-18));
         await controller.UpdateMyProfile(BuildCompleteProfileRequest(exactlyEighteen), CancellationToken.None);
         await UploadFreshPrcIdAsync(user.Id);
+        await UploadPhotoAsync(user.Id);
+        await UploadProofOfPaymentAsync(user.Id);
 
         var result = await controller.SubmitMyProfile(CancellationToken.None);
 
@@ -525,7 +651,7 @@ public class MembersControllerTests : IClassFixture<CustomWebApplicationFactory>
     [InlineData("prcLicenseNo")]
     [InlineData("gender")]
     [InlineData("civilStatus")]
-    [InlineData("address")]
+    [InlineData("street")]
     [InlineData("mobileNumber")]
     [InlineData("ptrNumber")]
     public async Task SubmitMyProfile_MissingAnyNewRequiredField_ReturnsBadRequest(string fieldToOmit)
@@ -538,12 +664,15 @@ public class MembersControllerTests : IClassFixture<CustomWebApplicationFactory>
             "prcLicenseNo" => complete with { PrcLicenseNo = null },
             "gender" => complete with { Gender = null },
             "civilStatus" => complete with { CivilStatus = null },
-            "address" => complete with { Address = null },
+            "street" => complete with { Street = null },
             "mobileNumber" => complete with { MobileNumber = null },
             "ptrNumber" => complete with { PtrNumber = null },
             _ => throw new ArgumentOutOfRangeException(nameof(fieldToOmit)),
         };
         await controller.UpdateMyProfile(request, CancellationToken.None);
+        await UploadFreshPrcIdAsync(user.Id);
+        await UploadPhotoAsync(user.Id);
+        await UploadProofOfPaymentAsync(user.Id);
 
         var result = await controller.SubmitMyProfile(CancellationToken.None);
 
@@ -555,17 +684,11 @@ public class MembersControllerTests : IClassFixture<CustomWebApplicationFactory>
     {
         var user = await CreateUserAsync();
         var controller = CreateController(user.Id);
-        var request = new UpdateMyProfileRequest(
-            FirstName: "Draft", MiddleName: null, LastName: "Applicant", Suffix: null,
-            Birthdate: new DateOnly(1990, 1, 1), Gender: "Male", CivilStatus: "Single",
-            Address: "123 Sample St", MobileNumber: "09171234567",
-            HousePhone: null, Website: null, FacebookUrl: null, LinkedInUrl: null, XUrl: null, InstagramUrl: null,
-            PrcLicenseNo: "MP 99999", PtrNumber: "PTR-0099999", Tin: null,
-            Chapter: Chapters.Ncr,
-            EmploymentStatus: null, Company: null, Position: null, BusinessAddress: null, YearsOfPractice: null, Specialization: null, Skills: null,
-            MemberType: MemberTypes.Regular);
+        var request = BuildCompleteProfileRequest(new DateOnly(1990, 1, 1));
         await controller.UpdateMyProfile(request, CancellationToken.None);
         await UploadFreshPrcIdAsync(user.Id);
+        await UploadPhotoAsync(user.Id);
+        await UploadProofOfPaymentAsync(user.Id);
 
         var firstSubmit = await controller.SubmitMyProfile(CancellationToken.None);
         Assert.IsType<NoContentResult>(firstSubmit);
@@ -590,9 +713,13 @@ public class MembersControllerTests : IClassFixture<CustomWebApplicationFactory>
         var draftController = CreateController(draftUser.Id);
         var draftRequest = new UpdateMyProfileRequest(
             FirstName: "Still", MiddleName: null, LastName: "Drafting", Suffix: null,
-            Birthdate: null, Gender: null, CivilStatus: null, Address: null, MobileNumber: null,
+            Birthdate: null, Gender: null, CivilStatus: null,
+            EducationLevel: null, SchoolName: null, CourseYearGraduated: null, SpecifiedProfession: null,
+            MobileNumber: null,
+            HouseNo: null, Street: null, Barangay: null, CityMunicipality: null, Province: null, ZipCode: null,
+            MailingHouseNo: null, MailingStreet: null, MailingBarangay: null, MailingCityMunicipality: null, MailingProvince: null, MailingZipCode: null,
             HousePhone: null, Website: null, FacebookUrl: null, LinkedInUrl: null, XUrl: null, InstagramUrl: null,
-            PrcLicenseNo: null, PtrNumber: null, Tin: null, Chapter: Chapters.Ncr,
+            PrcLicenseNo: null, PrcRegistrationDate: null, PrcValidUntilDate: null, PtrNumber: null, Tin: null, Chapter: Chapters.Ncr,
             EmploymentStatus: null, Company: null, Position: null, BusinessAddress: null, YearsOfPractice: null, Specialization: null, Skills: null,
             MemberType: MemberTypes.Regular);
         var draftResult = await draftController.UpdateMyProfile(draftRequest, CancellationToken.None);
@@ -607,12 +734,17 @@ public class MembersControllerTests : IClassFixture<CustomWebApplicationFactory>
     }
 
     private static UpdateMyProfileRequest BuildProfileRequest(
-        string chapter, string memberType, string? prcLicenseNo = null, bool prcIdReuploaded = false) => new(
+        string chapter, string memberType, string? prcLicenseNo = null, bool prcIdReuploaded = false,
+        DateOnly? prcRegistrationDate = null, DateOnly? prcValidUntilDate = null) => new(
         FirstName: "Juan", MiddleName: null, LastName: "Dela Cruz", Suffix: null,
         Birthdate: new DateOnly(1990, 1, 1), Gender: "Male", CivilStatus: "Single",
-        Address: "123 Main St", MobileNumber: "09171234567",
+        EducationLevel: "College / University", SchoolName: "Sample University", CourseYearGraduated: "BSCE 2015", SpecifiedProfession: "Master Plumber",
+        MobileNumber: "09171234567",
+        HouseNo: null, Street: "123 Main St", Barangay: "Sample Barangay", CityMunicipality: "Sample City", Province: "Sample Province", ZipCode: "1000",
+        MailingHouseNo: null, MailingStreet: null, MailingBarangay: null, MailingCityMunicipality: null, MailingProvince: null, MailingZipCode: null,
         HousePhone: null, Website: null, FacebookUrl: null, LinkedInUrl: null, XUrl: null, InstagramUrl: null,
-        PrcLicenseNo: prcLicenseNo, PtrNumber: "PTR-0012345", Tin: null,
+        PrcLicenseNo: prcLicenseNo, PrcRegistrationDate: prcRegistrationDate ?? new DateOnly(2020, 1, 1), PrcValidUntilDate: prcValidUntilDate ?? new DateOnly(2030, 1, 1),
+        PtrNumber: "PTR-0012345", Tin: null,
         Chapter: chapter,
         EmploymentStatus: null, Company: null, Position: null, BusinessAddress: null, YearsOfPractice: null, Specialization: null, Skills: null,
         MemberType: memberType,
@@ -624,6 +756,8 @@ public class MembersControllerTests : IClassFixture<CustomWebApplicationFactory>
         var controller = CreateController(user.Id);
         await controller.UpdateMyProfile(BuildProfileRequest(Chapters.Ncr, MemberTypes.Regular, prcLicenseNo), CancellationToken.None);
         await UploadFreshPrcIdAsync(user.Id);
+        await UploadPhotoAsync(user.Id);
+        await UploadProofOfPaymentAsync(user.Id);
         await controller.SubmitMyProfile(CancellationToken.None);
         return user.Id;
     }
@@ -816,9 +950,13 @@ public class MembersControllerTests : IClassFixture<CustomWebApplicationFactory>
         var controller = CreateController(adminUser.Id);
         var request = new UpdateMyProfileRequest(
             FirstName: "Staff", MiddleName: null, LastName: "Account", Suffix: null,
-            Birthdate: null, Gender: null, CivilStatus: null, Address: null, MobileNumber: null,
+            Birthdate: null, Gender: null, CivilStatus: null,
+            EducationLevel: null, SchoolName: null, CourseYearGraduated: null, SpecifiedProfession: null,
+            MobileNumber: null,
+            HouseNo: null, Street: null, Barangay: null, CityMunicipality: null, Province: null, ZipCode: null,
+            MailingHouseNo: null, MailingStreet: null, MailingBarangay: null, MailingCityMunicipality: null, MailingProvince: null, MailingZipCode: null,
             HousePhone: null, Website: null, FacebookUrl: null, LinkedInUrl: null, XUrl: null, InstagramUrl: null,
-            PrcLicenseNo: null, PtrNumber: null, Tin: null, Chapter: Chapters.Ncr,
+            PrcLicenseNo: null, PrcRegistrationDate: null, PrcValidUntilDate: null, PtrNumber: null, Tin: null, Chapter: Chapters.Ncr,
             EmploymentStatus: null, Company: null, Position: null, BusinessAddress: null, YearsOfPractice: null, Specialization: null, Skills: null,
             MemberType: MemberTypes.Regular);
 

@@ -24,6 +24,14 @@ export const MyProfileTabsCard = ({ existing, onUpdated }: MyProfileTabsCardProp
 
   return (
     <div className="flex flex-col gap-4 max-w-3xl">
+      {!existing.approvedAt && (
+        <div className="card border border-info/30 bg-info/10">
+          <div className="card-body text-sm font-medium text-info">
+            Thank you for registering. Your profile is pending admin approval.
+          </div>
+        </div>
+      )}
+
       <div className="card">
         <div className="card-body flex flex-wrap gap-x-8 gap-y-2 text-sm">
           <div>

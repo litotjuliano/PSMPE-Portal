@@ -7,6 +7,7 @@ export interface UserSummary {
   displayName: string
   roles: Role[]
   createdAt: string
+  emailConfirmed: boolean
 }
 
 export interface RoleSummary {
@@ -25,7 +26,7 @@ export interface PagedResult<T> {
 export interface GetUsersParams {
   page?: number
   pageSize?: number
-  sortBy?: 'displayName' | 'email' | 'createdAt'
+  sortBy?: 'displayName' | 'email' | 'createdAt' | 'emailConfirmed'
   sortDir?: 'asc' | 'desc'
 }
 
@@ -61,6 +62,8 @@ export const adminApi = {
 
   removeRole: (userId: string, role: Role) =>
     apiClient.delete(`/api/admin/users/${userId}/roles`, { data: { role } }).then((res) => res.data),
+
+  verifyEmail: (userId: string) => apiClient.post(`/api/admin/users/${userId}/verify-email`).then((res) => res.data),
 
   getRoles: () => apiClient.get<RoleSummary[]>('/api/admin/roles').then((res) => res.data),
 

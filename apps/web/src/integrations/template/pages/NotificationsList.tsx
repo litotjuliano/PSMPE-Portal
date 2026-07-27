@@ -38,7 +38,7 @@ export const NotificationsList = ({ pendingApplications, pendingPrcVerifications
             </div>
             <div className="text-sm">
               <h6 className="font-medium text-default-800">
-                PRC License verification needed: {member.firstName} {member.lastName}
+                RMP License verification needed: {member.firstName} {member.lastName}
               </h6>
               <p className="text-default-500">{member.chapter}</p>
             </div>

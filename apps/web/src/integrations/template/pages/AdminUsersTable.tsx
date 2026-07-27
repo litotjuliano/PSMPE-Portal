@@ -1,9 +1,10 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
-import { LuChevronDown, LuChevronUp, LuPlus, LuSquarePen, LuTrash2 } from 'react-icons/lu'
+import { LuCheck, LuChevronDown, LuChevronUp, LuPlus, LuSquarePen, LuTrash2 } from 'react-icons/lu'
 import type { GetUsersParams, UserSummary } from '../../../core/api/endpoints/adminApi'
 import { AssignableRoles, Roles, type Role } from '../../../core/types/auth'
 import { ConfirmationModal } from '../components/shared/ConfirmationModal'
+import { StandardButton } from '../components/shared/StandardButton'
 
 type SortableColumn = NonNullable<GetUsersParams['sortBy']>
 
@@ -12,6 +13,7 @@ interface AdminUsersTableProps {
   canManageRoles: boolean
   onToggleRole: (userId: string, role: Role, hasRole: boolean) => void
   onDelete: (id: string) => void
+  onVerifyEmail: (userId: string) => void
   currentUserEmail?: string
   sortBy: SortableColumn
   sortDir: 'asc' | 'desc'
@@ -60,6 +62,7 @@ export const AdminUsersTable = ({
   canManageRoles,
   onToggleRole,
   onDelete,
+  onVerifyEmail,
   currentUserEmail,
   sortBy,
   sortDir,
@@ -71,6 +74,7 @@ export const AdminUsersTable = ({
 }: AdminUsersTableProps) => {
   const totalPages = Math.max(1, Math.ceil(totalCount / pageSize))
   const [deletingUser, setDeletingUser] = useState<UserSummary | null>(null)
+  const [verifyingUser, setVerifyingUser] = useState<UserSummary | null>(null)
 
   return (
     <div className="card">
@@ -92,6 +96,13 @@ export const AdminUsersTable = ({
                     <SortableHeader column="displayName" label="Name" sortBy={sortBy} sortDir={sortDir} onSortChange={onSortChange} />
                     <SortableHeader column="email" label="Email" sortBy={sortBy} sortDir={sortDir} onSortChange={onSortChange} />
                     <th className="px-3.5 py-3 text-start">Roles</th>
+                    <SortableHeader
+                      column="emailConfirmed"
+                      label="Email Verification"
+                      sortBy={sortBy}
+                      sortDir={sortDir}
+                      onSortChange={onSortChange}
+                    />
                     <SortableHeader column="createdAt" label="Joined" sortBy={sortBy} sortDir={sortDir} onSortChange={onSortChange} />
                     <th className="px-3.5 py-3 text-start">Actions</th>
                   </tr>
@@ -136,6 +147,17 @@ export const AdminUsersTable = ({
                           })}
                         </div>
                       </td>
+                      <td className="py-3 px-3.5">
+                        {user.emailConfirmed || isSuperAdminRow ? (
+                          <span className="py-0.5 px-2.5 inline-flex items-center text-xs font-medium rounded bg-success/10 text-success">
+                            Verified
+                          </span>
+                        ) : (
+                          <StandardButton variant="warning" size="sm" icon={LuCheck} onClick={() => setVerifyingUser(user)}>
+                            Verify
+                          </StandardButton>
+                        )}
+                      </td>
                       <td className="py-3 px-3.5 text-default-500">{new Date(user.createdAt).toLocaleDateString()}</td>
                       <td className="py-3 px-3.5">
                         <div className="flex items-center gap-1.5">
@@ -171,7 +193,7 @@ export const AdminUsersTable = ({
                   })}
                   {users.length === 0 && (
                     <tr>
-                      <td colSpan={5} className="py-6 px-3.5 text-center text-default-500">
+                      <td colSpan={6} className="py-6 px-3.5 text-center text-default-500">
                         No users yet.
                       </td>
                     </tr>
@@ -222,6 +244,23 @@ export const AdminUsersTable = ({
           setDeletingUser(null)
         }}
         onCancel={() => setDeletingUser(null)}
+      />
+
+      <ConfirmationModal
+        isOpen={verifyingUser !== null}
+        title="Manually verify this email?"
+        message={
+          verifyingUser
+            ? `This marks ${verifyingUser.email} as verified without them confirming via email link.`
+            : undefined
+        }
+        confirmLabel="Verify"
+        confirmVariant="primary"
+        onConfirm={() => {
+          if (verifyingUser) onVerifyEmail(verifyingUser.id)
+          setVerifyingUser(null)
+        }}
+        onCancel={() => setVerifyingUser(null)}
       />
     </div>
   )

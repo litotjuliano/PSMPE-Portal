@@ -4,3 +4,6 @@
 // rather than returning a clean 4xx - see MembersController's upload endpoints).
 export const MAX_IMAGE_BYTES = 24 * 1024 * 1024
 export const MAX_PDF_BYTES = 2 * 1024 * 1024
+// Proof of Payment gets its own, much smaller cap per the application form - applies regardless
+// of whether the upload is an image or a PDF (see MemberUploadService.MaxProofOfPaymentSizeBytes).
+export const MAX_PROOF_OF_PAYMENT_BYTES = 1 * 1024 * 1024
