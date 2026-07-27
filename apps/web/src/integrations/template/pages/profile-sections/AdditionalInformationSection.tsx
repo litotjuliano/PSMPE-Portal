@@ -4,7 +4,7 @@ import type { Member } from '../../../../core/types/member'
 import { EmploymentStatuses } from '../../../../core/types/member'
 import { memberApi, type MemberCertificate } from '../../../../core/api/endpoints/memberApi'
 import { uploadApi } from '../../../../core/api/endpoints/uploadApi'
-import { MAX_IMAGE_BYTES, MAX_PDF_BYTES } from '../../../../core/constants/uploadLimits'
+import { MAX_IMAGE_BYTES, MAX_PDF_BYTES, MAX_PROOF_OF_PAYMENT_BYTES } from '../../../../core/constants/uploadLimits'
 import { StandardButton } from '../../components/shared/StandardButton'
 import { FilePreviewModal } from '../../components/shared/FilePreviewModal'
 import { buildFullProfileRequest, describeError } from './shared'
@@ -109,12 +109,12 @@ export const AdditionalInformationSection = ({ member, onUpdated }: AdditionalIn
   const [error, setError] = useState<string | null>(null)
 
   const [hasValidGovernmentId, setHasValidGovernmentId] = useState(false)
-  const [hasFormalPhoto, setHasFormalPhoto] = useState(false)
   const [hasSignature, setHasSignature] = useState(false)
+  const [hasProofOfPayment, setHasProofOfPayment] = useState(false)
   const [uploadingValidGovernmentId, setUploadingValidGovernmentId] = useState(false)
-  const [uploadingFormalPhoto, setUploadingFormalPhoto] = useState(false)
   const [uploadingSignature, setUploadingSignature] = useState(false)
-  const [previewOpen, setPreviewOpen] = useState<'validGovernmentId' | 'formalPhoto' | 'signature' | null>(null)
+  const [uploadingProofOfPayment, setUploadingProofOfPayment] = useState(false)
+  const [previewOpen, setPreviewOpen] = useState<'validGovernmentId' | 'signature' | 'proofOfPayment' | null>(null)
 
   const [certificates, setCertificates] = useState<MemberCertificate[]>([])
   const [loadingCertificates, setLoadingCertificates] = useState(true)
@@ -137,15 +137,15 @@ export const AdditionalInformationSection = ({ member, onUpdated }: AdditionalIn
         URL.revokeObjectURL(result.url)
       }
     })
-    uploadApi.fetchMyFormalPhotoUrl().then((result) => {
-      if (!cancelled && result) {
-        setHasFormalPhoto(true)
-        URL.revokeObjectURL(result.url)
-      }
-    })
     uploadApi.fetchMySignatureUrl().then((result) => {
       if (!cancelled && result) {
         setHasSignature(true)
+        URL.revokeObjectURL(result.url)
+      }
+    })
+    uploadApi.fetchMyProofOfPaymentUrl().then((result) => {
+      if (!cancelled && result) {
+        setHasProofOfPayment(true)
         URL.revokeObjectURL(result.url)
       }
     })
@@ -205,10 +205,15 @@ export const AdditionalInformationSection = ({ member, onUpdated }: AdditionalIn
     upload: (file: File) => Promise<void>,
     setUploading: (value: boolean) => void,
     setHasFile: (value: boolean) => void,
+    maxBytes?: number,
   ) => {
     setError(null)
-    if (file.size > maxBytesFor(file)) {
-      setError('That file is too large. Images must be under 24 MB and PDFs under 2 MB.')
+    if (file.size > (maxBytes ?? maxBytesFor(file))) {
+      setError(
+        maxBytes !== undefined
+          ? 'That file is too large (max 1 MB). Please choose a smaller file.'
+          : 'That file is too large. Images must be under 24 MB and PDFs under 2 MB.',
+      )
       return
     }
     setUploading(true)
@@ -385,20 +390,22 @@ export const AdditionalInformationSection = ({ member, onUpdated }: AdditionalIn
             onView={() => setPreviewOpen('validGovernmentId')}
           />
           <SingleUploadSlot
-            label="2x2 Formal Photo"
-            hint="Square, ~2x2 - JPG or PNG."
-            hasFile={hasFormalPhoto}
-            uploading={uploadingFormalPhoto}
-            onUpload={(file) => handleUpload(file, uploadApi.uploadMyFormalPhoto, setUploadingFormalPhoto, setHasFormalPhoto)}
-            onView={() => setPreviewOpen('formalPhoto')}
-          />
-          <SingleUploadSlot
             label="Signature"
             hint="JPG or PNG of your signature."
             hasFile={hasSignature}
             uploading={uploadingSignature}
             onUpload={(file) => handleUpload(file, uploadApi.uploadMySignature, setUploadingSignature, setHasSignature)}
             onView={() => setPreviewOpen('signature')}
+          />
+          <SingleUploadSlot
+            label="Proof of Payment"
+            hint="JPG, PNG, or PDF - must be under 1 MB."
+            hasFile={hasProofOfPayment}
+            uploading={uploadingProofOfPayment}
+            onUpload={(file) =>
+              handleUpload(file, uploadApi.uploadMyProofOfPayment, setUploadingProofOfPayment, setHasProofOfPayment, MAX_PROOF_OF_PAYMENT_BYTES)
+            }
+            onView={() => setPreviewOpen('proofOfPayment')}
           />
         </div>
 
@@ -447,15 +454,15 @@ export const AdditionalInformationSection = ({ member, onUpdated }: AdditionalIn
           onClose={() => setPreviewOpen(null)}
         />
         <FilePreviewModal
-          isOpen={previewOpen === 'formalPhoto'}
-          title="2x2 Formal Photo"
-          fetchFile={() => uploadApi.fetchMyFormalPhotoUrl()}
-          onClose={() => setPreviewOpen(null)}
-        />
-        <FilePreviewModal
           isOpen={previewOpen === 'signature'}
           title="Signature"
           fetchFile={() => uploadApi.fetchMySignatureUrl()}
+          onClose={() => setPreviewOpen(null)}
+        />
+        <FilePreviewModal
+          isOpen={previewOpen === 'proofOfPayment'}
+          title="Proof of Payment"
+          fetchFile={() => uploadApi.fetchMyProofOfPaymentUrl()}
           onClose={() => setPreviewOpen(null)}
         />
         <FilePreviewModal

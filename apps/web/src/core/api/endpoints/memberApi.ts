@@ -26,8 +26,23 @@ export interface CreateMemberRequest {
   birthdate: string | null
   gender: string | null
   civilStatus: string | null
-  address: string | null
+  educationLevel: string | null
+  schoolName: string | null
+  courseYearGraduated: string | null
+  specifiedProfession: string | null
   mobileNumber: string | null
+  houseNo: string | null
+  street: string | null
+  barangay: string | null
+  cityMunicipality: string | null
+  province: string | null
+  zipCode: string | null
+  mailingHouseNo: string | null
+  mailingStreet: string | null
+  mailingBarangay: string | null
+  mailingCityMunicipality: string | null
+  mailingProvince: string | null
+  mailingZipCode: string | null
   housePhone: string | null
   website: string | null
   facebookUrl: string | null
@@ -35,6 +50,8 @@ export interface CreateMemberRequest {
   xUrl: string | null
   instagramUrl: string | null
   prcLicenseNo: string | null
+  prcRegistrationDate: string | null
+  prcValidUntilDate: string | null
   ptrNumber: string | null
   tin: string | null
   chapter: string
@@ -60,8 +77,23 @@ export interface UpdateMemberRequest {
   birthdate: string | null
   gender: string | null
   civilStatus: string | null
-  address: string | null
+  educationLevel: string | null
+  schoolName: string | null
+  courseYearGraduated: string | null
+  specifiedProfession: string | null
   mobileNumber: string | null
+  houseNo: string | null
+  street: string | null
+  barangay: string | null
+  cityMunicipality: string | null
+  province: string | null
+  zipCode: string | null
+  mailingHouseNo: string | null
+  mailingStreet: string | null
+  mailingBarangay: string | null
+  mailingCityMunicipality: string | null
+  mailingProvince: string | null
+  mailingZipCode: string | null
   housePhone: string | null
   website: string | null
   facebookUrl: string | null
@@ -69,6 +101,8 @@ export interface UpdateMemberRequest {
   xUrl: string | null
   instagramUrl: string | null
   prcLicenseNo: string | null
+  prcRegistrationDate: string | null
+  prcValidUntilDate: string | null
   ptrNumber: string | null
   tin: string | null
   chapter: string
@@ -93,8 +127,23 @@ export interface UpdateMyProfileRequest {
   birthdate: string | null
   gender: string | null
   civilStatus: string | null
-  address: string | null
+  educationLevel: string | null
+  schoolName: string | null
+  courseYearGraduated: string | null
+  specifiedProfession: string | null
   mobileNumber: string | null
+  houseNo: string | null
+  street: string | null
+  barangay: string | null
+  cityMunicipality: string | null
+  province: string | null
+  zipCode: string | null
+  mailingHouseNo: string | null
+  mailingStreet: string | null
+  mailingBarangay: string | null
+  mailingCityMunicipality: string | null
+  mailingProvince: string | null
+  mailingZipCode: string | null
   housePhone: string | null
   website: string | null
   facebookUrl: string | null
@@ -102,6 +151,8 @@ export interface UpdateMyProfileRequest {
   xUrl: string | null
   instagramUrl: string | null
   prcLicenseNo: string | null
+  prcRegistrationDate: string | null
+  prcValidUntilDate: string | null
   ptrNumber: string | null
   tin: string | null
   chapter: string
@@ -113,8 +164,9 @@ export interface UpdateMyProfileRequest {
   specialization: string | null
   skills: string | null
   memberType: string
-  /** Asserts a new PRC ID was just uploaded in this edit - required whenever prcLicenseNo changes
-   *  on an already-submitted application (see MemberService.UpsertMyProfileAsync). */
+  /** Asserts a new RMP/PRC ID was just uploaded in this edit - required whenever prcLicenseNo,
+   *  prcRegistrationDate, or prcValidUntilDate changes on an already-submitted application (see
+   *  MemberService.UpsertMyProfileAsync). */
   prcIdReuploaded: boolean
 }
 
@@ -124,8 +176,9 @@ export interface ProfileCompleteness {
   isSubmitted: boolean
   hasPrcId: boolean
   hasValidGovernmentId: boolean
-  hasFormalPhoto: boolean
+  hasPhoto: boolean
   hasSignature: boolean
+  hasProofOfPayment: boolean
   certificateCount: number
   hasProfessionalInfo: boolean
 }

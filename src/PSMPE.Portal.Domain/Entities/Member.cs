@@ -21,8 +21,35 @@ public class Member : BaseEntity
     public DateOnly? Birthdate { get; set; }
     public string? Gender { get; set; }
     public string? CivilStatus { get; set; }
-    public string? Address { get; set; }
     public string? MobileNumber { get; set; }
+
+    // Residence address (wizard Step 2 / Contact Information) - structured to match the official
+    // PSMPE Membership Application Form, replacing the old single free-text Address field.
+    public string? HouseNo { get; set; }
+    public string? Street { get; set; }
+    public string? Barangay { get; set; }
+    public string? CityMunicipality { get; set; }
+    public string? Province { get; set; }
+    public string? ZipCode { get; set; }
+
+    // Mailing address - defaults to a copy of the residence address client-side when the
+    // applicant checks "Same as Residence Address"; no separate flag is stored since these are
+    // just plain fields once submitted.
+    public string? MailingHouseNo { get; set; }
+    public string? MailingStreet { get; set; }
+    public string? MailingBarangay { get; set; }
+    public string? MailingCityMunicipality { get; set; }
+    public string? MailingProvince { get; set; }
+    public string? MailingZipCode { get; set; }
+
+    // Educational record (wizard Step 1 / Personal Information).
+    public string? EducationLevel { get; set; }
+    public string? SchoolName { get; set; }
+    public string? CourseYearGraduated { get; set; }
+
+    // Specified profession - distinct from MemberType (e.g. "Master Plumber" vs "Other
+    // Professional Related"), per the application form.
+    public string? SpecifiedProfession { get; set; }
 
     // Contact Information (wizard Step 2) - all optional.
     public string? HousePhone { get; set; }
@@ -33,7 +60,13 @@ public class Member : BaseEntity
     public string? InstagramUrl { get; set; }
 
     public string MembershipNo { get; set; } = string.Empty;
+
+    /// <summary>Displayed to applicants as "RMP License No." (Registered Master Plumber) - same
+    /// field/workflow as before, only the user-facing label changed; internal naming stays PRC*
+    /// throughout the codebase.</summary>
     public string? PrcLicenseNo { get; set; }
+    public DateOnly? PrcRegistrationDate { get; set; }
+    public DateOnly? PrcValidUntilDate { get; set; }
     public string? PtrNumber { get; set; }
     public string? Tin { get; set; }
 
@@ -47,11 +80,15 @@ public class Member : BaseEntity
 
     /// <summary>
     /// A proposed new PrcLicenseNo awaiting an admin decision - set when a member with an
-    /// already-submitted application changes PrcLicenseNo (with a fresh PRC ID reupload). Null
-    /// means no change is pending. PrcLicenseNo itself is NOT overwritten until an admin approves
-    /// - see MemberService.UpsertMyProfileAsync/ApprovePrcVerificationAsync.
+    /// already-submitted application changes PrcLicenseNo, PrcRegistrationDate, or
+    /// PrcValidUntilDate (with a fresh PRC ID reupload) - all three stage/commit/discard together
+    /// as one unit, since they describe the same physical RMP/PRC ID card. Null means no change is
+    /// pending. PrcLicenseNo itself is NOT overwritten until an admin approves - see
+    /// MemberService.UpsertMyProfileAsync/ApprovePrcVerificationAsync.
     /// </summary>
     public string? PendingPrcLicenseNo { get; set; }
+    public DateOnly? PendingPrcRegistrationDate { get; set; }
+    public DateOnly? PendingPrcValidUntilDate { get; set; }
 
     /// <summary>
     /// Set when an admin rejects a pending PrcLicenseNo change, shown to the member until they

@@ -12,9 +12,17 @@ namespace PSMPE.Portal.Infrastructure.Services;
 /// </summary>
 public class ConsoleEmailSender(ILogger<ConsoleEmailSender> logger) : IEmailSender
 {
-    public Task SendEmailAsync(string to, string subject, string htmlBody, CancellationToken cancellationToken = default)
+    public Task SendEmailAsync(
+        string to,
+        string subject,
+        string htmlBody,
+        CancellationToken cancellationToken = default,
+        IReadOnlyList<EmailAttachment>? attachments = null)
     {
-        logger.LogInformation("Email (not actually sent - no provider configured) to {To}: {Subject}\n{Body}", to, subject, htmlBody);
+        var attachmentNames = attachments is { Count: > 0 } ? string.Join(", ", attachments.Select(a => a.FileName)) : "none";
+        logger.LogInformation(
+            "Email (not actually sent - no provider configured) to {To}: {Subject}\n{Body}\nAttachments: {Attachments}",
+            to, subject, htmlBody, attachmentNames);
         return Task.CompletedTask;
     }
 }

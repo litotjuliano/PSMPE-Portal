@@ -28,7 +28,7 @@ public class AdminController(
     RoleManager<IdentityRole<Guid>> roleManager,
     ILogger<AdminController> logger) : ControllerBase
 {
-    public record UserSummaryDto(Guid Id, string Email, string DisplayName, IReadOnlyList<string> Roles, DateTimeOffset CreatedAt);
+    public record UserSummaryDto(Guid Id, string Email, string DisplayName, IReadOnlyList<string> Roles, DateTimeOffset CreatedAt, bool EmailConfirmed);
 
     public record AssignRoleRequest(string Role);
 
@@ -70,6 +70,7 @@ public class AdminController(
         {
             "email" => descending ? query.OrderByDescending(u => u.Email) : query.OrderBy(u => u.Email),
             "createdat" => descending ? query.OrderByDescending(u => u.CreatedAt) : query.OrderBy(u => u.CreatedAt),
+            "emailconfirmed" => descending ? query.OrderByDescending(u => u.EmailConfirmed) : query.OrderBy(u => u.EmailConfirmed),
             _ => descending ? query.OrderByDescending(u => u.DisplayName) : query.OrderBy(u => u.DisplayName),
         };
 
@@ -80,7 +81,7 @@ public class AdminController(
         foreach (var user in pageOfUsers)
         {
             var roles = await userManager.GetRolesAsync(user);
-            summaries.Add(new UserSummaryDto(user.Id, user.Email ?? string.Empty, user.DisplayName, roles.ToList(), user.CreatedAt));
+            summaries.Add(new UserSummaryDto(user.Id, user.Email ?? string.Empty, user.DisplayName, roles.ToList(), user.CreatedAt, user.EmailConfirmed));
         }
 
         return Ok(new PagedResult<UserSummaryDto>(summaries, totalCount, page, pageSize));
@@ -99,7 +100,7 @@ public class AdminController(
         }
 
         var roles = await userManager.GetRolesAsync(user);
-        return Ok(new UserSummaryDto(user.Id, user.Email ?? string.Empty, user.DisplayName, roles.ToList(), user.CreatedAt));
+        return Ok(new UserSummaryDto(user.Id, user.Email ?? string.Empty, user.DisplayName, roles.ToList(), user.CreatedAt, user.EmailConfirmed));
     }
 
     [HttpPost("users")]
@@ -151,7 +152,7 @@ public class AdminController(
 
         await userManager.AddToRoleAsync(user, role);
         var roles = await userManager.GetRolesAsync(user);
-        return Ok(new UserSummaryDto(user.Id, user.Email!, user.DisplayName, roles.ToList(), user.CreatedAt));
+        return Ok(new UserSummaryDto(user.Id, user.Email!, user.DisplayName, roles.ToList(), user.CreatedAt, user.EmailConfirmed));
     }
 
     [HttpPut("users/{id:guid}")]
@@ -296,6 +297,38 @@ public class AdminController(
         }
 
         var result = await userManager.RemoveFromRoleAsync(user, request.Role);
+        if (!result.Succeeded)
+        {
+            return ValidationProblem(new ValidationProblemDetails(
+                result.Errors.ToDictionary(e => e.Code, e => new[] { e.Description })));
+        }
+
+        return NoContent();
+    }
+
+    [HttpPost("users/{id:guid}/verify-email")]
+    [Authorize(Policy = PolicyNames.RequireAdmin)]
+    public async Task<IActionResult> VerifyEmail(Guid id)
+    {
+        var user = await userManager.FindByIdAsync(id.ToString());
+        if (user is null || await IsHiddenFromCallerAsync(user))
+        {
+            return NotFound();
+        }
+
+        if (await IsSuperAdminAccountAsync(user))
+        {
+            logger.LogWarning("Rejected attempt by {CallerId} to manually verify Super Admin account {TargetId}.", CurrentUserId, user.Id);
+            return Forbid();
+        }
+
+        if (user.EmailConfirmed)
+        {
+            return NoContent();
+        }
+
+        user.EmailConfirmed = true;
+        var result = await userManager.UpdateAsync(user);
         if (!result.Succeeded)
         {
             return ValidationProblem(new ValidationProblemDetails(

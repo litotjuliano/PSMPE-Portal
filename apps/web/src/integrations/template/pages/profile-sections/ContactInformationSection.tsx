@@ -7,7 +7,7 @@ import { buildFullProfileRequest, describeError } from './shared'
 
 // Mirrors MemberService's server-side checks - purely for fast client-side feedback, the server
 // is still the source of truth (MemberService.UpsertMyProfileAsync).
-const PH_MOBILE_PATTERN = /^(\+63|0)9\d{9}$/
+const PH_MOBILE_PATTERN = /^(\+63|63|0)9\d{9}$/
 
 function isValidHousePhone(value: string): boolean {
   if (!/^[\d\s\-()]+$/.test(value)) return false
@@ -37,10 +37,34 @@ interface FormState {
   linkedInUrl: string
   xUrl: string
   instagramUrl: string
-  address: string
+  houseNo: string
+  street: string
+  barangay: string
+  cityMunicipality: string
+  province: string
+  zipCode: string
+  /** Client-only convenience - when true, the mailing inputs are hidden and residence values are
+   *  copied into the mailing fields at save time. There's no stored flag; a returning edit infers
+   *  false whenever the two addresses don't already match exactly. */
+  mailingSameAsResidence: boolean
+  mailingHouseNo: string
+  mailingStreet: string
+  mailingBarangay: string
+  mailingCityMunicipality: string
+  mailingProvince: string
+  mailingZipCode: string
 }
 
 function toFormState(member: Member): FormState {
+  const mailingSameAsResidence =
+    (member.mailingHouseNo ?? '') === (member.houseNo ?? '') &&
+    (member.mailingStreet ?? '') === (member.street ?? '') &&
+    (member.mailingBarangay ?? '') === (member.barangay ?? '') &&
+    (member.mailingCityMunicipality ?? '') === (member.cityMunicipality ?? '') &&
+    (member.mailingProvince ?? '') === (member.province ?? '') &&
+    (member.mailingZipCode ?? '') === (member.zipCode ?? '') &&
+    Boolean(member.street || member.barangay || member.cityMunicipality || member.province || member.zipCode)
+
   return {
     housePhone: member.housePhone ?? '',
     mobileNumber: member.mobileNumber ?? '',
@@ -49,7 +73,19 @@ function toFormState(member: Member): FormState {
     linkedInUrl: member.linkedInUrl ?? '',
     xUrl: member.xUrl ?? '',
     instagramUrl: member.instagramUrl ?? '',
-    address: member.address ?? '',
+    houseNo: member.houseNo ?? '',
+    street: member.street ?? '',
+    barangay: member.barangay ?? '',
+    cityMunicipality: member.cityMunicipality ?? '',
+    province: member.province ?? '',
+    zipCode: member.zipCode ?? '',
+    mailingSameAsResidence,
+    mailingHouseNo: member.mailingHouseNo ?? '',
+    mailingStreet: member.mailingStreet ?? '',
+    mailingBarangay: member.mailingBarangay ?? '',
+    mailingCityMunicipality: member.mailingCityMunicipality ?? '',
+    mailingProvince: member.mailingProvince ?? '',
+    mailingZipCode: member.mailingZipCode ?? '',
   }
 }
 
@@ -58,7 +94,9 @@ function toFormState(member: Member): FormState {
 function missingRequiredFields(member: Member): string[] {
   const missing: string[] = []
   if (!member.mobileNumber) missing.push('Mobile Number')
-  if (!member.address) missing.push('Home Address')
+  if (!member.street || !member.barangay || !member.cityMunicipality || !member.province || !member.zipCode) {
+    missing.push('Residence Address')
+  }
   return missing
 }
 
@@ -91,7 +129,7 @@ export const ContactInformationSection = ({ member, onUpdated }: ContactInformat
       return
     }
     if (form.mobileNumber && !PH_MOBILE_PATTERN.test(form.mobileNumber)) {
-      setError('Mobile number must be in the format +639XXXXXXXXX or 09XXXXXXXXX.')
+      setError('Mobile number must be in the format +639XXXXXXXXX, 639XXXXXXXXX, or 09XXXXXXXXX.')
       return
     }
     if (form.website && !isValidUrl(form.website)) {
@@ -115,6 +153,24 @@ export const ContactInformationSection = ({ member, onUpdated }: ContactInformat
       return
     }
 
+    const mailing = form.mailingSameAsResidence
+      ? {
+          mailingHouseNo: form.houseNo || null,
+          mailingStreet: form.street || null,
+          mailingBarangay: form.barangay || null,
+          mailingCityMunicipality: form.cityMunicipality || null,
+          mailingProvince: form.province || null,
+          mailingZipCode: form.zipCode || null,
+        }
+      : {
+          mailingHouseNo: form.mailingHouseNo || null,
+          mailingStreet: form.mailingStreet || null,
+          mailingBarangay: form.mailingBarangay || null,
+          mailingCityMunicipality: form.mailingCityMunicipality || null,
+          mailingProvince: form.mailingProvince || null,
+          mailingZipCode: form.mailingZipCode || null,
+        }
+
     setSaving(true)
     try {
       const updated = await memberApi.updateMyProfile(
@@ -126,7 +182,13 @@ export const ContactInformationSection = ({ member, onUpdated }: ContactInformat
           linkedInUrl: form.linkedInUrl || null,
           xUrl: form.xUrl || null,
           instagramUrl: form.instagramUrl || null,
-          address: form.address || null,
+          houseNo: form.houseNo || null,
+          street: form.street || null,
+          barangay: form.barangay || null,
+          cityMunicipality: form.cityMunicipality || null,
+          province: form.province || null,
+          zipCode: form.zipCode || null,
+          ...mailing,
         }),
       )
       onUpdated(updated)
@@ -256,14 +318,160 @@ export const ContactInformationSection = ({ member, onUpdated }: ContactInformat
             <span className="font-semibold text-default-800">{member.instagramUrl || '-'}</span>
           )}
         </div>
-        <div className="md:col-span-2">
-          <span className="block font-medium text-default-900 text-sm mb-2">Home Address</span>
-          {editing ? (
-            <input className="form-input" value={form.address} onChange={(e) => handleChange('address', e.target.value)} />
-          ) : (
-            <span className="font-semibold text-default-800">{member.address || '-'}</span>
+      </div>
+
+      <div className="border-t border-default-200 pt-4">
+        <h6 className="font-semibold text-default-800 mb-3">Residence Address</h6>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+          <div>
+            <span className="block font-medium text-default-900 text-sm mb-2">House No.</span>
+            {editing ? (
+              <input className="form-input" value={form.houseNo} onChange={(e) => handleChange('houseNo', e.target.value)} />
+            ) : (
+              <span className="font-semibold text-default-800">{member.houseNo || '-'}</span>
+            )}
+          </div>
+          <div>
+            <span className="block font-medium text-default-900 text-sm mb-2">Street</span>
+            {editing ? (
+              <input className="form-input" value={form.street} onChange={(e) => handleChange('street', e.target.value)} />
+            ) : (
+              <span className="font-semibold text-default-800">{member.street || '-'}</span>
+            )}
+          </div>
+          <div>
+            <span className="block font-medium text-default-900 text-sm mb-2">Barangay</span>
+            {editing ? (
+              <input className="form-input" value={form.barangay} onChange={(e) => handleChange('barangay', e.target.value)} />
+            ) : (
+              <span className="font-semibold text-default-800">{member.barangay || '-'}</span>
+            )}
+          </div>
+          <div>
+            <span className="block font-medium text-default-900 text-sm mb-2">City or Municipality</span>
+            {editing ? (
+              <input
+                className="form-input"
+                value={form.cityMunicipality}
+                onChange={(e) => handleChange('cityMunicipality', e.target.value)}
+              />
+            ) : (
+              <span className="font-semibold text-default-800">{member.cityMunicipality || '-'}</span>
+            )}
+          </div>
+          <div>
+            <span className="block font-medium text-default-900 text-sm mb-2">Province</span>
+            {editing ? (
+              <input className="form-input" value={form.province} onChange={(e) => handleChange('province', e.target.value)} />
+            ) : (
+              <span className="font-semibold text-default-800">{member.province || '-'}</span>
+            )}
+          </div>
+          <div>
+            <span className="block font-medium text-default-900 text-sm mb-2">Zip Code</span>
+            {editing ? (
+              <input className="form-input" value={form.zipCode} onChange={(e) => handleChange('zipCode', e.target.value)} />
+            ) : (
+              <span className="font-semibold text-default-800">{member.zipCode || '-'}</span>
+            )}
+          </div>
+        </div>
+      </div>
+
+      <div className="border-t border-default-200 pt-4">
+        <div className="flex items-center justify-between mb-3">
+          <h6 className="font-semibold text-default-800">Mailing Address</h6>
+          {editing && (
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                className="form-checkbox"
+                checked={form.mailingSameAsResidence}
+                onChange={(e) => handleChange('mailingSameAsResidence', e.target.checked)}
+              />
+              Same as Residence Address
+            </label>
           )}
         </div>
+        {editing && !form.mailingSameAsResidence ? (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+            <div>
+              <span className="block font-medium text-default-900 text-sm mb-2">House No.</span>
+              <input
+                className="form-input"
+                value={form.mailingHouseNo}
+                onChange={(e) => handleChange('mailingHouseNo', e.target.value)}
+              />
+            </div>
+            <div>
+              <span className="block font-medium text-default-900 text-sm mb-2">Street</span>
+              <input
+                className="form-input"
+                value={form.mailingStreet}
+                onChange={(e) => handleChange('mailingStreet', e.target.value)}
+              />
+            </div>
+            <div>
+              <span className="block font-medium text-default-900 text-sm mb-2">Barangay</span>
+              <input
+                className="form-input"
+                value={form.mailingBarangay}
+                onChange={(e) => handleChange('mailingBarangay', e.target.value)}
+              />
+            </div>
+            <div>
+              <span className="block font-medium text-default-900 text-sm mb-2">City or Municipality</span>
+              <input
+                className="form-input"
+                value={form.mailingCityMunicipality}
+                onChange={(e) => handleChange('mailingCityMunicipality', e.target.value)}
+              />
+            </div>
+            <div>
+              <span className="block font-medium text-default-900 text-sm mb-2">Province</span>
+              <input
+                className="form-input"
+                value={form.mailingProvince}
+                onChange={(e) => handleChange('mailingProvince', e.target.value)}
+              />
+            </div>
+            <div>
+              <span className="block font-medium text-default-900 text-sm mb-2">Zip Code</span>
+              <input
+                className="form-input"
+                value={form.mailingZipCode}
+                onChange={(e) => handleChange('mailingZipCode', e.target.value)}
+              />
+            </div>
+          </div>
+        ) : !editing ? (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+            <div>
+              <span className="block font-medium text-default-900 text-sm mb-2">House No.</span>
+              <span className="font-semibold text-default-800">{member.mailingHouseNo || '-'}</span>
+            </div>
+            <div>
+              <span className="block font-medium text-default-900 text-sm mb-2">Street</span>
+              <span className="font-semibold text-default-800">{member.mailingStreet || '-'}</span>
+            </div>
+            <div>
+              <span className="block font-medium text-default-900 text-sm mb-2">Barangay</span>
+              <span className="font-semibold text-default-800">{member.mailingBarangay || '-'}</span>
+            </div>
+            <div>
+              <span className="block font-medium text-default-900 text-sm mb-2">City or Municipality</span>
+              <span className="font-semibold text-default-800">{member.mailingCityMunicipality || '-'}</span>
+            </div>
+            <div>
+              <span className="block font-medium text-default-900 text-sm mb-2">Province</span>
+              <span className="font-semibold text-default-800">{member.mailingProvince || '-'}</span>
+            </div>
+            <div>
+              <span className="block font-medium text-default-900 text-sm mb-2">Zip Code</span>
+              <span className="font-semibold text-default-800">{member.mailingZipCode || '-'}</span>
+            </div>
+          </div>
+        ) : null}
       </div>
 
       {editing && (

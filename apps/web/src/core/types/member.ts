@@ -34,6 +34,20 @@ export const CivilStatuses = {
 
 export type CivilStatusValue = (typeof CivilStatuses)[keyof typeof CivilStatuses]
 
+export const EducationLevels = {
+  TechnicalSchool: 'Technical School',
+  CollegeUniversity: 'College / University',
+} as const
+
+export type EducationLevelValue = (typeof EducationLevels)[keyof typeof EducationLevels]
+
+export const SpecifiedProfessions = {
+  MasterPlumber: 'Master Plumber',
+  OtherProfessionalRelated: 'Other Professional Related',
+} as const
+
+export type SpecifiedProfessionValue = (typeof SpecifiedProfessions)[keyof typeof SpecifiedProfessions]
+
 export const EmploymentStatuses = {
   Employed: 'Employed',
   SelfEmployed: 'Self-Employed',
@@ -56,8 +70,23 @@ export interface Member {
   birthdate: string | null
   gender: string | null
   civilStatus: string | null
-  address: string | null
+  educationLevel: string | null
+  schoolName: string | null
+  courseYearGraduated: string | null
+  specifiedProfession: string | null
   mobileNumber: string | null
+  houseNo: string | null
+  street: string | null
+  barangay: string | null
+  cityMunicipality: string | null
+  province: string | null
+  zipCode: string | null
+  mailingHouseNo: string | null
+  mailingStreet: string | null
+  mailingBarangay: string | null
+  mailingCityMunicipality: string | null
+  mailingProvince: string | null
+  mailingZipCode: string | null
   housePhone: string | null
   website: string | null
   facebookUrl: string | null
@@ -66,10 +95,14 @@ export interface Member {
   instagramUrl: string | null
   membershipNo: string
   prcLicenseNo: string | null
+  prcRegistrationDate: string | null
+  prcValidUntilDate: string | null
   ptrNumber: string | null
   tin: string | null
   prcIdVerified: boolean
   pendingPrcLicenseNo: string | null
+  pendingPrcRegistrationDate: string | null
+  pendingPrcValidUntilDate: string | null
   prcVerificationRejectedReason: string | null
   chapter: string
   employmentStatus: string | null
