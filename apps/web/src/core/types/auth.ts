@@ -29,6 +29,8 @@ export interface RegisterRequest {
   password: string
   displayName: string
   username?: string
+  /** RA 10173 consent. Required — the API rejects registration when this is false or omitted. */
+  dataPrivacyConsent: boolean
 }
 
 /**

@@ -77,7 +77,13 @@ export function RegisterPage() {
 
     setSubmitting(true)
     try {
-      const response = await register({ email, password, displayName, username: username || undefined })
+      const response = await register({
+        email,
+        password,
+        displayName,
+        username: username || undefined,
+        dataPrivacyConsent: termsAccepted,
+      })
       navigate('/verify-email', { state: { email: response.email, devVerificationLink: response.devVerificationLink } })
     } catch (err) {
       if (isAxiosError(err) && err.response?.status === 409) {

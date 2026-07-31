@@ -1,7 +1,17 @@
 namespace PSMPE.Portal.Application.Auth;
 
-/// <summary>Username is optional - omitting it preserves the existing "UserName mirrors Email" behavior.</summary>
-public record RegisterRequest(string Email, string Password, string DisplayName, string? Username = null);
+/// <summary>
+/// Username is optional - omitting it preserves the existing "UserName mirrors Email" behavior.
+/// DataPrivacyConsent must be true; registration is rejected otherwise, so the consent is a real
+/// server-side gate rather than a checkbox the client could skip. It defaults to false so an
+/// omitted field fails closed.
+/// </summary>
+public record RegisterRequest(
+    string Email,
+    string Password,
+    string DisplayName,
+    string? Username = null,
+    bool DataPrivacyConsent = false);
 
 public record LoginRequest(string Email, string Password);
 

@@ -36,6 +36,14 @@ public class AuthController(
         return $"{frontendBaseUrl}/reset-password?userId={userId}&token={encodedToken}";
     }
 
+    /// <summary>
+    /// Revision of the data privacy consent wording (RA 10173) currently shown on the sign-up
+    /// form. Stamped onto the user alongside the timestamp so that changing the text later can't
+    /// silently pass off old consent as agreement to new terms. Bump this whenever the wording in
+    /// RegisterPage.tsx changes, and keep the two in step.
+    /// </summary>
+    private const string DataPrivacyConsentVersion = "2026-08-01";
+
     private static readonly HashSet<string> PasswordPolicyErrorCodes =
     [
         "PasswordTooShort",
@@ -69,6 +77,17 @@ public class AuthController(
     [HttpPost("register")]
     public async Task<ActionResult<RegisterResponse>> Register(RegisterRequest request)
     {
+        // Checked before anything else: without consent there is no lawful basis to process the
+        // rest of the payload, so we don't want it reaching a uniqueness lookup either.
+        if (!request.DataPrivacyConsent)
+        {
+            return ValidationProblem(new ValidationProblemDetails(new Dictionary<string, string[]>
+            {
+                [nameof(RegisterRequest.DataPrivacyConsent)] =
+                    ["Data privacy consent is required to create an account."],
+            }));
+        }
+
         // TODO: gate this behind the seeded SystemConfig "AllowPublicRegistration" flag once an
         // admin-facing settings UI exists to toggle it.
         var existing = await userManager.FindByEmailAsync(request.Email);
@@ -92,7 +111,12 @@ public class AuthController(
         {
             UserName = userName,
             Email = request.Email,
-            DisplayName = request.DisplayName
+            DisplayName = request.DisplayName,
+            // Server clock, not a client-supplied time - the record is only worth keeping if the
+            // caller can't backdate it. Version comes from the constant above rather than the
+            // request for the same reason.
+            DataPrivacyConsentAt = DateTimeOffset.UtcNow,
+            DataPrivacyConsentVersion = DataPrivacyConsentVersion,
         };
 
         var result = await userManager.CreateAsync(user, request.Password);

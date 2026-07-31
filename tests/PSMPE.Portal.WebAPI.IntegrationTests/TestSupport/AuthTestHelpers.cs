@@ -20,7 +20,8 @@ public static class AuthTestHelpers
     public static async Task<string> RegisterAndLoginAsync(this HttpClient client, string displayName = "Test User")
     {
         var email = $"{Guid.NewGuid()}@example.com";
-        var register = await client.PostAsJsonAsync("/api/auth/register", new RegisterRequest(email, "Password123!", displayName));
+        var register = await client.PostAsJsonAsync("/api/auth/register",
+            new RegisterRequest(email, "Password123!", displayName, DataPrivacyConsent: true));
         var registerBody = await register.Content.ReadFromJsonAsync<RegisterResponse>();
 
         var (userId, token) = ParseVerificationLink(registerBody!.DevVerificationLink!);

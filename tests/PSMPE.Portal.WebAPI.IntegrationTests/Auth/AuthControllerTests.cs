@@ -1,8 +1,11 @@
 using System.IdentityModel.Tokens.Jwt;
 using System.Net;
 using System.Net.Http.Json;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.WebUtilities;
+using Microsoft.Extensions.DependencyInjection;
 using PSMPE.Portal.Application.Auth;
+using PSMPE.Portal.Domain.Entities;
 using PSMPE.Portal.Domain.Enums;
 using Xunit;
 
@@ -33,7 +36,7 @@ public class AuthControllerTests : IClassFixture<CustomWebApplicationFactory>, I
     {
         var email = $"{Guid.NewGuid()}@example.com";
         var register = await _client.PostAsJsonAsync("/api/auth/register",
-            new RegisterRequest(email, "Password123!", "Test User", username));
+            new RegisterRequest(email, "Password123!", "Test User", username, DataPrivacyConsent: true));
         var body = await register.Content.ReadFromJsonAsync<RegisterResponse>();
         var (userId, token) = ParseVerificationLink(body!.DevVerificationLink!);
         return (email, userId, token);
@@ -44,7 +47,7 @@ public class AuthControllerTests : IClassFixture<CustomWebApplicationFactory>, I
     {
         var email = $"{Guid.NewGuid()}@example.com";
         var response = await _client.PostAsJsonAsync("/api/auth/register",
-            new RegisterRequest(email, "Password123!", "Test User"));
+            new RegisterRequest(email, "Password123!", "Test User", DataPrivacyConsent: true));
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var body = await response.Content.ReadFromJsonAsync<RegisterResponse>();
@@ -182,7 +185,7 @@ public class AuthControllerTests : IClassFixture<CustomWebApplicationFactory>, I
 
         var secondEmail = $"{Guid.NewGuid()}@example.com";
         var response = await _client.PostAsJsonAsync("/api/auth/register",
-            new RegisterRequest(secondEmail, "Password123!", "Test User", username));
+            new RegisterRequest(secondEmail, "Password123!", "Test User", username, DataPrivacyConsent: true));
 
         Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
     }
@@ -195,6 +198,40 @@ public class AuthControllerTests : IClassFixture<CustomWebApplicationFactory>, I
 
         var login = await _client.PostAsJsonAsync("/api/auth/login", new LoginRequest(email, "Password123!"));
         Assert.Equal(HttpStatusCode.OK, login.StatusCode);
+    }
+
+    [Fact]
+    public async Task Register_WithoutDataPrivacyConsent_IsRejected()
+    {
+        var email = $"{Guid.NewGuid()}@example.com";
+
+        // DataPrivacyConsent defaults to false, so this mirrors both an explicit refusal and a
+        // caller that omits the field entirely.
+        var response = await _client.PostAsJsonAsync("/api/auth/register",
+            new RegisterRequest(email, "Password123!", "Test User"));
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+
+        // The account must not exist afterwards - a rejected consent can't leave a partial user.
+        var login = await _client.PostAsJsonAsync("/api/auth/login", new LoginRequest(email, "Password123!"));
+        Assert.Equal(HttpStatusCode.Unauthorized, login.StatusCode);
+    }
+
+    [Fact]
+    public async Task Register_WithConsent_PersistsTimestampAndVersion()
+    {
+        var before = DateTimeOffset.UtcNow;
+        var (email, _, _) = await RegisterAsync();
+
+        using var scope = _factory.Services.CreateScope();
+        var userManager = scope.ServiceProvider.GetRequiredService<UserManager<ApplicationUser>>();
+        var user = await userManager.FindByEmailAsync(email);
+
+        Assert.NotNull(user);
+        Assert.NotNull(user!.DataPrivacyConsentAt);
+        Assert.False(string.IsNullOrWhiteSpace(user.DataPrivacyConsentVersion));
+        // Stamped from the server clock at registration, not supplied by the caller.
+        Assert.InRange(user.DataPrivacyConsentAt!.Value, before, DateTimeOffset.UtcNow);
     }
 
     [Fact]

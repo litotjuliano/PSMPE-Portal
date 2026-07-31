@@ -9,7 +9,7 @@ API calls. Backed by ASP.NET Core Identity (`PSMPE.Portal.Domain.Entities.Applic
 
 - `POST /api/auth/register` — create an account
   - Auth: anonymous
-  - Request: `{ email, password, displayName, username? }`
+  - Request: `{ email, password, displayName, username?, dataPrivacyConsent }`
   - Response: `{ email, message, devVerificationLink? }` — **not** a JWT. The account exists but
     can't be used until the email is confirmed (see "Email verification" below).
   - `username` is optional — omitting it preserves the original behavior of `UserName` mirroring
@@ -22,11 +22,7 @@ API calls. Backed by ASP.NET Core Identity (`PSMPE.Portal.Domain.Entities.Applic
     wizard completed afterward from `/profile`; see `members.md`'s "Registration: simple sign-up
     now, resumable application wizard later" section. Auth stays unaware of Members either way
     (no backend coupling).
-  - The frontend's sign-up form additionally gates submission behind a **data privacy consent**
-    checkbox (the Association's RA 10173 wording, linking out to `privacy.gov.ph`). This gate is
-    **client-side only** — the consent is not part of the request body and is not persisted
-    anywhere, so nothing records that a given user consented, and a direct API call bypasses it
-    entirely. See Open questions before relying on it for compliance.
+  - `dataPrivacyConsent` must be `true` (RA 10173) — see "Data privacy consent" below.
   - TODO: gate behind the seeded `SystemConfig.AllowPublicRegistration` flag once an
     admin settings UI exists to toggle it.
 
@@ -116,12 +112,33 @@ in `AdminController.UpdateUser`) and the same `IEmailSender`/dev-link pattern.
   collects and confirms a new password, and calls `reset-password`; on success it redirects to
   `/login` with a success message rather than auto-authenticating.
 
+## Data privacy consent
+
+Public sign-up requires consent to the Association's data privacy notice (RA 10173). The sign-up
+form shows the wording with a link to `privacy.gov.ph`, but the **enforcement is server-side**:
+`Register` rejects the request with a `400` before touching anything else when
+`dataPrivacyConsent` isn't `true`, so a direct API call can't skip it and no partial account is
+left behind. The field defaults to `false`, so an older client that omits it fails closed rather
+than silently registering without consent.
+
+On success the account records **when** and **to what**:
+
+- `ApplicationUser.DataPrivacyConsentAt` — stamped from the server clock, never from the request,
+  so the caller can't backdate it.
+- `ApplicationUser.DataPrivacyConsentVersion` — `AuthController.DataPrivacyConsentVersion`, a
+  constant tracking the revision of the wording. **Bump it whenever the consent text in
+  `RegisterPage.tsx` changes**, otherwise a wording change silently reinterprets old consent as
+  agreement to new terms. The version comes from the constant rather than the request for the
+  same reason the timestamp does.
+
+Both are nullable and set together. **Null means "no consent on record", not "refused"** — it's
+the expected state for accounts that never went through public registration (seeded accounts,
+`AdminController`-created ones) and for anyone who registered before this shipped. There is no
+backfill; treat existing rows as unknown rather than consented.
+
 ## Open questions / TODO
 
 - Refresh token rotation (currently a short-lived access token only, see `Jwt:ExpiryMinutes`).
-- **Data privacy consent is UI-only.** The sign-up checkbox blocks the button, but the consent
-  never reaches the API, so there is no auditable record of who consented, to which wording, or
-  when — and `POST /api/auth/register` still succeeds without it. If RA 10173 compliance needs
-  proof, the consent has to move into the request body and onto `ApplicationUser` (a
-  `ConsentedAt` timestamp plus a version/hash of the text, since the wording will change over
-  time). Decide before public registration opens.
+- Consent is captured at sign-up only. There's no re-consent flow when the wording changes, and
+  no admin view of who consented to which version — add both if the Association needs to
+  demonstrate current consent rather than consent-at-signup.
