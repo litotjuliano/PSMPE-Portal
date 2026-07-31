@@ -22,6 +22,11 @@ API calls. Backed by ASP.NET Core Identity (`PSMPE.Portal.Domain.Entities.Applic
     wizard completed afterward from `/profile`; see `members.md`'s "Registration: simple sign-up
     now, resumable application wizard later" section. Auth stays unaware of Members either way
     (no backend coupling).
+  - The frontend's sign-up form additionally gates submission behind a **data privacy consent**
+    checkbox (the Association's RA 10173 wording, linking out to `privacy.gov.ph`). This gate is
+    **client-side only** — the consent is not part of the request body and is not persisted
+    anywhere, so nothing records that a given user consented, and a direct API call bypasses it
+    entirely. See Open questions before relying on it for compliance.
   - TODO: gate behind the seeded `SystemConfig.AllowPublicRegistration` flag once an
     admin settings UI exists to toggle it.
 
@@ -114,3 +119,9 @@ in `AdminController.UpdateUser`) and the same `IEmailSender`/dev-link pattern.
 ## Open questions / TODO
 
 - Refresh token rotation (currently a short-lived access token only, see `Jwt:ExpiryMinutes`).
+- **Data privacy consent is UI-only.** The sign-up checkbox blocks the button, but the consent
+  never reaches the API, so there is no auditable record of who consented, to which wording, or
+  when — and `POST /api/auth/register` still succeeds without it. If RA 10173 compliance needs
+  proof, the consent has to move into the request body and onto `ApplicationUser` (a
+  `ConsentedAt` timestamp plus a version/hash of the text, since the wording will change over
+  time). Decide before public registration opens.
