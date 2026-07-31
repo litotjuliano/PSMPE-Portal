@@ -11,6 +11,9 @@ type SortableColumn = NonNullable<GetUsersParams['sortBy']>
 interface AdminUsersTableProps {
   users: UserSummary[]
   canManageRoles: boolean
+  /** Edit/Delete are Super-Admin-only - hidden entirely (not just disabled) for a regular Admin,
+   *  who's left with only the Email Verification action on this page. */
+  isSuperAdmin: boolean
   onToggleRole: (userId: string, role: Role, hasRole: boolean) => void
   onDelete: (id: string) => void
   onVerifyEmail: (userId: string) => void
@@ -60,6 +63,7 @@ function SortableHeader({
 export const AdminUsersTable = ({
   users,
   canManageRoles,
+  isSuperAdmin,
   onToggleRole,
   onDelete,
   onVerifyEmail,
@@ -161,30 +165,34 @@ export const AdminUsersTable = ({
                       <td className="py-3 px-3.5 text-default-500">{new Date(user.createdAt).toLocaleDateString()}</td>
                       <td className="py-3 px-3.5">
                         <div className="flex items-center gap-1.5">
-                          {isSuperAdminRow ? (
-                            <span
-                              className="btn btn-icon size-8 rounded-full text-default-300 cursor-not-allowed"
-                              aria-label="Edit disabled - Super Admin accounts are read-only"
-                            >
-                              <LuSquarePen className="size-4" />
-                            </span>
-                          ) : (
-                            <Link
-                              to={`/admin/users/${user.id}`}
-                              className="btn btn-icon size-8 hover:bg-default-150 rounded-full text-default-500"
-                              aria-label="Edit"
-                            >
-                              <LuSquarePen className="size-4" />
-                            </Link>
-                          )}
-                          {user.email !== currentUserEmail && (
-                            <button
-                              onClick={() => setDeletingUser(user)}
-                              className="btn btn-icon size-8 hover:bg-danger/10 hover:text-danger rounded-full text-default-500"
-                              aria-label="Delete"
-                            >
-                              <LuTrash2 className="size-4" />
-                            </button>
+                          {isSuperAdmin && (
+                            <>
+                              {isSuperAdminRow ? (
+                                <span
+                                  className="btn btn-icon size-8 rounded-full text-default-300 cursor-not-allowed"
+                                  aria-label="Edit disabled - Super Admin accounts are read-only"
+                                >
+                                  <LuSquarePen className="size-4" />
+                                </span>
+                              ) : (
+                                <Link
+                                  to={`/admin/users/${user.id}`}
+                                  className="btn btn-icon size-8 hover:bg-default-150 rounded-full text-default-500"
+                                  aria-label="Edit"
+                                >
+                                  <LuSquarePen className="size-4" />
+                                </Link>
+                              )}
+                              {user.email !== currentUserEmail && (
+                                <button
+                                  onClick={() => setDeletingUser(user)}
+                                  className="btn btn-icon size-8 hover:bg-danger/10 hover:text-danger rounded-full text-default-500"
+                                  aria-label="Delete"
+                                >
+                                  <LuTrash2 className="size-4" />
+                                </button>
+                              )}
+                            </>
                           )}
                         </div>
                       </td>

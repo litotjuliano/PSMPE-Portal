@@ -20,6 +20,39 @@ via `[RequirePermission]`.
 
 - `GET /api/admin/users` — list users with their roles (unchanged, documented in `auth.md`/here for completeness)
   - Auth: `RequireAdmin` policy (Admin or Super Admin role)
+- `GET /api/admin/users/{id}` — get one user
+  - Auth: `RequireAdmin` policy
+- `POST /api/admin/users` — create a login account (the admin "New user" form)
+  - Auth: `admin:manage-users` permission — the one action in this whole family still gated by a
+    configurable permission claim rather than a hard role check (see the narrowed-scope note
+    below)
+  - Request: `{ email, displayName, password, role? }` — `role` defaults to `Member`; assigning
+    any role other than `Member` additionally requires the caller to hold the `Super Admin`
+    *role* itself, not just this permission (mirrors the hard gate on `AssignRole`/`RemoveRole`
+    below, so this endpoint can't be used to grant privilege an Admin couldn't already grant
+    directly). `Super Admin` itself can never be assigned through this endpoint, for any caller
+    (`403`).
+- `PUT /api/admin/users/{id}` — edit a user's display name/email, optionally reset their password
+  - Auth: `RequireSuperAdmin` policy — a regular Admin cannot edit any user's account, even one
+    granted `admin:manage-users` (unlike `POST` above, this can't be re-delegated by editing role
+    permissions - it's a hard role check)
+  - Request: `{ displayName, email, newPassword? }`
+- `DELETE /api/admin/users/{id}` — permanently delete a login account
+  - Auth: `RequireSuperAdmin` policy, same reasoning as `PUT` above
+  - Cascades: deletes the linked `Member` profile in full, if one exists (`Cascade` FK — see
+    `members.md`)
+  - `409` if that member has any RMP/PRC verification history on record (`Restrict` FK on
+    `PrcVerificationHistories`) — a clean rejection instead of a raw `DbUpdateException`
+  - Purges the user's `MemberUploads`/`MemberCertificates` rows *and* their backing files first —
+    neither has an FK relationship to `Member` at all (see `members.md`), so they'd otherwise be
+    silently orphaned once the cascade above removes the `Member` row
+  - `400` targeting your own account; `404` (hidden) or `403` targeting a Super Admin account
+  - Frontend: `/admin/users` hides the Edit/Delete icons entirely (not just disables them) for a
+    non-Super-Admin caller — leaving only the Email Verification action below on that row
+- `POST /api/admin/users/{id}/verify-email` — manually mark a user's email verified, without them
+  clicking the confirmation link
+  - Auth: `RequireAdmin` policy — the one action a regular Admin still has on another user's row
+    now that `PUT`/`DELETE` above are Super-Admin-only
 - `POST /api/admin/users/{id}/roles` — assign a role to a user
   - Auth: `RequireSuperAdmin` policy
   - Request: `{ role }`
@@ -54,6 +87,11 @@ via `[RequirePermission]`.
 - `layout:delete-system` replaces what used to be a hardcoded `IsInRole(SuperAdmin)` check in
   `LayoutService.DeleteAsync`. Seeded only to `Super Admin` by default, so out-of-the-box
   behavior is unchanged.
+- `admin:manage-users` only gates account *creation* (`POST /api/admin/users`) — editing or
+  deleting an existing user account requires the `Super Admin` role outright (see Endpoints
+  above). Granting this permission to a non-Super-Admin role lets them create new accounts but
+  never edit or delete existing ones; this was tightened from an earlier version where the same
+  permission also gated edit/delete, which let a regular Admin freely edit/delete any user.
 
 ### Default permission grants (seeded on first run, editable afterward)
 

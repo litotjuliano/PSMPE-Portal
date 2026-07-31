@@ -781,6 +781,20 @@ public class MemberService(IApplicationDbContext db, ICacheService? cache = null
         return Result.Success();
     }
 
+    public async Task<bool> HasPrcVerificationHistoryAsync(Guid userId, CancellationToken cancellationToken = default)
+    {
+        var memberId = await db.Members.AsNoTracking()
+            .Where(m => m.UserId == userId)
+            .Select(m => (Guid?)m.Id)
+            .FirstOrDefaultAsync(cancellationToken);
+        if (memberId is null)
+        {
+            return false;
+        }
+
+        return await db.PrcVerificationHistories.AnyAsync(h => h.MemberId == memberId, cancellationToken);
+    }
+
     /// <summary>
     /// Simple sequential scheme, zero-padded to 6 digits, based on the highest existing
     /// MembershipNo rather than the row count - a row count would deterministically collide with

@@ -27,5 +27,10 @@ USER app
 
 COPY --from=build /app .
 
+# Uploads live on a mounted volume, not in the published output above - create it now (as the
+# non-root "app" user) so a *fresh* volume inherits app ownership on first mount instead of the
+# root ownership Docker would otherwise assign, which blocks writes at runtime (uid mismatch).
+RUN mkdir -p wwwroot/uploads
+
 EXPOSE 8080
 ENTRYPOINT ["dotnet", "PSMPE.Portal.WebAPI.dll"]

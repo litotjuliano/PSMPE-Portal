@@ -97,4 +97,16 @@ public class MemberCertificateService(IApplicationDbContext db, IFileStorageServ
         await db.SaveChangesAsync(cancellationToken);
         return Result.Success();
     }
+
+    public async Task DeleteAllForUserAsync(Guid userId, CancellationToken cancellationToken = default)
+    {
+        var certificates = await db.MemberCertificates.Where(c => c.UserId == userId).ToListAsync(cancellationToken);
+        foreach (var certificate in certificates)
+        {
+            await storage.DeleteAsync(certificate.StorageKey, cancellationToken);
+        }
+
+        db.MemberCertificates.RemoveRange(certificates);
+        await db.SaveChangesAsync(cancellationToken);
+    }
 }

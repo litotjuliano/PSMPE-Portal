@@ -155,6 +155,18 @@ public class MemberUploadService(IApplicationDbContext db, IFileStorageService s
         return stream is null ? null : (stream, upload.ContentType);
     }
 
+    public async Task DeleteAllForUserAsync(Guid userId, CancellationToken cancellationToken = default)
+    {
+        var uploads = await db.MemberUploads.Where(u => u.UserId == userId).ToListAsync(cancellationToken);
+        foreach (var upload in uploads)
+        {
+            await storage.DeleteAsync(upload.StorageKey, cancellationToken);
+        }
+
+        db.MemberUploads.RemoveRange(uploads);
+        await db.SaveChangesAsync(cancellationToken);
+    }
+
     /// <summary>Downscales only (never upscales) so the longest side is at most MaxImageDimension.</summary>
     private static SKBitmap OptimizeImage(SKBitmap original)
     {

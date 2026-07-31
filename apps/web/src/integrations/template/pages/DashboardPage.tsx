@@ -56,15 +56,21 @@ function CompleteApplicationBanner() {
 
 /**
  * The in-dashboard half of the approval notification (see MembersController.Approve /
- * IssueApprovalReceiptAsync for the email half) - only ever renders once the receipt file
- * actually exists, i.e. once an admin has approved the application, so there's nothing to gate on
- * beyond the fetch itself succeeding.
+ * IssueApprovalReceiptAsync for the email half). Gates on both the receipt file existing *and*
+ * `approvedAt` being set - belt-and-suspenders against a stale/mislabeled MemberUpload row ever
+ * showing "your membership has been approved" to a still-pending applicant again (this exact
+ * scenario happened once already, from an unrelated UploadKind reorder corrupting old rows).
  */
 function ReceiptBanner() {
   const [receiptAvailable, setReceiptAvailable] = useState(false)
+  const [isApproved, setIsApproved] = useState(false)
   const [previewOpen, setPreviewOpen] = useState(false)
 
   useEffect(() => {
+    memberApi
+      .getMyProfile()
+      .then((member) => setIsApproved(member.approvedAt !== null))
+      .catch(() => setIsApproved(false))
     uploadApi.fetchMyReceiptUrl().then((result) => {
       if (result) {
         setReceiptAvailable(true)
@@ -73,7 +79,7 @@ function ReceiptBanner() {
     })
   }, [])
 
-  if (!receiptAvailable) {
+  if (!isApproved || !receiptAvailable) {
     return null
   }
 
