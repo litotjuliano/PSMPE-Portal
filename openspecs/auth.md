@@ -51,6 +51,22 @@ API calls. Backed by ASP.NET Core Identity (`PSMPE.Portal.Domain.Entities.Applic
   - Response: always `200` with a generic `{ message, devVerificationLink? }`, regardless of
     whether the email exists or is already verified — avoids leaking account existence.
 
+- `POST /api/auth/forgot-password` — request a password reset link
+  - Auth: anonymous
+  - Request: `{ email }`
+  - Response: always `200` with a generic `{ message, devResetLink? }`, regardless of whether the
+    email exists or is verified — same anti-enumeration approach as `resend-verification-email`.
+    An unverified account is treated the same as a nonexistent one (no reset link before the email
+    is even confirmed).
+
+- `POST /api/auth/reset-password` — consume a reset link and set a new password
+  - Auth: anonymous
+  - Request: `{ userId, token, newPassword }` (both `userId`/`token` come from the emailed link)
+  - Response: `{ message }` on success — **not** a JWT; unlike `verify-email` this does not
+    auto-login, the user signs in normally afterward at `/login`. `400` with a generic
+    invalid-link message if the token itself is invalid/expired/already used; `400`
+    (`ValidationProblem`) with field errors if the new password fails Identity's password policy.
+
 ## Email verification
 
 Registration requires verifying the email address before the account can be used — **required**,
@@ -83,8 +99,18 @@ not skippable. Uses ASP.NET Core Identity's built-in support directly
 
 None beyond credential validation — all endpoints are anonymous by design.
 
+## Password reset
+
+Same shape as email verification, reusing Identity's built-in
+`GeneratePasswordResetTokenAsync`/`ResetPasswordAsync` (already used by the admin-triggered reset
+in `AdminController.UpdateUser`) and the same `IEmailSender`/dev-link pattern.
+
+- Frontend: `ForgotPasswordPage` (`/forgot-password`, public) collects an email and calls
+  `forgot-password`, showing the generic message and the dev-only link when present.
+  `ResetPasswordPage` (`/reset-password`, public) reads `?userId&token` from the emailed link,
+  collects and confirms a new password, and calls `reset-password`; on success it redirects to
+  `/login` with a success message rather than auto-authenticating.
+
 ## Open questions / TODO
 
 - Refresh token rotation (currently a short-lived access token only, see `Jwt:ExpiryMinutes`).
-- Password reset flow (Identity supports this too; not wired up yet - same shape as email
-  verification, would reuse `IEmailSender`).

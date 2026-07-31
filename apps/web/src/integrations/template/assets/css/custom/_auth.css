@@ -1,0 +1,66 @@
+/* Split-screen auth pages (Login/Register/Forgot Password/Reset Password) - see AuthSplitLayout
+   and AuthTextInput. Keyframes can't be expressed as pure Tailwind utilities, hence a CSS partial. */
+
+@keyframes authLogoFloat {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    /* Amplitude is tuned to the 104-152px seal: enough travel to read as a slow float,
+       small enough that it never collides with the wordmark below it. */
+    transform: translateY(-6px);
+  }
+}
+
+.animate-auth-logo-float {
+  animation: authLogoFloat 4s ease-in-out infinite;
+}
+
+@keyframes authHeaderRise {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-auth-header-rise {
+  animation: authHeaderRise 0.6s ease-out 0.1s both;
+}
+
+/* Vestibular-safe: kill motion entirely rather than shortening it. Dropping the animation also
+   drops authHeaderRise's `both` fill, so the heading renders at its natural opacity:1 / no
+   transform - i.e. simply visible, never stuck at the invisible `from` state. */
+@media (prefers-reduced-motion: reduce) {
+  .animate-auth-logo-float,
+  .animate-auth-header-rise {
+    animation: none;
+  }
+}
+
+/* `.form-input` is h-9.25 (37px) - below the 44px minimum touch target. This has to be a rule
+   here rather than an `h-11` utility in the markup: _forms.css is *unlayered*, and unlayered CSS
+   beats anything in Tailwind's `utilities` cascade layer regardless of specificity. This partial
+   is imported directly after _forms.css, so an equal-specificity unlayered rule wins cleanly.
+   (Buttons don't need this - `.btn` is inside `@layer components`, which utilities do outrank,
+   so `min-h-11` in the markup is enough there.) */
+.auth-input {
+  @apply h-11;
+}
+
+/* 100vh doesn't recompute when the mobile virtual keyboard/address bar shows or hides, which
+   can clip the form or leave stale blank space; 100dvh tracks the actual visible viewport.
+   @supports keeps a correct fallback for browsers that don't understand dvh yet. */
+.auth-viewport {
+  min-height: 100vh;
+}
+
+@supports (min-height: 100dvh) {
+  .auth-viewport {
+    min-height: 100dvh;
+  }
+}

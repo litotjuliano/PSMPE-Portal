@@ -1,10 +1,13 @@
 import { apiClient } from '../apiClient'
 import type {
   AuthResponse,
+  ForgotPasswordResponse,
   LoginRequest,
   RegisterRequest,
   RegisterResponse,
   ResendVerificationEmailResponse,
+  ResetPasswordRequest,
+  ResetPasswordResponse,
 } from '../../types/auth'
 
 export const authApi = {
@@ -24,4 +27,10 @@ export const authApi = {
 
   isUsernameAvailable: (username: string) =>
     apiClient.get<boolean>('/api/auth/username-available', { params: { username } }).then((res) => res.data),
+
+  forgotPassword: (email: string) =>
+    apiClient.post<ForgotPasswordResponse>('/api/auth/forgot-password', { email }).then((res) => res.data),
+
+  resetPassword: (request: ResetPasswordRequest) =>
+    apiClient.post<ResetPasswordResponse>('/api/auth/reset-password', request).then((res) => res.data),
 }
