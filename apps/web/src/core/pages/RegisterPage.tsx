@@ -68,7 +68,7 @@ export function RegisterPage() {
     const passwordIssues = passwordErrors(password)
     if (passwordIssues.length > 0) nextFieldErrors.password = passwordIssues.join(' ')
     if (password !== confirmPassword) nextFieldErrors.confirmPassword = 'Passwords do not match.'
-    if (!termsAccepted) nextFieldErrors.terms = 'You must accept the Terms of Use to continue.'
+    if (!termsAccepted) nextFieldErrors.terms = 'You must give your data privacy consent to continue.'
 
     setFieldErrors(nextFieldErrors)
     if (Object.keys(nextFieldErrors).length > 0) {
@@ -156,22 +156,31 @@ export function RegisterPage() {
             </ul>
           )}
 
-          <div className="flex justify-between items-center flex-wrap gap-x-1 gap-y-2 mb-6 mt-3">
-            <div className="inline-flex items-center">
-              <input
-                type="checkbox"
-                id="checkbox-terms"
-                className="h-4 w-4 text-base rounded border-default-300 text-primary focus:ring focus:ring-primary/30 focus:ring-offset-0"
-                checked={termsAccepted}
-                onChange={(e) => setTermsAccepted(e.target.checked)}
-              />
-              <label className="text-base ms-2 text-default-500 font-medium align-middle select-none" htmlFor="checkbox-terms">
-                I accept the PSMPE Portal{' '}
-                <Link to="#" className="font-semibold text-default-900 underline">
-                  Terms of Use
-                </Link>
-              </label>
-            </div>
+          {/* items-start (not items-center) so the box stays on the first line of what is now a
+              full consent paragraph rather than floating at its vertical middle. */}
+          <div className="flex items-start gap-2 text-start mb-6 mt-3">
+            <input
+              type="checkbox"
+              id="checkbox-terms"
+              className="mt-1 size-4 shrink-0 rounded border-default-300 text-primary focus:ring focus:ring-primary/30 focus:ring-offset-0"
+              checked={termsAccepted}
+              onChange={(e) => setTermsAccepted(e.target.checked)}
+            />
+            <label className="text-sm text-default-500 font-medium select-none leading-relaxed" htmlFor="checkbox-terms">
+              <span className="font-semibold text-default-900">DATA PRIVACY CONSENT:</span> I agree that my personal
+              information may be collected, processed, stored, and maintained by the Association. In digital, electronic,
+              and/or printed form. My personal information shall be kept confidential and used solely for legitimate
+              organizational purposes in accordance with the{' '}
+              <a
+                href="https://privacy.gov.ph/data-privacy-act/"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="font-semibold text-primary underline"
+              >
+                Data Privacy Act of 2012 (Republic Act No. 10173)
+              </a>
+              .
+            </label>
           </div>
           {fieldErrors.terms && <p className="text-xs text-danger -mt-4 mb-4">{fieldErrors.terms}</p>}
 
