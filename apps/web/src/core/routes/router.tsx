@@ -1,6 +1,7 @@
 import { createBrowserRouter } from 'react-router-dom'
 import { AppShell, DashboardPage, LoginPage } from '../../integrations/template'
 import { ProtectedRoute } from '../auth/ProtectedRoute'
+import { DataPrivacyConsentGate } from '../auth/DataPrivacyConsentGate'
 import { ContentListPage } from '../pages/ContentListPage'
 import { ContentEditPage } from '../pages/ContentEditPage'
 import { AdminUsersPage } from '../pages/AdminUsersPage'
@@ -28,23 +29,30 @@ export const router = createBrowserRouter([
     element: <ProtectedRoute />,
     children: [
       {
-        element: <AppShell />,
+        // Wraps every authenticated page once. Sits outside AppShell so the prompt isn't
+        // re-mounted by the nested admin ProtectedRoutes on each navigation.
+        element: <DataPrivacyConsentGate />,
         children: [
-          { path: '/', element: <DashboardPage /> },
-          { path: '/content', element: <ContentListPage /> },
-          { path: '/content/:id', element: <ContentEditPage /> },
-          { path: '/profile', element: <MyProfilePage /> },
           {
-            element: <ProtectedRoute requiredRoles={[Roles.Admin, Roles.SuperAdmin]} />,
+            element: <AppShell />,
             children: [
-              { path: '/admin/users', element: <AdminUsersPage /> },
-              { path: '/admin/users/:id', element: <AdminUserFormPage /> },
-              { path: '/admin/roles', element: <AdminRolesPage /> },
-              { path: '/members', element: <MembersPage /> },
-              { path: '/members/:id', element: <MemberFormPage /> },
-              { path: '/membership-approvals', element: <MembershipApprovalsPage /> },
-              { path: '/prc-verifications', element: <PrcVerificationsPage /> },
-              { path: '/notifications', element: <NotificationsPage /> },
+              { path: '/', element: <DashboardPage /> },
+              { path: '/content', element: <ContentListPage /> },
+              { path: '/content/:id', element: <ContentEditPage /> },
+              { path: '/profile', element: <MyProfilePage /> },
+              {
+                element: <ProtectedRoute requiredRoles={[Roles.Admin, Roles.SuperAdmin]} />,
+                children: [
+                  { path: '/admin/users', element: <AdminUsersPage /> },
+                  { path: '/admin/users/:id', element: <AdminUserFormPage /> },
+                  { path: '/admin/roles', element: <AdminRolesPage /> },
+                  { path: '/members', element: <MembersPage /> },
+                  { path: '/members/:id', element: <MemberFormPage /> },
+                  { path: '/membership-approvals', element: <MembershipApprovalsPage /> },
+                  { path: '/prc-verifications', element: <PrcVerificationsPage /> },
+                  { path: '/notifications', element: <NotificationsPage /> },
+                ],
+              },
             ],
           },
         ],

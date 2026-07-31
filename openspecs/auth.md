@@ -112,6 +112,17 @@ in `AdminController.UpdateUser`) and the same `IEmailSender`/dev-link pattern.
   collects and confirms a new password, and calls `reset-password`; on success it redirects to
   `/login` with a success message rather than auto-authenticating.
 
+- `GET /api/auth/me/data-privacy-consent` — where the caller stands on the notice
+  - Auth: authenticated (resolves the user from the JWT; there's nothing to authorize beyond that,
+    since an account can only read its own consent)
+  - Response: `{ needsConsent, currentVersion, consentedVersion?, consentedAt? }`
+
+- `POST /api/auth/me/data-privacy-consent` — record consent at the current wording
+  - Auth: authenticated
+  - Request: **no body** — consent is always to the server's current version at the server's
+    clock. Accepting a version from the caller would let them claim consent to text they never saw.
+  - Response: the same status shape, now satisfied.
+
 ## Data privacy consent
 
 Public sign-up requires consent to the Association's data privacy notice (RA 10173). The sign-up
@@ -136,9 +147,36 @@ the expected state for accounts that never went through public registration (see
 `AdminController`-created ones) and for anyone who registered before this shipped. There is no
 backfill; treat existing rows as unknown rather than consented.
 
+### Re-consent when the wording changes
+
+`DataPrivacyConsent.CurrentVersion` (`Domain.Enums`) is the single source of truth, and
+`NeedsConsent(consentedVersion)` is just `consentedVersion != CurrentVersion` — so a null (never
+consented) account needs consent too.
+
+**Bumping `CurrentVersion` is the mechanism**: it immediately makes every existing account's
+consent stale, and each user is asked to re-accept on their next page load. The consent *text*
+lives in one place on the frontend (`core/constants/dataPrivacyConsent.tsx`, shared by the sign-up
+form and the gate) precisely because one version string is stamped against whoever accepts — two
+drifting copies would record the same version against two different texts. **Change the text and
+the constant in the same commit.**
+
+- Frontend: `DataPrivacyConsentGate` (`core/auth`) sits between `ProtectedRoute` and `AppShell` as
+  its own layout route — outside `AppShell` so the nested admin `ProtectedRoute`s don't re-run the
+  check on every navigation. It renders the app normally and overlays a modal when
+  `needsConsent`. It's a prompt, not a lockout: accepting clears it immediately and "Sign out" is
+  always offered.
+- **Fails open.** If the status call errors, the gate lets the user through. A transient 500 would
+  otherwise lock every user out of the entire portal, which is worse than briefly serving someone
+  whose re-consent is outstanding — they're prompted again on the next load.
+- Admin visibility: `UserSummaryDto` carries `dataPrivacyConsentAt`/`dataPrivacyConsentVersion`,
+  surfaced as a "Data Privacy" column on `/admin/users` (Consented, with version + timestamp on
+  hover, vs. "No record"). `POST /api/admin/users` leaves both null — an admin creating an account
+  can't consent on that person's behalf.
+
 ## Open questions / TODO
 
 - Refresh token rotation (currently a short-lived access token only, see `Jwt:ExpiryMinutes`).
-- Consent is captured at sign-up only. There's no re-consent flow when the wording changes, and
-  no admin view of who consented to which version — add both if the Association needs to
-  demonstrate current consent rather than consent-at-signup.
+- Consent history is last-write-wins: re-consenting overwrites the previous timestamp/version
+  rather than appending. Enough to answer "does this user hold current consent"; not enough to
+  reconstruct *when* they agreed to a superseded version. Needs a separate consent-events table
+  if the Association ever has to show that.

@@ -4,6 +4,7 @@ import { isAxiosError } from 'axios'
 import { useAuth } from '../auth/useAuth'
 import { authApi } from '../api/endpoints/authApi'
 import { passwordErrors } from '../utils/passwordPolicy'
+import { DataPrivacyConsentText } from '../constants/dataPrivacyConsent'
 import { AuthSplitLayout, AuthTextInput, PageMeta } from '../../integrations/template'
 
 type UsernameAvailability = 'idle' | 'checking' | 'available' | 'taken'
@@ -173,19 +174,7 @@ export function RegisterPage() {
               onChange={(e) => setTermsAccepted(e.target.checked)}
             />
             <label className="text-sm text-default-500 font-medium select-none leading-relaxed" htmlFor="checkbox-terms">
-              <span className="font-semibold text-default-900">DATA PRIVACY CONSENT:</span> I agree that my personal
-              information may be collected, processed, stored, and maintained by the Association. In digital, electronic,
-              and/or printed form. My personal information shall be kept confidential and used solely for legitimate
-              organizational purposes in accordance with the{' '}
-              <a
-                href="https://privacy.gov.ph/data-privacy-act/"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="font-semibold text-primary underline"
-              >
-                Data Privacy Act of 2012 (Republic Act No. 10173)
-              </a>
-              .
+              <DataPrivacyConsentText />
             </label>
           </div>
           {fieldErrors.terms && <p className="text-xs text-danger -mt-4 mb-4">{fieldErrors.terms}</p>}

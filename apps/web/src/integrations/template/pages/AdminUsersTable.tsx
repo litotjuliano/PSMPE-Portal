@@ -107,6 +107,7 @@ export const AdminUsersTable = ({
                       sortDir={sortDir}
                       onSortChange={onSortChange}
                     />
+                    <th className="px-3.5 py-3 text-start">Data Privacy</th>
                     <SortableHeader column="createdAt" label="Joined" sortBy={sortBy} sortDir={sortDir} onSortChange={onSortChange} />
                     <th className="px-3.5 py-3 text-start">Actions</th>
                   </tr>
@@ -160,6 +161,28 @@ export const AdminUsersTable = ({
                           <StandardButton variant="warning" size="sm" icon={LuCheck} onClick={() => setVerifyingUser(user)}>
                             Verify
                           </StandardButton>
+                        )}
+                      </td>
+                      <td className="py-3 px-3.5">
+                        {/* Null is "no consent on record" (seeded/admin-created accounts, or
+                            registered before consent was captured) - deliberately not shown as a
+                            refusal, and never back-filled. */}
+                        {user.dataPrivacyConsentAt ? (
+                          <span
+                            className="py-0.5 px-2.5 inline-flex items-center text-xs font-medium rounded bg-success/10 text-success"
+                            title={`Version ${user.dataPrivacyConsentVersion ?? 'unknown'} · ${new Date(
+                              user.dataPrivacyConsentAt,
+                            ).toLocaleString()}`}
+                          >
+                            Consented
+                          </span>
+                        ) : (
+                          <span
+                            className="py-0.5 px-2.5 inline-flex items-center text-xs font-medium rounded bg-default-150 text-default-600"
+                            title="This account never went through public sign-up, so no consent was captured."
+                          >
+                            No record
+                          </span>
                         )}
                       </td>
                       <td className="py-3 px-3.5 text-default-500">{new Date(user.createdAt).toLocaleDateString()}</td>

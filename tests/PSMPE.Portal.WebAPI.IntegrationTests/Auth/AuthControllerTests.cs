@@ -1,5 +1,6 @@
 using System.IdentityModel.Tokens.Jwt;
 using System.Net;
+using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.WebUtilities;
@@ -232,6 +233,70 @@ public class AuthControllerTests : IClassFixture<CustomWebApplicationFactory>, I
         Assert.False(string.IsNullOrWhiteSpace(user.DataPrivacyConsentVersion));
         // Stamped from the server clock at registration, not supplied by the caller.
         Assert.InRange(user.DataPrivacyConsentAt!.Value, before, DateTimeOffset.UtcNow);
+    }
+
+    [Fact]
+    public async Task DataPrivacyConsentStatus_RequiresAuthentication()
+    {
+        var response = await _client.GetAsync("/api/auth/me/data-privacy-consent");
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task DataPrivacyConsentStatus_ForFreshlyRegisteredUser_NeedsNoConsent()
+    {
+        var (_, userId, token) = await RegisterAsync();
+        var verify = await _client.PostAsJsonAsync("/api/auth/verify-email", new VerifyEmailRequest(userId, token));
+        var auth = await verify.Content.ReadFromJsonAsync<AuthResponse>();
+
+        using var client = _factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", auth!.Token);
+        var status = await client.GetFromJsonAsync<DataPrivacyConsentStatusResponse>("/api/auth/me/data-privacy-consent");
+
+        Assert.False(status!.NeedsConsent);
+        Assert.Equal(status.CurrentVersion, status.ConsentedVersion);
+        Assert.NotNull(status.ConsentedAt);
+    }
+
+    /// <summary>
+    /// The re-consent path that matters: an account holding *stale* consent (what every existing
+    /// user looks like the moment the wording version is bumped) must be told it needs consent,
+    /// and posting must clear that without any client-supplied version.
+    /// </summary>
+    [Fact]
+    public async Task GiveDataPrivacyConsent_ClearsStaleConsent()
+    {
+        var (email, userId, token) = await RegisterAsync();
+        var verify = await _client.PostAsJsonAsync("/api/auth/verify-email", new VerifyEmailRequest(userId, token));
+        var auth = await verify.Content.ReadFromJsonAsync<AuthResponse>();
+
+        // Simulate a wording change by ageing this user's recorded version.
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var userManager = scope.ServiceProvider.GetRequiredService<UserManager<ApplicationUser>>();
+            var user = await userManager.FindByEmailAsync(email);
+            user!.DataPrivacyConsentVersion = "1999-01-01";
+            await userManager.UpdateAsync(user);
+        }
+
+        using var client = _factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", auth!.Token);
+
+        var before = await client.GetFromJsonAsync<DataPrivacyConsentStatusResponse>("/api/auth/me/data-privacy-consent");
+        Assert.True(before!.NeedsConsent);
+        Assert.Equal("1999-01-01", before.ConsentedVersion);
+
+        var post = await client.PostAsync("/api/auth/me/data-privacy-consent", null);
+        Assert.Equal(HttpStatusCode.OK, post.StatusCode);
+        var after = await post.Content.ReadFromJsonAsync<DataPrivacyConsentStatusResponse>();
+
+        Assert.False(after!.NeedsConsent);
+        Assert.Equal(after.CurrentVersion, after.ConsentedVersion);
+
+        // And it stuck, rather than only being right in the response body.
+        var reread = await client.GetFromJsonAsync<DataPrivacyConsentStatusResponse>("/api/auth/me/data-privacy-consent");
+        Assert.False(reread!.NeedsConsent);
     }
 
     [Fact]

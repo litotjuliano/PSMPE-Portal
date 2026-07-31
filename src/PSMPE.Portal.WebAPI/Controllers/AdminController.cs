@@ -33,7 +33,19 @@ public class AdminController(
     IMemberUploadService memberUploadService,
     IMemberCertificateService memberCertificateService) : ControllerBase
 {
-    public record UserSummaryDto(Guid Id, string Email, string DisplayName, IReadOnlyList<string> Roles, DateTimeOffset CreatedAt, bool EmailConfirmed);
+    /// <summary>
+    /// DataPrivacyConsentAt/Version are null for accounts that never went through public
+    /// registration (seeded, admin-created) - that reads as "no consent on record", not "refused".
+    /// </summary>
+    public record UserSummaryDto(
+        Guid Id,
+        string Email,
+        string DisplayName,
+        IReadOnlyList<string> Roles,
+        DateTimeOffset CreatedAt,
+        bool EmailConfirmed,
+        DateTimeOffset? DataPrivacyConsentAt = null,
+        string? DataPrivacyConsentVersion = null);
 
     public record AssignRoleRequest(string Role);
 
@@ -86,7 +98,8 @@ public class AdminController(
         foreach (var user in pageOfUsers)
         {
             var roles = await userManager.GetRolesAsync(user);
-            summaries.Add(new UserSummaryDto(user.Id, user.Email ?? string.Empty, user.DisplayName, roles.ToList(), user.CreatedAt, user.EmailConfirmed));
+            summaries.Add(new UserSummaryDto(user.Id, user.Email ?? string.Empty, user.DisplayName, roles.ToList(), user.CreatedAt, user.EmailConfirmed,
+                user.DataPrivacyConsentAt, user.DataPrivacyConsentVersion));
         }
 
         return Ok(new PagedResult<UserSummaryDto>(summaries, totalCount, page, pageSize));
@@ -105,7 +118,8 @@ public class AdminController(
         }
 
         var roles = await userManager.GetRolesAsync(user);
-        return Ok(new UserSummaryDto(user.Id, user.Email ?? string.Empty, user.DisplayName, roles.ToList(), user.CreatedAt, user.EmailConfirmed));
+        return Ok(new UserSummaryDto(user.Id, user.Email ?? string.Empty, user.DisplayName, roles.ToList(), user.CreatedAt, user.EmailConfirmed,
+            user.DataPrivacyConsentAt, user.DataPrivacyConsentVersion));
     }
 
     [HttpPost("users")]

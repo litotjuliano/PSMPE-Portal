@@ -1,6 +1,7 @@
 import { apiClient } from '../apiClient'
 import type {
   AuthResponse,
+  DataPrivacyConsentStatus,
   ForgotPasswordResponse,
   LoginRequest,
   RegisterRequest,
@@ -33,4 +34,11 @@ export const authApi = {
 
   resetPassword: (request: ResetPasswordRequest) =>
     apiClient.post<ResetPasswordResponse>('/api/auth/reset-password', request).then((res) => res.data),
+
+  getDataPrivacyConsent: () =>
+    apiClient.get<DataPrivacyConsentStatus>('/api/auth/me/data-privacy-consent').then((res) => res.data),
+
+  // No body - consenting is always to the server's current wording (see AuthController).
+  giveDataPrivacyConsent: () =>
+    apiClient.post<DataPrivacyConsentStatus>('/api/auth/me/data-privacy-consent').then((res) => res.data),
 }

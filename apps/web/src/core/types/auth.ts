@@ -73,6 +73,18 @@ export interface ResetPasswordResponse {
   message: string
 }
 
+/**
+ * `needsConsent` is decided by the server, not derived here — bumping the wording version takes
+ * effect without a frontend deploy. `consentedVersion`/`consentedAt` are null for accounts that
+ * never consented (seeded/admin-created, or registered before it was recorded).
+ */
+export interface DataPrivacyConsentStatus {
+  needsConsent: boolean
+  currentVersion: string
+  consentedVersion: string | null
+  consentedAt: string | null
+}
+
 export interface AuthUser {
   email: string
   displayName: string
