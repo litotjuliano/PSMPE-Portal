@@ -196,4 +196,80 @@ public class AuthControllerTests : IClassFixture<CustomWebApplicationFactory>, I
         var login = await _client.PostAsJsonAsync("/api/auth/login", new LoginRequest(email, "Password123!"));
         Assert.Equal(HttpStatusCode.OK, login.StatusCode);
     }
+
+    [Fact]
+    public async Task ForgotPassword_ForNonexistentEmail_StillReturnsGenericOk()
+    {
+        var response = await _client.PostAsJsonAsync("/api/auth/forgot-password",
+            new ForgotPasswordRequest($"{Guid.NewGuid()}@example.com"));
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var body = await response.Content.ReadFromJsonAsync<ForgotPasswordResponse>();
+        Assert.Null(body!.DevResetLink);
+    }
+
+    [Fact]
+    public async Task ForgotPassword_ForUnverifiedAccount_StillReturnsGenericOkWithNoLink()
+    {
+        var (email, _, _) = await RegisterAsync();
+
+        var response = await _client.PostAsJsonAsync("/api/auth/forgot-password", new ForgotPasswordRequest(email));
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var body = await response.Content.ReadFromJsonAsync<ForgotPasswordResponse>();
+        Assert.Null(body!.DevResetLink);
+    }
+
+    [Fact]
+    public async Task ForgotPassword_ThenResetPassword_AllowsLoginWithNewPassword()
+    {
+        var (email, userId, token) = await RegisterAsync();
+        await _client.PostAsJsonAsync("/api/auth/verify-email", new VerifyEmailRequest(userId, token));
+
+        var forgot = await _client.PostAsJsonAsync("/api/auth/forgot-password", new ForgotPasswordRequest(email));
+        Assert.Equal(HttpStatusCode.OK, forgot.StatusCode);
+        var forgotBody = await forgot.Content.ReadFromJsonAsync<ForgotPasswordResponse>();
+        Assert.NotNull(forgotBody!.DevResetLink);
+
+        var (resetUserId, resetToken) = ParseVerificationLink(forgotBody.DevResetLink!);
+        var reset = await _client.PostAsJsonAsync("/api/auth/reset-password",
+            new ResetPasswordRequest(resetUserId, resetToken, "NewPassword456!"));
+        Assert.Equal(HttpStatusCode.OK, reset.StatusCode);
+
+        var loginWithNewPassword = await _client.PostAsJsonAsync("/api/auth/login", new LoginRequest(email, "NewPassword456!"));
+        Assert.Equal(HttpStatusCode.OK, loginWithNewPassword.StatusCode);
+
+        var loginWithOldPassword = await _client.PostAsJsonAsync("/api/auth/login", new LoginRequest(email, "Password123!"));
+        Assert.Equal(HttpStatusCode.Unauthorized, loginWithOldPassword.StatusCode);
+    }
+
+    [Fact]
+    public async Task ResetPassword_WithTamperedToken_ReturnsBadRequest()
+    {
+        var (_, userId, token) = await RegisterAsync();
+        await _client.PostAsJsonAsync("/api/auth/verify-email", new VerifyEmailRequest(userId, token));
+
+        var response = await _client.PostAsJsonAsync("/api/auth/reset-password",
+            new ResetPasswordRequest(userId, "not-a-real-token", "NewPassword456!"));
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task ResetPassword_WithWeakPassword_ReturnsValidationProblem()
+    {
+        var (email, userId, token) = await RegisterAsync();
+        await _client.PostAsJsonAsync("/api/auth/verify-email", new VerifyEmailRequest(userId, token));
+
+        var forgot = await _client.PostAsJsonAsync("/api/auth/forgot-password", new ForgotPasswordRequest(email));
+        var forgotBody = await forgot.Content.ReadFromJsonAsync<ForgotPasswordResponse>();
+        var (resetUserId, resetToken) = ParseVerificationLink(forgotBody!.DevResetLink!);
+
+        var response = await _client.PostAsJsonAsync("/api/auth/reset-password",
+            new ResetPasswordRequest(resetUserId, resetToken, "weak"));
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        var problem = await response.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>();
+        Assert.True(problem.TryGetProperty("errors", out _));
+    }
 }

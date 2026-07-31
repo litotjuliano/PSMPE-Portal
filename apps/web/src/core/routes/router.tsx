@@ -11,6 +11,8 @@ import { MemberFormPage } from '../pages/MemberFormPage'
 import { MyProfilePage } from '../pages/MyProfilePage'
 import { RegisterPage } from '../pages/RegisterPage'
 import { VerifyEmailPage } from '../pages/VerifyEmailPage'
+import { ForgotPasswordPage } from '../pages/ForgotPasswordPage'
+import { ResetPasswordPage } from '../pages/ResetPasswordPage'
 import { MembershipApprovalsPage } from '../pages/MembershipApprovalsPage'
 import { PrcVerificationsPage } from '../pages/PrcVerificationsPage'
 import { NotificationsPage } from '../pages/NotificationsPage'
@@ -20,6 +22,8 @@ export const router = createBrowserRouter([
   { path: '/login', element: <LoginPage /> },
   { path: '/register', element: <RegisterPage /> },
   { path: '/verify-email', element: <VerifyEmailPage /> },
+  { path: '/forgot-password', element: <ForgotPasswordPage /> },
+  { path: '/reset-password', element: <ResetPasswordPage /> },
   {
     element: <ProtectedRoute />,
     children: [

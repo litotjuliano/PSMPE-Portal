@@ -29,6 +29,22 @@ public class AuthController(
         return $"{frontendBaseUrl}/verify-email?userId={userId}&token={encodedToken}";
     }
 
+    private string BuildResetPasswordLink(Guid userId, string token)
+    {
+        var frontendBaseUrl = configuration["Frontend:BaseUrl"] ?? "http://localhost:5173";
+        var encodedToken = Uri.EscapeDataString(token);
+        return $"{frontendBaseUrl}/reset-password?userId={userId}&token={encodedToken}";
+    }
+
+    private static readonly HashSet<string> PasswordPolicyErrorCodes =
+    [
+        "PasswordTooShort",
+        "PasswordRequiresDigit",
+        "PasswordRequiresUpper",
+        "PasswordRequiresLower",
+        "PasswordRequiresNonAlphanumeric",
+    ];
+
     private async Task<IList<string>> GetPermissionsAsync(IList<string> roles)
     {
         var permissions = new HashSet<string>();
@@ -144,6 +160,58 @@ public class AuthController(
             $"<p>Please verify your email by clicking the link below:</p><p><a href=\"{verificationLink}\">{verificationLink}</a></p>");
 
         return Ok(new ResendVerificationEmailResponse(genericMessage, ShowDevVerificationLink ? verificationLink : null));
+    }
+
+    [HttpPost("forgot-password")]
+    public async Task<ActionResult<ForgotPasswordResponse>> ForgotPassword(ForgotPasswordRequest request)
+    {
+        const string genericMessage = "If an account with that email exists, a password reset link has been sent.";
+
+        var user = await userManager.FindByEmailAsync(request.Email);
+        if (user is null || !user.EmailConfirmed)
+        {
+            // Don't reveal whether the account exists, and don't let an unverified account
+            // request a reset link before it's even confirmed - mirrors ResendVerificationEmail's
+            // anti-enumeration pattern above.
+            return Ok(new ForgotPasswordResponse(genericMessage));
+        }
+
+        var token = await userManager.GeneratePasswordResetTokenAsync(user);
+        var resetLink = BuildResetPasswordLink(user.Id, token);
+        await emailSender.SendEmailAsync(
+            user.Email!,
+            "Reset your PSMPE Portal password",
+            $"<p>We received a request to reset your PSMPE Portal password. Click the link below to choose a new one:</p><p><a href=\"{resetLink}\">{resetLink}</a></p><p>If you didn't request this, you can safely ignore this email.</p>");
+
+        return Ok(new ForgotPasswordResponse(genericMessage, ShowDevVerificationLink ? resetLink : null));
+    }
+
+    [HttpPost("reset-password")]
+    public async Task<ActionResult<ResetPasswordResponse>> ResetPassword(ResetPasswordRequest request)
+    {
+        var user = await userManager.FindByIdAsync(request.UserId.ToString());
+        if (user is null)
+        {
+            return BadRequest(new { message = "This password reset link is invalid or has expired." });
+        }
+
+        var result = await userManager.ResetPasswordAsync(user, request.Token, request.NewPassword);
+        if (!result.Succeeded)
+        {
+            if (result.Errors.Any(e => !PasswordPolicyErrorCodes.Contains(e.Code)))
+            {
+                // A non-policy failure means the token itself was invalid/expired/already used -
+                // give the generic message rather than exposing Identity's internal error codes.
+                return BadRequest(new { message = "This password reset link is invalid or has expired." });
+            }
+
+            return ValidationProblem(new ValidationProblemDetails(
+                result.Errors.ToDictionary(e => e.Code, e => new[] { e.Description })));
+        }
+
+        // No JWT issued here - the user logs in fresh at /login rather than being silently
+        // authenticated by whoever holds the link (see ForgotPasswordPage/ResetPasswordPage).
+        return Ok(new ResetPasswordResponse("Your password has been reset. You can now sign in."));
     }
 
     [HttpGet("username-available")]

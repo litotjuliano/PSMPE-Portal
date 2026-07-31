@@ -56,6 +56,21 @@ export interface ResendVerificationEmailResponse {
   devVerificationLink?: string
 }
 
+export interface ForgotPasswordResponse {
+  message: string
+  devResetLink?: string
+}
+
+export interface ResetPasswordRequest {
+  userId: string
+  token: string
+  newPassword: string
+}
+
+export interface ResetPasswordResponse {
+  message: string
+}
+
 export interface AuthUser {
   email: string
   displayName: string

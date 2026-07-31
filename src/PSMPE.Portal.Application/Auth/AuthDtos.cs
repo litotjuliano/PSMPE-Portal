@@ -24,3 +24,11 @@ public record VerifyEmailRequest(Guid UserId, string Token);
 public record ResendVerificationEmailRequest(string Email);
 
 public record ResendVerificationEmailResponse(string Message, string? DevVerificationLink = null);
+
+public record ForgotPasswordRequest(string Email);
+
+public record ForgotPasswordResponse(string Message, string? DevResetLink = null);
+
+public record ResetPasswordRequest(Guid UserId, string Token, string NewPassword);
+
+public record ResetPasswordResponse(string Message);
