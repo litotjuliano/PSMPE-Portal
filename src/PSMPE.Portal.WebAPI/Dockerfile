@@ -22,15 +22,21 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends fontconfig fonts-dejavu-core \
     && rm -rf /var/lib/apt/lists/*
 
-# The base image's default non-root "app" user (uid 64198) already owns /app.
-USER app
-
 COPY --from=build /app .
 
-# Uploads live on a mounted volume, not in the published output above - create it now (as the
-# non-root "app" user) so a *fresh* volume inherits app ownership on first mount instead of the
-# root ownership Docker would otherwise assign, which blocks writes at runtime (uid mismatch).
-RUN mkdir -p wwwroot/uploads
+# Uploads live on a mounted volume, not in the published output above. Both the mkdir and the
+# chown must happen while we are still root: `WORKDIR /app` creates the directory owned by root
+# (the base image does *not* pre-assign it to the "app" user), so running these after `USER app`
+# fails the build with "mkdir: cannot create directory 'wwwroot': Permission denied".
+#
+# Handing /app to the base image's non-root "app" user is what makes a *fresh* named
+# volume inherit app ownership on first mount, instead of the root ownership Docker would
+# otherwise assign, which blocks uploads at runtime (uid mismatch). An already-existing volume
+# keeps whatever ownership it was first created with - see openspecs/members.md's deployment note.
+RUN mkdir -p wwwroot/uploads && chown -R app:app /app
+
+# Drop privileges only after the filesystem is prepared.
+USER app
 
 EXPOSE 8080
 ENTRYPOINT ["dotnet", "PSMPE.Portal.WebAPI.dll"]
