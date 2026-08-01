@@ -168,6 +168,12 @@ namespace PSMPE.Portal.Infrastructure.Persistence.Migrations
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<DateTimeOffset?>("DataPrivacyConsentAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("DataPrivacyConsentVersion")
+                        .HasColumnType("text");
+
                     b.Property<string>("DisplayName")
                         .IsRequired()
                         .HasColumnType("text");
@@ -305,12 +311,12 @@ namespace PSMPE.Portal.Infrastructure.Persistence.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
-                    b.Property<string>("Address")
-                        .HasMaxLength(512)
-                        .HasColumnType("character varying(512)");
-
                     b.Property<DateTimeOffset?>("ApprovedAt")
                         .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Barangay")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
 
                     b.Property<DateOnly?>("Birthdate")
                         .HasColumnType("date");
@@ -324,6 +330,10 @@ namespace PSMPE.Portal.Infrastructure.Persistence.Migrations
                         .HasMaxLength(64)
                         .HasColumnType("character varying(64)");
 
+                    b.Property<string>("CityMunicipality")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
+
                     b.Property<string>("CivilStatus")
                         .HasMaxLength(32)
                         .HasColumnType("character varying(32)");
@@ -332,8 +342,16 @@ namespace PSMPE.Portal.Infrastructure.Persistence.Migrations
                         .HasMaxLength(256)
                         .HasColumnType("character varying(256)");
 
+                    b.Property<string>("CourseYearGraduated")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
+
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("EducationLevel")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
 
                     b.Property<string>("EmploymentStatus")
                         .HasMaxLength(32)
@@ -351,6 +369,10 @@ namespace PSMPE.Portal.Infrastructure.Persistence.Migrations
                     b.Property<string>("Gender")
                         .HasColumnType("text");
 
+                    b.Property<string>("HouseNo")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
                     b.Property<string>("HousePhone")
                         .HasMaxLength(32)
                         .HasColumnType("character varying(32)");
@@ -367,6 +389,30 @@ namespace PSMPE.Portal.Infrastructure.Persistence.Migrations
                     b.Property<string>("LinkedInUrl")
                         .HasMaxLength(256)
                         .HasColumnType("character varying(256)");
+
+                    b.Property<string>("MailingBarangay")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
+
+                    b.Property<string>("MailingCityMunicipality")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
+
+                    b.Property<string>("MailingHouseNo")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<string>("MailingProvince")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("MailingStreet")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
+
+                    b.Property<string>("MailingZipCode")
+                        .HasMaxLength(8)
+                        .HasColumnType("character varying(8)");
 
                     b.Property<string>("MemberType")
                         .IsRequired()
@@ -394,6 +440,12 @@ namespace PSMPE.Portal.Infrastructure.Persistence.Migrations
                         .HasMaxLength(64)
                         .HasColumnType("character varying(64)");
 
+                    b.Property<DateOnly?>("PendingPrcRegistrationDate")
+                        .HasColumnType("date");
+
+                    b.Property<DateOnly?>("PendingPrcValidUntilDate")
+                        .HasColumnType("date");
+
                     b.Property<string>("Position")
                         .HasMaxLength(128)
                         .HasColumnType("character varying(128)");
@@ -405,9 +457,19 @@ namespace PSMPE.Portal.Infrastructure.Persistence.Migrations
                         .HasMaxLength(64)
                         .HasColumnType("character varying(64)");
 
+                    b.Property<DateOnly?>("PrcRegistrationDate")
+                        .HasColumnType("date");
+
+                    b.Property<DateOnly?>("PrcValidUntilDate")
+                        .HasColumnType("date");
+
                     b.Property<string>("PrcVerificationRejectedReason")
                         .HasMaxLength(512)
                         .HasColumnType("character varying(512)");
+
+                    b.Property<string>("Province")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
 
                     b.Property<string>("PtrNumber")
                         .HasMaxLength(64)
@@ -415,6 +477,10 @@ namespace PSMPE.Portal.Infrastructure.Persistence.Migrations
 
                     b.Property<DateOnly?>("RenewalDueDate")
                         .HasColumnType("date");
+
+                    b.Property<string>("SchoolName")
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)");
 
                     b.Property<string>("Skills")
                         .HasMaxLength(512)
@@ -424,8 +490,16 @@ namespace PSMPE.Portal.Infrastructure.Persistence.Migrations
                         .HasMaxLength(256)
                         .HasColumnType("character varying(256)");
 
+                    b.Property<string>("SpecifiedProfession")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
                     b.Property<int>("Status")
                         .HasColumnType("integer");
+
+                    b.Property<string>("Street")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
 
                     b.Property<DateTimeOffset?>("SubmittedAt")
                         .HasColumnType("timestamp with time zone");
@@ -454,6 +528,10 @@ namespace PSMPE.Portal.Infrastructure.Persistence.Migrations
 
                     b.Property<int?>("YearsOfPractice")
                         .HasColumnType("integer");
+
+                    b.Property<string>("ZipCode")
+                        .HasMaxLength(8)
+                        .HasColumnType("character varying(8)");
 
                     b.HasKey("Id");
 
@@ -520,8 +598,10 @@ namespace PSMPE.Portal.Infrastructure.Persistence.Migrations
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
-                    b.Property<int>("Kind")
-                        .HasColumnType("integer");
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
 
                     b.Property<string>("StorageKey")
                         .IsRequired()

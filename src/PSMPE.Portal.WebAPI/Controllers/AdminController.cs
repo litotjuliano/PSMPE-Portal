@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using PSMPE.Portal.Application.Common.Models;
+using PSMPE.Portal.Application.Members;
 using PSMPE.Portal.Domain.Entities;
 using PSMPE.Portal.Domain.Enums;
 using PSMPE.Portal.Infrastructure.Authorization;
@@ -13,9 +14,10 @@ using PSMPE.Portal.Infrastructure.Authorization.Policies;
 namespace PSMPE.Portal.WebAPI.Controllers;
 
 /// <summary>
-/// System-wide administrative actions. Listing users/roles requires Admin; creating/editing/
-/// deleting users requires the admin:manage-users permission; changing role assignments and role
-/// permissions requires Super Admin. Super Admin is never assignable/visible through this API,
+/// System-wide administrative actions. Listing users/roles requires Admin; creating a user
+/// requires the admin:manage-users permission; editing/deleting a user, changing role
+/// assignments, and role permissions all require Super Admin (an Admin's only remaining action on
+/// another user's row is VerifyEmail). Super Admin is never assignable/visible through this API,
 /// for any caller including a Super Admin - it's provisioned only via seeding/config/direct DB.
 /// A Super Admin's own account is visible to themselves (GetUsers/GetUserById) but fully
 /// read-only (UpdateUser/DeleteUser/AssignRole/RemoveRole all reject any Super Admin target) -
@@ -26,9 +28,24 @@ namespace PSMPE.Portal.WebAPI.Controllers;
 public class AdminController(
     UserManager<ApplicationUser> userManager,
     RoleManager<IdentityRole<Guid>> roleManager,
-    ILogger<AdminController> logger) : ControllerBase
+    ILogger<AdminController> logger,
+    IMemberService memberService,
+    IMemberUploadService memberUploadService,
+    IMemberCertificateService memberCertificateService) : ControllerBase
 {
-    public record UserSummaryDto(Guid Id, string Email, string DisplayName, IReadOnlyList<string> Roles, DateTimeOffset CreatedAt);
+    /// <summary>
+    /// DataPrivacyConsentAt/Version are null for accounts that never went through public
+    /// registration (seeded, admin-created) - that reads as "no consent on record", not "refused".
+    /// </summary>
+    public record UserSummaryDto(
+        Guid Id,
+        string Email,
+        string DisplayName,
+        IReadOnlyList<string> Roles,
+        DateTimeOffset CreatedAt,
+        bool EmailConfirmed,
+        DateTimeOffset? DataPrivacyConsentAt = null,
+        string? DataPrivacyConsentVersion = null);
 
     public record AssignRoleRequest(string Role);
 
@@ -70,6 +87,7 @@ public class AdminController(
         {
             "email" => descending ? query.OrderByDescending(u => u.Email) : query.OrderBy(u => u.Email),
             "createdat" => descending ? query.OrderByDescending(u => u.CreatedAt) : query.OrderBy(u => u.CreatedAt),
+            "emailconfirmed" => descending ? query.OrderByDescending(u => u.EmailConfirmed) : query.OrderBy(u => u.EmailConfirmed),
             _ => descending ? query.OrderByDescending(u => u.DisplayName) : query.OrderBy(u => u.DisplayName),
         };
 
@@ -80,7 +98,8 @@ public class AdminController(
         foreach (var user in pageOfUsers)
         {
             var roles = await userManager.GetRolesAsync(user);
-            summaries.Add(new UserSummaryDto(user.Id, user.Email ?? string.Empty, user.DisplayName, roles.ToList(), user.CreatedAt));
+            summaries.Add(new UserSummaryDto(user.Id, user.Email ?? string.Empty, user.DisplayName, roles.ToList(), user.CreatedAt, user.EmailConfirmed,
+                user.DataPrivacyConsentAt, user.DataPrivacyConsentVersion));
         }
 
         return Ok(new PagedResult<UserSummaryDto>(summaries, totalCount, page, pageSize));
@@ -99,7 +118,8 @@ public class AdminController(
         }
 
         var roles = await userManager.GetRolesAsync(user);
-        return Ok(new UserSummaryDto(user.Id, user.Email ?? string.Empty, user.DisplayName, roles.ToList(), user.CreatedAt));
+        return Ok(new UserSummaryDto(user.Id, user.Email ?? string.Empty, user.DisplayName, roles.ToList(), user.CreatedAt, user.EmailConfirmed,
+            user.DataPrivacyConsentAt, user.DataPrivacyConsentVersion));
     }
 
     [HttpPost("users")]
@@ -151,11 +171,11 @@ public class AdminController(
 
         await userManager.AddToRoleAsync(user, role);
         var roles = await userManager.GetRolesAsync(user);
-        return Ok(new UserSummaryDto(user.Id, user.Email!, user.DisplayName, roles.ToList(), user.CreatedAt));
+        return Ok(new UserSummaryDto(user.Id, user.Email!, user.DisplayName, roles.ToList(), user.CreatedAt, user.EmailConfirmed));
     }
 
     [HttpPut("users/{id:guid}")]
-    [RequirePermission(Permissions.Admin.ManageUsers)]
+    [Authorize(Policy = PolicyNames.RequireSuperAdmin)]
     public async Task<IActionResult> UpdateUser(Guid id, UpdateUserRequest request)
     {
         var user = await userManager.FindByIdAsync(id.ToString());
@@ -209,7 +229,7 @@ public class AdminController(
     }
 
     [HttpDelete("users/{id:guid}")]
-    [RequirePermission(Permissions.Admin.ManageUsers)]
+    [Authorize(Policy = PolicyNames.RequireSuperAdmin)]
     public async Task<IActionResult> DeleteUser(Guid id)
     {
         var user = await userManager.FindByIdAsync(id.ToString());
@@ -228,6 +248,20 @@ public class AdminController(
         {
             return BadRequest(new { message = "You cannot delete your own account." });
         }
+
+        // Deleting the user cascades to their Member row (if any), which has a Restrict FK from
+        // PrcVerificationHistory - checked here so it surfaces as a clean failure instead of a raw
+        // DbUpdateException (same reasoning as MemberService.DeleteAsync's own Member-only path).
+        if (await memberService.HasPrcVerificationHistoryAsync(user.Id))
+        {
+            return Conflict(new { message = "Cannot delete this user: they have RMP verification history on record." });
+        }
+
+        // MemberUploads/MemberCertificates have no FK relationship at all (by design - see
+        // openspecs/members.md), so they'd otherwise be silently orphaned (rows and files both)
+        // once the cascade removes the Member row below.
+        await memberUploadService.DeleteAllForUserAsync(user.Id);
+        await memberCertificateService.DeleteAllForUserAsync(user.Id);
 
         var result = await userManager.DeleteAsync(user);
         if (!result.Succeeded)
@@ -296,6 +330,38 @@ public class AdminController(
         }
 
         var result = await userManager.RemoveFromRoleAsync(user, request.Role);
+        if (!result.Succeeded)
+        {
+            return ValidationProblem(new ValidationProblemDetails(
+                result.Errors.ToDictionary(e => e.Code, e => new[] { e.Description })));
+        }
+
+        return NoContent();
+    }
+
+    [HttpPost("users/{id:guid}/verify-email")]
+    [Authorize(Policy = PolicyNames.RequireAdmin)]
+    public async Task<IActionResult> VerifyEmail(Guid id)
+    {
+        var user = await userManager.FindByIdAsync(id.ToString());
+        if (user is null || await IsHiddenFromCallerAsync(user))
+        {
+            return NotFound();
+        }
+
+        if (await IsSuperAdminAccountAsync(user))
+        {
+            logger.LogWarning("Rejected attempt by {CallerId} to manually verify Super Admin account {TargetId}.", CurrentUserId, user.Id);
+            return Forbid();
+        }
+
+        if (user.EmailConfirmed)
+        {
+            return NoContent();
+        }
+
+        user.EmailConfirmed = true;
+        var result = await userManager.UpdateAsync(user);
         if (!result.Succeeded)
         {
             return ValidationProblem(new ValidationProblemDetails(

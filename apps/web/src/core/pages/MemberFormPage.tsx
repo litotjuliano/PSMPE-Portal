@@ -15,7 +15,22 @@ const emptyState: MemberFormState = {
   birthdate: '',
   gender: '',
   civilStatus: '',
-  address: '',
+  educationLevel: '',
+  schoolName: '',
+  courseYearGraduated: '',
+  specifiedProfession: '',
+  houseNo: '',
+  street: '',
+  barangay: '',
+  cityMunicipality: '',
+  province: '',
+  zipCode: '',
+  mailingHouseNo: '',
+  mailingStreet: '',
+  mailingBarangay: '',
+  mailingCityMunicipality: '',
+  mailingProvince: '',
+  mailingZipCode: '',
   mobileNumber: '',
   housePhone: '',
   website: '',
@@ -24,6 +39,8 @@ const emptyState: MemberFormState = {
   xUrl: '',
   instagramUrl: '',
   prcLicenseNo: '',
+  prcRegistrationDate: '',
+  prcValidUntilDate: '',
   ptrNumber: '',
   tin: '',
   chapter: '',
@@ -65,7 +82,22 @@ export function MemberFormPage() {
           birthdate: member.birthdate ?? '',
           gender: member.gender ?? '',
           civilStatus: member.civilStatus ?? '',
-          address: member.address ?? '',
+          educationLevel: member.educationLevel ?? '',
+          schoolName: member.schoolName ?? '',
+          courseYearGraduated: member.courseYearGraduated ?? '',
+          specifiedProfession: member.specifiedProfession ?? '',
+          houseNo: member.houseNo ?? '',
+          street: member.street ?? '',
+          barangay: member.barangay ?? '',
+          cityMunicipality: member.cityMunicipality ?? '',
+          province: member.province ?? '',
+          zipCode: member.zipCode ?? '',
+          mailingHouseNo: member.mailingHouseNo ?? '',
+          mailingStreet: member.mailingStreet ?? '',
+          mailingBarangay: member.mailingBarangay ?? '',
+          mailingCityMunicipality: member.mailingCityMunicipality ?? '',
+          mailingProvince: member.mailingProvince ?? '',
+          mailingZipCode: member.mailingZipCode ?? '',
           mobileNumber: member.mobileNumber ?? '',
           housePhone: member.housePhone ?? '',
           website: member.website ?? '',
@@ -74,6 +106,8 @@ export function MemberFormPage() {
           xUrl: member.xUrl ?? '',
           instagramUrl: member.instagramUrl ?? '',
           prcLicenseNo: member.prcLicenseNo ?? '',
+          prcRegistrationDate: member.prcRegistrationDate ?? '',
+          prcValidUntilDate: member.prcValidUntilDate ?? '',
           ptrNumber: member.ptrNumber ?? '',
           tin: member.tin ?? '',
           chapter: member.chapter,
@@ -132,7 +166,22 @@ export function MemberFormPage() {
         birthdate: state.birthdate || null,
         gender: state.gender || null,
         civilStatus: state.civilStatus || null,
-        address: state.address || null,
+        educationLevel: state.educationLevel || null,
+        schoolName: state.schoolName || null,
+        courseYearGraduated: state.courseYearGraduated || null,
+        specifiedProfession: state.specifiedProfession || null,
+        houseNo: state.houseNo || null,
+        street: state.street || null,
+        barangay: state.barangay || null,
+        cityMunicipality: state.cityMunicipality || null,
+        province: state.province || null,
+        zipCode: state.zipCode || null,
+        mailingHouseNo: state.mailingHouseNo || null,
+        mailingStreet: state.mailingStreet || null,
+        mailingBarangay: state.mailingBarangay || null,
+        mailingCityMunicipality: state.mailingCityMunicipality || null,
+        mailingProvince: state.mailingProvince || null,
+        mailingZipCode: state.mailingZipCode || null,
         mobileNumber: state.mobileNumber || null,
         housePhone: state.housePhone || null,
         website: state.website || null,
@@ -141,6 +190,8 @@ export function MemberFormPage() {
         xUrl: state.xUrl || null,
         instagramUrl: state.instagramUrl || null,
         prcLicenseNo: state.prcLicenseNo || null,
+        prcRegistrationDate: state.prcRegistrationDate || null,
+        prcValidUntilDate: state.prcValidUntilDate || null,
         ptrNumber: state.ptrNumber || null,
         tin: state.tin || null,
         chapter: state.chapter,
@@ -164,7 +215,22 @@ export function MemberFormPage() {
         birthdate: state.birthdate || null,
         gender: state.gender || null,
         civilStatus: state.civilStatus || null,
-        address: state.address || null,
+        educationLevel: state.educationLevel || null,
+        schoolName: state.schoolName || null,
+        courseYearGraduated: state.courseYearGraduated || null,
+        specifiedProfession: state.specifiedProfession || null,
+        houseNo: state.houseNo || null,
+        street: state.street || null,
+        barangay: state.barangay || null,
+        cityMunicipality: state.cityMunicipality || null,
+        province: state.province || null,
+        zipCode: state.zipCode || null,
+        mailingHouseNo: state.mailingHouseNo || null,
+        mailingStreet: state.mailingStreet || null,
+        mailingBarangay: state.mailingBarangay || null,
+        mailingCityMunicipality: state.mailingCityMunicipality || null,
+        mailingProvince: state.mailingProvince || null,
+        mailingZipCode: state.mailingZipCode || null,
         mobileNumber: state.mobileNumber || null,
         housePhone: state.housePhone || null,
         website: state.website || null,
@@ -173,6 +239,8 @@ export function MemberFormPage() {
         xUrl: state.xUrl || null,
         instagramUrl: state.instagramUrl || null,
         prcLicenseNo: state.prcLicenseNo || null,
+        prcRegistrationDate: state.prcRegistrationDate || null,
+        prcValidUntilDate: state.prcValidUntilDate || null,
         ptrNumber: state.ptrNumber || null,
         tin: state.tin || null,
         chapter: state.chapter,
@@ -192,16 +260,22 @@ export function MemberFormPage() {
     navigate('/members')
   }
 
+  // Reaching this page for an existing, not-yet-approved application is a review/approve action,
+  // not a routine edit - the breadcrumb/title reflect that distinction (see MemberFormCard, which
+  // similarly opens in read-only view mode rather than the editable form for this same reason).
+  const pageTitle = isNew ? 'New member' : approvedAt ? 'Edit member' : 'Approval'
+
   return (
     <>
-      <PageMeta title={isNew ? 'New member' : 'Edit member'} />
+      <PageMeta title={pageTitle} />
       <main>
-        <PageBreadcrumb title={isNew ? 'New member' : 'Edit member'} subtitle="Members" />
+        <PageBreadcrumb title={pageTitle} subtitle="Members" />
         {loading ? (
           <p className="text-sm text-default-500">Loading…</p>
         ) : (
           <MemberFormCard
             isNew={isNew}
+            memberId={id}
             state={state}
             onChange={handleChange}
             onSubmit={handleSubmit}

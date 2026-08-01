@@ -13,7 +13,12 @@ namespace PSMPE.Portal.Infrastructure.Services;
 /// </summary>
 public class SmtpEmailSender(IConfiguration configuration) : IEmailSender
 {
-    public async Task SendEmailAsync(string to, string subject, string htmlBody, CancellationToken cancellationToken = default)
+    public async Task SendEmailAsync(
+        string to,
+        string subject,
+        string htmlBody,
+        CancellationToken cancellationToken = default,
+        IReadOnlyList<EmailAttachment>? attachments = null)
     {
         var host = configuration["Smtp:Host"] ?? throw new InvalidOperationException("Smtp:Host is not configured.");
         var port = configuration.GetValue<int?>("Smtp:Port") ?? 587;
@@ -26,7 +31,14 @@ public class SmtpEmailSender(IConfiguration configuration) : IEmailSender
         message.From.Add(new MailboxAddress(fromName, from));
         message.To.Add(MailboxAddress.Parse(to));
         message.Subject = subject;
-        message.Body = new BodyBuilder { HtmlBody = htmlBody }.ToMessageBody();
+
+        var bodyBuilder = new BodyBuilder { HtmlBody = htmlBody };
+        foreach (var attachment in attachments ?? [])
+        {
+            bodyBuilder.Attachments.Add(attachment.FileName, attachment.Content, ContentType.Parse(attachment.ContentType));
+        }
+
+        message.Body = bodyBuilder.ToMessageBody();
 
         using var client = new SmtpClient();
         // Port 465 is implicit TLS; everything else (587, 25) negotiates TLS via STARTTLS.

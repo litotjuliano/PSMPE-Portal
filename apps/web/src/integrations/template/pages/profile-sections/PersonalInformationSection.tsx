@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ChangeEvent } from 'react'
 import { LuEye, LuSquarePen, LuTriangleAlert, LuUpload, LuUserRound } from 'react-icons/lu'
 import type { Member } from '../../../../core/types/member'
-import { CivilStatuses } from '../../../../core/types/member'
+import { CivilStatuses, EducationLevels, SpecifiedProfessions } from '../../../../core/types/member'
 import { memberApi } from '../../../../core/api/endpoints/memberApi'
 import { uploadApi } from '../../../../core/api/endpoints/uploadApi'
 import { MAX_IMAGE_BYTES, MAX_PDF_BYTES } from '../../../../core/constants/uploadLimits'
@@ -22,7 +22,13 @@ interface FormState {
   birthdate: string
   gender: string
   civilStatus: string
+  educationLevel: string
+  schoolName: string
+  courseYearGraduated: string
+  specifiedProfession: string
   prcLicenseNo: string
+  prcRegistrationDate: string
+  prcValidUntilDate: string
   ptrNumber: string
   tin: string
 }
@@ -36,7 +42,13 @@ function toFormState(member: Member): FormState {
     birthdate: member.birthdate ?? '',
     gender: member.gender ?? '',
     civilStatus: member.civilStatus ?? '',
+    educationLevel: member.educationLevel ?? '',
+    schoolName: member.schoolName ?? '',
+    courseYearGraduated: member.courseYearGraduated ?? '',
+    specifiedProfession: member.specifiedProfession ?? '',
     prcLicenseNo: member.prcLicenseNo ?? '',
+    prcRegistrationDate: member.prcRegistrationDate ?? '',
+    prcValidUntilDate: member.prcValidUntilDate ?? '',
     ptrNumber: member.ptrNumber ?? '',
     tin: member.tin ?? '',
   }
@@ -46,7 +58,13 @@ function toFormState(member: Member): FormState {
  *  complete these, never blocked from saving unrelated changes (see MemberService.SubmitMyProfileAsync). */
 function missingRequiredFields(member: Member): string[] {
   const missing: string[] = []
-  if (!member.prcLicenseNo) missing.push('PRC License No.')
+  if (!member.educationLevel) missing.push('Educational Record')
+  if (!member.schoolName) missing.push('School Name')
+  if (!member.courseYearGraduated) missing.push('Course & Year Graduated')
+  if (!member.specifiedProfession) missing.push('Specified Profession')
+  if (!member.prcLicenseNo) missing.push('RMP License No.')
+  if (!member.prcRegistrationDate) missing.push('RMP Registration Date')
+  if (!member.prcValidUntilDate) missing.push('RMP Valid Until Date')
   if (!member.ptrNumber) missing.push('PTR Number')
   return missing
 }
@@ -151,19 +169,22 @@ export const PersonalInformationSection = ({ member, onUpdated }: PersonalInform
       setHasPrcId(true)
       setPrcIdJustReuploaded(true)
     } catch (err) {
-      setError(describeError(err, 'Could not upload PRC ID. Make sure it is a JPG, PNG, or PDF under the size limit.'))
+      setError(describeError(err, 'Could not upload RMP ID. Make sure it is a JPG, PNG, or PDF under the size limit.'))
     } finally {
       setUploadingPrcId(false)
     }
   }
 
   const prcLicenseNoChanged = form.prcLicenseNo !== (member.prcLicenseNo ?? '')
-  const blockedByMissingReupload = prcLicenseNoChanged && !prcIdJustReuploaded
+  const prcRegistrationDateChanged = form.prcRegistrationDate !== (member.prcRegistrationDate ?? '')
+  const prcValidUntilDateChanged = form.prcValidUntilDate !== (member.prcValidUntilDate ?? '')
+  const prcCardChanged = prcLicenseNoChanged || prcRegistrationDateChanged || prcValidUntilDateChanged
+  const blockedByMissingReupload = prcCardChanged && !prcIdJustReuploaded
 
   const handleSave = async () => {
     setError(null)
     if (blockedByMissingReupload) {
-      setError('Upload a new PRC ID document to save this change to PRC License No.')
+      setError('Upload a new RMP ID document to save this change to RMP License No./Registration Date/Valid Until Date.')
       return
     }
     if (form.tin && !/^[\d-]{9,12}$/.test(form.tin)) {
@@ -182,10 +203,16 @@ export const PersonalInformationSection = ({ member, onUpdated }: PersonalInform
           birthdate: form.birthdate || null,
           gender: form.gender || null,
           civilStatus: form.civilStatus || null,
+          educationLevel: form.educationLevel || null,
+          schoolName: form.schoolName || null,
+          courseYearGraduated: form.courseYearGraduated || null,
+          specifiedProfession: form.specifiedProfession || null,
           prcLicenseNo: form.prcLicenseNo || null,
+          prcRegistrationDate: form.prcRegistrationDate || null,
+          prcValidUntilDate: form.prcValidUntilDate || null,
           ptrNumber: form.ptrNumber || null,
           tin: form.tin || null,
-          prcIdReuploaded: prcLicenseNoChanged && prcIdJustReuploaded,
+          prcIdReuploaded: prcCardChanged && prcIdJustReuploaded,
         }),
       )
       onUpdated(updated)
@@ -221,7 +248,7 @@ export const PersonalInformationSection = ({ member, onUpdated }: PersonalInform
 
       {member.prcVerificationRejectedReason && (
         <p className="text-sm text-danger bg-danger/10 rounded-lg px-3 py-2">
-          Your requested PRC License No. change was not approved: {member.prcVerificationRejectedReason}
+          Your requested RMP License change was not approved: {member.prcVerificationRejectedReason}
         </p>
       )}
 
@@ -240,15 +267,12 @@ export const PersonalInformationSection = ({ member, onUpdated }: PersonalInform
               <StandardButton size="sm" onClick={() => photoInputRef.current?.click()} loading={uploadingPhoto} loadingLabel="Uploading…">
                 Upload Photo
               </StandardButton>
+              <p className="text-xs text-default-500 text-center">This photo will be used for your ID print.</p>
             </>
           )}
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 flex-1 text-sm">
-          <div>
-            <span className="block font-medium text-default-900 text-sm mb-2">Email</span>
-            <span className="font-semibold text-default-800">{member.email}</span>
-          </div>
           <div>
             <span className="block font-medium text-default-900 text-sm mb-2">Member Type</span>
             <span className="font-semibold text-default-800">{member.memberType}</span>
@@ -316,15 +340,83 @@ export const PersonalInformationSection = ({ member, onUpdated }: PersonalInform
                   ))}
                 </select>
               </div>
-              <div>
-                <label className="block font-medium text-default-900 text-sm mb-2">PRC License No.</label>
-                <input className="form-input" value={form.prcLicenseNo} onChange={(e) => handleChange('prcLicenseNo', e.target.value)} />
-                {prcLicenseNoChanged && (
-                  <p className="text-xs text-warning mt-1">
-                    {prcIdJustReuploaded ? 'New PRC ID uploaded - ready to save.' : 'Upload a new PRC ID document below to save this change.'}
-                  </p>
-                )}
+              <div className="md:col-span-2 border-t border-default-200 pt-4">
+                <span className="block font-medium text-default-900 text-sm mb-2">Educational Record</span>
+                <div className="flex items-center gap-4">
+                  {Object.values(EducationLevels).map((level) => (
+                    <label key={level} className="flex items-center gap-2 text-sm">
+                      <input
+                        type="radio"
+                        name="educationLevel"
+                        className="form-radio"
+                        checked={form.educationLevel === level}
+                        onChange={() => handleChange('educationLevel', level)}
+                      />
+                      {level}
+                    </label>
+                  ))}
+                </div>
               </div>
+              <div>
+                <label className="block font-medium text-default-900 text-sm mb-2">Name of School/Institution</label>
+                <input className="form-input" value={form.schoolName} onChange={(e) => handleChange('schoolName', e.target.value)} />
+              </div>
+              <div>
+                <label className="block font-medium text-default-900 text-sm mb-2">Course &amp; Year Graduated</label>
+                <input
+                  className="form-input"
+                  placeholder="e.g. BSCE 2023"
+                  value={form.courseYearGraduated}
+                  onChange={(e) => handleChange('courseYearGraduated', e.target.value)}
+                />
+              </div>
+              <div className="md:col-span-2">
+                <span className="block font-medium text-default-900 text-sm mb-2">Specified Profession</span>
+                <div className="flex items-center gap-4">
+                  {Object.values(SpecifiedProfessions).map((profession) => (
+                    <label key={profession} className="flex items-center gap-2 text-sm">
+                      <input
+                        type="radio"
+                        name="specifiedProfession"
+                        className="form-radio"
+                        checked={form.specifiedProfession === profession}
+                        onChange={() => handleChange('specifiedProfession', profession)}
+                      />
+                      {profession}
+                    </label>
+                  ))}
+                </div>
+              </div>
+              <div className="border-t border-default-200 pt-4">
+                <label className="block font-medium text-default-900 text-sm mb-2">RMP License No.</label>
+                <input className="form-input" value={form.prcLicenseNo} onChange={(e) => handleChange('prcLicenseNo', e.target.value)} />
+              </div>
+              <div className="border-t border-default-200 pt-4" />
+              <div>
+                <label className="block font-medium text-default-900 text-sm mb-2">RMP Registration Date</label>
+                <input
+                  type="date"
+                  className="form-input"
+                  value={form.prcRegistrationDate}
+                  onChange={(e) => handleChange('prcRegistrationDate', e.target.value)}
+                />
+              </div>
+              <div>
+                <label className="block font-medium text-default-900 text-sm mb-2">RMP Valid Until</label>
+                <input
+                  type="date"
+                  className="form-input"
+                  value={form.prcValidUntilDate}
+                  onChange={(e) => handleChange('prcValidUntilDate', e.target.value)}
+                />
+              </div>
+              {prcCardChanged && (
+                <div className="md:col-span-2 -mt-2">
+                  <p className="text-xs text-warning">
+                    {prcIdJustReuploaded ? 'New RMP ID uploaded - ready to save.' : 'Upload a new RMP ID document below to save this change.'}
+                  </p>
+                </div>
+              )}
               <div>
                 <label className="block font-medium text-default-900 text-sm mb-2">PTR Number</label>
                 <input className="form-input" value={form.ptrNumber} onChange={(e) => handleChange('ptrNumber', e.target.value)} />
@@ -339,14 +431,14 @@ export const PersonalInformationSection = ({ member, onUpdated }: PersonalInform
                 />
               </div>
               <div className="md:col-span-2">
-                <span className="block font-medium text-default-900 text-sm mb-2">PRC ID Document</span>
+                <span className="block font-medium text-default-900 text-sm mb-2">RMP ID Document</span>
                 <div className="flex items-center gap-3">
                   {hasPrcId ? (
                     <StandardButton variant="view" icon={LuEye} onClick={() => setPrcIdPreviewOpen(true)}>
-                      View PRC ID
+                      View RMP ID
                     </StandardButton>
                   ) : (
-                    <span className="text-default-500">No PRC ID uploaded yet.</span>
+                    <span className="text-default-500">No RMP ID uploaded yet.</span>
                   )}
                   <input ref={prcIdInputRef} type="file" accept=".jpg,.jpeg,.png,.pdf" className="hidden" onChange={handlePrcIdSelected} />
                   <StandardButton
@@ -392,13 +484,43 @@ export const PersonalInformationSection = ({ member, onUpdated }: PersonalInform
                 <span className="font-semibold text-default-800">{member.civilStatus || '-'}</span>
               </div>
               <div>
-                <span className="block font-medium text-default-900 text-sm mb-2">PRC License No.</span>
+                <span className="block font-medium text-default-900 text-sm mb-2">Educational Record</span>
+                <span className="font-semibold text-default-800">{member.educationLevel || '-'}</span>
+              </div>
+              <div>
+                <span className="block font-medium text-default-900 text-sm mb-2">Name of School/Institution</span>
+                <span className="font-semibold text-default-800">{member.schoolName || '-'}</span>
+              </div>
+              <div>
+                <span className="block font-medium text-default-900 text-sm mb-2">Course &amp; Year Graduated</span>
+                <span className="font-semibold text-default-800">{member.courseYearGraduated || '-'}</span>
+              </div>
+              <div>
+                <span className="block font-medium text-default-900 text-sm mb-2">Specified Profession</span>
+                <span className="font-semibold text-default-800">{member.specifiedProfession || '-'}</span>
+              </div>
+              <div>
+                <span className="block font-medium text-default-900 text-sm mb-2">RMP License No.</span>
                 <span className="font-semibold text-default-800">{member.prcLicenseNo || '-'}</span>
                 {member.pendingPrcLicenseNo ? (
                   <p className="text-xs text-warning mt-1">New value "{member.pendingPrcLicenseNo}" - pending admin verification.</p>
                 ) : (
                   !member.prcIdVerified &&
                   member.prcLicenseNo && <p className="text-xs text-warning mt-1">Pending admin verification.</p>
+                )}
+              </div>
+              <div>
+                <span className="block font-medium text-default-900 text-sm mb-2">RMP Registration Date</span>
+                <span className="font-semibold text-default-800">{member.prcRegistrationDate || '-'}</span>
+                {member.pendingPrcRegistrationDate && (
+                  <p className="text-xs text-warning mt-1">New value "{member.pendingPrcRegistrationDate}" - pending admin verification.</p>
+                )}
+              </div>
+              <div>
+                <span className="block font-medium text-default-900 text-sm mb-2">RMP Valid Until</span>
+                <span className="font-semibold text-default-800">{member.prcValidUntilDate || '-'}</span>
+                {member.pendingPrcValidUntilDate && (
+                  <p className="text-xs text-warning mt-1">New value "{member.pendingPrcValidUntilDate}" - pending admin verification.</p>
                 )}
               </div>
               <div>
@@ -410,13 +532,13 @@ export const PersonalInformationSection = ({ member, onUpdated }: PersonalInform
                 <span className="font-semibold text-default-800">{member.tin || '-'}</span>
               </div>
               <div className="md:col-span-2">
-                <span className="block font-medium text-default-900 text-sm mb-2">PRC ID Document</span>
+                <span className="block font-medium text-default-900 text-sm mb-2">RMP ID Document</span>
                 {hasPrcId ? (
                   <StandardButton variant="view" icon={LuEye} onClick={() => setPrcIdPreviewOpen(true)}>
-                    View PRC ID
+                    View RMP ID
                   </StandardButton>
                 ) : (
-                  <span className="text-default-500">No PRC ID uploaded yet.</span>
+                  <span className="text-default-500">No RMP ID uploaded yet.</span>
                 )}
               </div>
             </>

@@ -1,17 +1,22 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
-import { LuChevronDown, LuChevronUp, LuPlus, LuSquarePen, LuTrash2 } from 'react-icons/lu'
+import { LuCheck, LuChevronDown, LuChevronUp, LuPlus, LuSquarePen, LuTrash2 } from 'react-icons/lu'
 import type { GetUsersParams, UserSummary } from '../../../core/api/endpoints/adminApi'
 import { AssignableRoles, Roles, type Role } from '../../../core/types/auth'
 import { ConfirmationModal } from '../components/shared/ConfirmationModal'
+import { StandardButton } from '../components/shared/StandardButton'
 
 type SortableColumn = NonNullable<GetUsersParams['sortBy']>
 
 interface AdminUsersTableProps {
   users: UserSummary[]
   canManageRoles: boolean
+  /** Edit/Delete are Super-Admin-only - hidden entirely (not just disabled) for a regular Admin,
+   *  who's left with only the Email Verification action on this page. */
+  isSuperAdmin: boolean
   onToggleRole: (userId: string, role: Role, hasRole: boolean) => void
   onDelete: (id: string) => void
+  onVerifyEmail: (userId: string) => void
   currentUserEmail?: string
   sortBy: SortableColumn
   sortDir: 'asc' | 'desc'
@@ -58,8 +63,10 @@ function SortableHeader({
 export const AdminUsersTable = ({
   users,
   canManageRoles,
+  isSuperAdmin,
   onToggleRole,
   onDelete,
+  onVerifyEmail,
   currentUserEmail,
   sortBy,
   sortDir,
@@ -71,6 +78,7 @@ export const AdminUsersTable = ({
 }: AdminUsersTableProps) => {
   const totalPages = Math.max(1, Math.ceil(totalCount / pageSize))
   const [deletingUser, setDeletingUser] = useState<UserSummary | null>(null)
+  const [verifyingUser, setVerifyingUser] = useState<UserSummary | null>(null)
 
   return (
     <div className="card">
@@ -92,6 +100,14 @@ export const AdminUsersTable = ({
                     <SortableHeader column="displayName" label="Name" sortBy={sortBy} sortDir={sortDir} onSortChange={onSortChange} />
                     <SortableHeader column="email" label="Email" sortBy={sortBy} sortDir={sortDir} onSortChange={onSortChange} />
                     <th className="px-3.5 py-3 text-start">Roles</th>
+                    <SortableHeader
+                      column="emailConfirmed"
+                      label="Email Verification"
+                      sortBy={sortBy}
+                      sortDir={sortDir}
+                      onSortChange={onSortChange}
+                    />
+                    <th className="px-3.5 py-3 text-start">Data Privacy</th>
                     <SortableHeader column="createdAt" label="Joined" sortBy={sortBy} sortDir={sortDir} onSortChange={onSortChange} />
                     <th className="px-3.5 py-3 text-start">Actions</th>
                   </tr>
@@ -136,33 +152,70 @@ export const AdminUsersTable = ({
                           })}
                         </div>
                       </td>
+                      <td className="py-3 px-3.5">
+                        {user.emailConfirmed || isSuperAdminRow ? (
+                          <span className="py-0.5 px-2.5 inline-flex items-center text-xs font-medium rounded bg-success/10 text-success">
+                            Verified
+                          </span>
+                        ) : (
+                          <StandardButton variant="warning" size="sm" icon={LuCheck} onClick={() => setVerifyingUser(user)}>
+                            Verify
+                          </StandardButton>
+                        )}
+                      </td>
+                      <td className="py-3 px-3.5">
+                        {/* Null is "no consent on record" (seeded/admin-created accounts, or
+                            registered before consent was captured) - deliberately not shown as a
+                            refusal, and never back-filled. */}
+                        {user.dataPrivacyConsentAt ? (
+                          <span
+                            className="py-0.5 px-2.5 inline-flex items-center text-xs font-medium rounded bg-success/10 text-success"
+                            title={`Version ${user.dataPrivacyConsentVersion ?? 'unknown'} · ${new Date(
+                              user.dataPrivacyConsentAt,
+                            ).toLocaleString()}`}
+                          >
+                            Consented
+                          </span>
+                        ) : (
+                          <span
+                            className="py-0.5 px-2.5 inline-flex items-center text-xs font-medium rounded bg-default-150 text-default-600"
+                            title="This account never went through public sign-up, so no consent was captured."
+                          >
+                            No record
+                          </span>
+                        )}
+                      </td>
                       <td className="py-3 px-3.5 text-default-500">{new Date(user.createdAt).toLocaleDateString()}</td>
                       <td className="py-3 px-3.5">
                         <div className="flex items-center gap-1.5">
-                          {isSuperAdminRow ? (
-                            <span
-                              className="btn btn-icon size-8 rounded-full text-default-300 cursor-not-allowed"
-                              aria-label="Edit disabled - Super Admin accounts are read-only"
-                            >
-                              <LuSquarePen className="size-4" />
-                            </span>
-                          ) : (
-                            <Link
-                              to={`/admin/users/${user.id}`}
-                              className="btn btn-icon size-8 hover:bg-default-150 rounded-full text-default-500"
-                              aria-label="Edit"
-                            >
-                              <LuSquarePen className="size-4" />
-                            </Link>
-                          )}
-                          {user.email !== currentUserEmail && (
-                            <button
-                              onClick={() => setDeletingUser(user)}
-                              className="btn btn-icon size-8 hover:bg-danger/10 hover:text-danger rounded-full text-default-500"
-                              aria-label="Delete"
-                            >
-                              <LuTrash2 className="size-4" />
-                            </button>
+                          {isSuperAdmin && (
+                            <>
+                              {isSuperAdminRow ? (
+                                <span
+                                  className="btn btn-icon size-8 rounded-full text-default-300 cursor-not-allowed"
+                                  aria-label="Edit disabled - Super Admin accounts are read-only"
+                                >
+                                  <LuSquarePen className="size-4" />
+                                </span>
+                              ) : (
+                                <Link
+                                  to={`/admin/users/${user.id}`}
+                                  className="btn btn-icon size-8 hover:bg-default-150 rounded-full text-default-500"
+                                  aria-label="Edit"
+                                >
+                                  <LuSquarePen className="size-4" />
+                                </Link>
+                              )}
+                              {user.email !== currentUserEmail && (
+                                <button
+                                  onClick={() => setDeletingUser(user)}
+                                  className="btn btn-icon size-8 hover:bg-danger/10 hover:text-danger rounded-full text-default-500"
+                                  aria-label="Delete"
+                                >
+                                  <LuTrash2 className="size-4" />
+                                </button>
+                              )}
+                            </>
                           )}
                         </div>
                       </td>
@@ -171,7 +224,7 @@ export const AdminUsersTable = ({
                   })}
                   {users.length === 0 && (
                     <tr>
-                      <td colSpan={5} className="py-6 px-3.5 text-center text-default-500">
+                      <td colSpan={6} className="py-6 px-3.5 text-center text-default-500">
                         No users yet.
                       </td>
                     </tr>
@@ -222,6 +275,23 @@ export const AdminUsersTable = ({
           setDeletingUser(null)
         }}
         onCancel={() => setDeletingUser(null)}
+      />
+
+      <ConfirmationModal
+        isOpen={verifyingUser !== null}
+        title="Manually verify this email?"
+        message={
+          verifyingUser
+            ? `This marks ${verifyingUser.email} as verified without them confirming via email link.`
+            : undefined
+        }
+        confirmLabel="Verify"
+        confirmVariant="primary"
+        onConfirm={() => {
+          if (verifyingUser) onVerifyEmail(verifyingUser.id)
+          setVerifyingUser(null)
+        }}
+        onCancel={() => setVerifyingUser(null)}
       />
     </div>
   )

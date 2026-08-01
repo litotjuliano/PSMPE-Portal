@@ -1,14 +1,15 @@
 import { useEffect, useRef, useState, type ChangeEvent, type FormEvent } from 'react'
-import { LuUpload, LuUserRound } from 'react-icons/lu'
-import { Chapters, CivilStatuses, MemberTypes } from '../../../core/types/member'
+import { LuEye, LuUpload, LuUserRound } from 'react-icons/lu'
+import { Chapters, CivilStatuses, EducationLevels, MemberTypes, SpecifiedProfessions } from '../../../core/types/member'
 import { uploadApi } from '../../../core/api/endpoints/uploadApi'
 import { describeError } from '../../../core/utils/apiError'
-import { MAX_IMAGE_BYTES, MAX_PDF_BYTES } from '../../../core/constants/uploadLimits'
+import { MAX_IMAGE_BYTES, MAX_PDF_BYTES, MAX_PROOF_OF_PAYMENT_BYTES } from '../../../core/constants/uploadLimits'
 import { PipeStepper } from '../components/shared/PipeStepper'
+import { FilePreviewModal } from '../components/shared/FilePreviewModal'
 
 // Mirrors MemberService's server-side checks - purely for fast client-side feedback, the server
 // is still the source of truth (MemberService.UpsertMyProfileAsync/SubmitMyProfileAsync).
-const PH_MOBILE_PATTERN = /^(\+63|0)9\d{9}$/
+const PH_MOBILE_PATTERN = /^(\+63|63|0)9\d{9}$/
 
 function isValidPhMobile(value: string): boolean {
   return PH_MOBILE_PATTERN.test(value)
@@ -39,6 +40,19 @@ function isAtLeast18(birthdate: string): boolean {
   return dob <= eighteenYearsAgo
 }
 
+/** Display-only - the application form asks for Age but it's always derivable from Birthdate, so
+ *  it's never sent to/stored by the backend. */
+function computeAge(birthdate: string): number | null {
+  if (!birthdate) return null
+  const dob = new Date(birthdate)
+  if (Number.isNaN(dob.getTime())) return null
+  const today = new Date()
+  let age = today.getFullYear() - dob.getFullYear()
+  const hasHadBirthdayThisYear = today.getMonth() > dob.getMonth() || (today.getMonth() === dob.getMonth() && today.getDate() >= dob.getDate())
+  if (!hasHadBirthdayThisYear) age -= 1
+  return age >= 0 ? age : null
+}
+
 const maxBirthdate = (() => {
   const d = new Date()
   d.setFullYear(d.getFullYear() - 18)
@@ -55,12 +69,33 @@ export interface MembershipApplicationState {
   civilStatus: string
   chapter: string
   memberType: string
+  educationLevel: string
+  schoolName: string
+  courseYearGraduated: string
+  specifiedProfession: string
   prcLicenseNo: string
+  prcRegistrationDate: string
+  prcValidUntilDate: string
   ptrNumber: string
   tin: string
   company: string
-  address: string
   mobileNumber: string
+  houseNo: string
+  street: string
+  barangay: string
+  cityMunicipality: string
+  province: string
+  zipCode: string
+  /** Client-only convenience - never sent as its own field; when true, the mailing address
+   *  inputs are hidden and the residence values are copied into the mailing fields at save time
+   *  (see MyProfilePage.saveDraft). */
+  mailingSameAsResidence: boolean
+  mailingHouseNo: string
+  mailingStreet: string
+  mailingBarangay: string
+  mailingCityMunicipality: string
+  mailingProvince: string
+  mailingZipCode: string
   housePhone: string
   website: string
   facebookUrl: string
@@ -68,6 +103,25 @@ export interface MembershipApplicationState {
   xUrl: string
   instagramUrl: string
   agreedToTerms: boolean
+  dataPrivacyConsent: boolean
+}
+
+interface WizardFieldErrors {
+  birthdate?: string
+  photo?: string
+  prcId?: string
+  prcRegistrationDate?: string
+  prcValidUntilDate?: string
+  housePhone?: string
+  mobileNumber?: string
+  website?: string
+  facebookUrl?: string
+  linkedInUrl?: string
+  xUrl?: string
+  instagramUrl?: string
+  tin?: string
+  proofOfPayment?: string
+  terms?: string
 }
 
 interface MembershipApplicationWizardCardProps {
@@ -89,7 +143,7 @@ interface MembershipApplicationWizardCardProps {
   navigating: boolean
 }
 
-const steps = ['Personal Information', 'Contact Information', 'Account Information', 'Additional Information']
+const steps = ['Personal Information', 'Contact Information', 'Additional Information', 'Payment Details']
 
 export const MembershipApplicationWizardCard = ({
   step,
@@ -107,12 +161,16 @@ export const MembershipApplicationWizardCard = ({
 }: MembershipApplicationWizardCardProps) => {
   const photoInputRef = useRef<HTMLInputElement>(null)
   const prcIdInputRef = useRef<HTMLInputElement>(null)
+  const proofOfPaymentInputRef = useRef<HTMLInputElement>(null)
   const [uploadingPhoto, setUploadingPhoto] = useState(false)
   const [uploadingPrcId, setUploadingPrcId] = useState(false)
+  const [uploadingProofOfPayment, setUploadingProofOfPayment] = useState(false)
   const [uploadError, setUploadError] = useState<string | null>(null)
   const [photoPreviewUrl, setPhotoPreviewUrl] = useState<string | null>(null)
   const [hasPrcId, setHasPrcId] = useState(false)
-  const [clientError, setClientError] = useState<string | null>(null)
+  const [hasProofOfPayment, setHasProofOfPayment] = useState(false)
+  const [fieldErrors, setFieldErrors] = useState<WizardFieldErrors>({})
+  const [previewOpen, setPreviewOpen] = useState<'prcId' | 'proofOfPayment' | null>(null)
 
   // Restore previews for an in-progress draft (files already uploaded in an earlier session) -
   // fetched via apiClient (carries the auth header), not a plain <img src>/URL string, since
@@ -128,6 +186,12 @@ export const MembershipApplicationWizardCard = ({
         URL.revokeObjectURL(result.url) // only needed the existence check, not the bytes
       }
     })
+    uploadApi.fetchMyProofOfPaymentUrl().then((result) => {
+      if (!cancelled && result) {
+        setHasProofOfPayment(true)
+        URL.revokeObjectURL(result.url)
+      }
+    })
     return () => {
       cancelled = true
     }
@@ -138,6 +202,13 @@ export const MembershipApplicationWizardCard = ({
       if (photoPreviewUrl) URL.revokeObjectURL(photoPreviewUrl)
     }
   }, [photoPreviewUrl])
+
+  // Clears stale inline errors from whichever step was last validated when navigating away from
+  // it (Back, or clicking a stepper circle) - otherwise they'd linger on a step that hasn't been
+  // (re-)submitted yet.
+  useEffect(() => {
+    setFieldErrors({})
+  }, [step])
 
   const handlePhotoSelected = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
@@ -182,77 +253,112 @@ export const MembershipApplicationWizardCard = ({
       await uploadApi.uploadMyPrcId(file)
       setHasPrcId(true)
     } catch (err) {
-      setUploadError(describeError(err, 'Could not upload PRC ID. Make sure it is a JPG, PNG, or PDF under the size limit.'))
+      setUploadError(describeError(err, 'Could not upload RMP ID. Make sure it is a JPG, PNG, or PDF under the size limit.'))
     } finally {
       setUploadingPrcId(false)
     }
   }
 
-  /** Fast client-side feedback for fields the member has actually filled in - the server
-   *  independently re-validates everything, this only saves a round trip on an obvious mistake.
-   *  Scoped to exactly the fields owned by the current step, per-step. */
-  const validateStep = (): string | null => {
-    if (step === 0) {
-      if (state.birthdate && !isAtLeast18(state.birthdate)) {
-        return 'You must be at least 18 years old.'
-      }
-      if (!hasPrcId) {
-        return 'Please upload your PRC ID.'
-      }
-      return null
+  const handleProofOfPaymentSelected = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    if (!file) return
+    setUploadError(null)
+    if (file.size > MAX_PROOF_OF_PAYMENT_BYTES) {
+      setUploadError('That file is too large (max 1 MB). Please choose a smaller file.')
+      event.target.value = ''
+      return
     }
-    if (step === 1) {
-      if (state.housePhone && !isValidHousePhone(state.housePhone)) {
-        return 'House phone must be a valid landline number.'
-      }
-      if (state.mobileNumber && !isValidPhMobile(state.mobileNumber)) {
-        return 'Mobile number must be in the format +639XXXXXXXXX or 09XXXXXXXXX.'
-      }
-      if (state.website && !isValidUrl(state.website)) {
-        return 'Website must be a valid URL, e.g. https://example.com.'
-      }
-      if (state.facebookUrl && !isValidUrl(state.facebookUrl)) {
-        return 'Facebook must be a valid profile URL.'
-      }
-      if (state.linkedInUrl && !isValidUrl(state.linkedInUrl)) {
-        return 'LinkedIn must be a valid profile URL.'
-      }
-      if (state.xUrl && !isValidUrl(state.xUrl)) {
-        return 'X (Twitter) must be a valid profile URL.'
-      }
-      if (state.instagramUrl && !isValidUrl(state.instagramUrl)) {
-        return 'Instagram must be a valid profile URL.'
-      }
-      return null
+
+    setUploadingProofOfPayment(true)
+    try {
+      await uploadApi.uploadMyProofOfPayment(file)
+      setHasProofOfPayment(true)
+    } catch (err) {
+      setUploadError(describeError(err, 'Could not upload your proof of payment. Make sure it is a JPG, PNG, or PDF under 1 MB.'))
+    } finally {
+      setUploadingProofOfPayment(false)
     }
-    if (step === 2) {
-      return null
-    }
-    if (state.tin && !/^[\d-]{9,12}$/.test(state.tin)) {
-      return 'TIN must be 9-12 digits, with dashes allowed as separators.'
-    }
-    return null
   }
 
+  /** Fast client-side feedback for fields the member has actually filled in - the server
+   *  independently re-validates everything, this only saves a round trip on an obvious mistake.
+   *  Scoped to exactly the fields owned by the current step, per-step. Collects every applicable
+   *  error at once (not just the first) so each field can show its own inline message. */
+  const validateStep = (): WizardFieldErrors => {
+    const errors: WizardFieldErrors = {}
+    if (step === 0) {
+      if (state.birthdate && !isAtLeast18(state.birthdate)) {
+        errors.birthdate = 'You must be at least 18 years old.'
+      }
+      if (!photoPreviewUrl) {
+        errors.photo = 'Please upload your photo.'
+      }
+      if (!hasPrcId) {
+        errors.prcId = 'Please upload your RMP ID.'
+      }
+      if (!state.prcRegistrationDate) {
+        errors.prcRegistrationDate = 'Please enter your RMP Registration Date.'
+      }
+      if (!state.prcValidUntilDate) {
+        errors.prcValidUntilDate = 'Please enter your RMP Valid Until date.'
+      }
+    } else if (step === 1) {
+      if (state.housePhone && !isValidHousePhone(state.housePhone)) {
+        errors.housePhone = 'House phone must be a valid landline number.'
+      }
+      if (state.mobileNumber && !isValidPhMobile(state.mobileNumber)) {
+        errors.mobileNumber = 'Mobile number must be in the format +639XXXXXXXXX, 639XXXXXXXXX, or 09XXXXXXXXX.'
+      }
+      if (state.website && !isValidUrl(state.website)) {
+        errors.website = 'Website must be a valid URL, e.g. https://example.com.'
+      }
+      if (state.facebookUrl && !isValidUrl(state.facebookUrl)) {
+        errors.facebookUrl = 'Facebook must be a valid profile URL.'
+      }
+      if (state.linkedInUrl && !isValidUrl(state.linkedInUrl)) {
+        errors.linkedInUrl = 'LinkedIn must be a valid profile URL.'
+      }
+      if (state.xUrl && !isValidUrl(state.xUrl)) {
+        errors.xUrl = 'X (Twitter) must be a valid profile URL.'
+      }
+      if (state.instagramUrl && !isValidUrl(state.instagramUrl)) {
+        errors.instagramUrl = 'Instagram must be a valid profile URL.'
+      }
+    } else if (step === 2) {
+      if (state.tin && !/^[\d-]{9,12}$/.test(state.tin)) {
+        errors.tin = 'TIN must be 9-12 digits, with dashes allowed as separators.'
+      }
+    } else if (step === steps.length - 1) {
+      if (!hasProofOfPayment) {
+        errors.proofOfPayment = 'Please upload your proof of payment.'
+      }
+      if (!state.agreedToTerms || !state.dataPrivacyConsent) {
+        errors.terms = 'Please agree to the membership terms and the data privacy consent.'
+      }
+    }
+    return errors
+  }
+
+  const age = computeAge(state.birthdate)
+
   return (
-    <div className="card max-w-3xl">
+    <div className="card">
       <div className="card-header">
         <h6 className="card-title">Complete Your Membership Application</h6>
       </div>
       <div className="card-body">
         <PipeStepper steps={steps} step={step} maxStepReached={maxStepReached} onStepClick={onStepClick} navigating={navigating} />
 
-        {(clientError || error) && <p className="text-sm text-danger mb-4">{clientError || error}</p>}
+        {error && <p className="text-sm text-danger mb-4">{error}</p>}
 
         <form
           onSubmit={(e) => {
             e.preventDefault()
-            const validationError = validateStep()
-            if (validationError) {
-              setClientError(validationError)
+            const errors = validateStep()
+            setFieldErrors(errors)
+            if (Object.keys(errors).length > 0) {
               return
             }
-            setClientError(null)
             if (step < steps.length - 1) {
               onNext()
             } else {
@@ -280,6 +386,8 @@ export const MembershipApplicationWizardCard = ({
                   {uploadingPhoto ? 'Uploading…' : 'Upload Photo'}
                 </button>
                 <p className="text-xs text-default-500 text-center">JPG or PNG - photos are optimized automatically</p>
+                <p className="text-xs text-default-500 text-center">This photo will be used for your ID print.</p>
+                {fieldErrors.photo && <p className="text-xs text-danger text-center">{fieldErrors.photo}</p>}
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 flex-1">
@@ -310,79 +418,163 @@ export const MembershipApplicationWizardCard = ({
                     ))}
                   </select>
                 </div>
-                <div>
-                  <label className="block font-medium text-default-900 text-sm mb-2">First Name</label>
-                  <input className="form-input" required value={state.firstName} onChange={(e) => onChange('firstName', e.target.value)} />
-                </div>
-                <div>
-                  <label className="block font-medium text-default-900 text-sm mb-2">Last Name</label>
-                  <input className="form-input" required value={state.lastName} onChange={(e) => onChange('lastName', e.target.value)} />
-                </div>
-                <div>
-                  <label className="block font-medium text-default-900 text-sm mb-2">Middle Name</label>
-                  <input className="form-input" value={state.middleName} onChange={(e) => onChange('middleName', e.target.value)} />
-                </div>
-                <div>
-                  <label className="block font-medium text-default-900 text-sm mb-2">Suffix</label>
-                  <input className="form-input" value={state.suffix} onChange={(e) => onChange('suffix', e.target.value)} />
-                </div>
-                <div>
-                  <label className="block font-medium text-default-900 text-sm mb-2">Date of Birth</label>
-                  <input
-                    type="date"
-                    className="form-input"
-                    max={maxBirthdate}
-                    value={state.birthdate}
-                    onChange={(e) => onChange('birthdate', e.target.value)}
-                  />
-                </div>
-                <div>
-                  <label className="block font-medium text-default-900 text-sm mb-2">Gender</label>
-                  <div className="flex items-center gap-4 h-[42px]">
-                    <label className="flex items-center gap-2 text-sm">
-                      <input
-                        type="radio"
-                        name="gender"
-                        className="form-radio"
-                        checked={state.gender === 'Male'}
-                        onChange={() => onChange('gender', 'Male')}
-                      />
-                      Male
-                    </label>
-                    <label className="flex items-center gap-2 text-sm">
-                      <input
-                        type="radio"
-                        name="gender"
-                        className="form-radio"
-                        checked={state.gender === 'Female'}
-                        onChange={() => onChange('gender', 'Female')}
-                      />
-                      Female
-                    </label>
+                <div className="md:col-span-2 grid grid-cols-2 sm:grid-cols-4 gap-4">
+                  <div>
+                    <label className="block font-medium text-default-900 text-sm mb-2">Surname</label>
+                    <input className="form-input" required value={state.lastName} onChange={(e) => onChange('lastName', e.target.value)} />
+                  </div>
+                  <div>
+                    <label className="block font-medium text-default-900 text-sm mb-2">Given Name</label>
+                    <input className="form-input" required value={state.firstName} onChange={(e) => onChange('firstName', e.target.value)} />
+                  </div>
+                  <div>
+                    <label className="block font-medium text-default-900 text-sm mb-2">Middle Name</label>
+                    <input className="form-input" value={state.middleName} onChange={(e) => onChange('middleName', e.target.value)} />
+                  </div>
+                  <div>
+                    <label className="block font-medium text-default-900 text-sm mb-2">Suffix</label>
+                    <input className="form-input" value={state.suffix} onChange={(e) => onChange('suffix', e.target.value)} />
                   </div>
                 </div>
-                <div>
-                  <label className="block font-medium text-default-900 text-sm mb-2">Civil Status</label>
-                  <select className="form-input" value={state.civilStatus} onChange={(e) => onChange('civilStatus', e.target.value)}>
-                    <option value="">Select civil status…</option>
-                    {Object.values(CivilStatuses).map((c) => (
-                      <option key={c} value={c}>
-                        {c}
-                      </option>
-                    ))}
-                  </select>
+                <div className="md:col-span-2 grid grid-cols-2 sm:grid-cols-4 gap-4">
+                  <div>
+                    <label className="block font-medium text-default-900 text-sm mb-2">Date of Birth</label>
+                    <input
+                      type="date"
+                      className="form-input"
+                      max={maxBirthdate}
+                      value={state.birthdate}
+                      onChange={(e) => onChange('birthdate', e.target.value)}
+                    />
+                    {fieldErrors.birthdate && <p className="text-xs text-danger mt-1">{fieldErrors.birthdate}</p>}
+                  </div>
+                  <div>
+                    <span className="block font-medium text-default-900 text-sm mb-2">Age</span>
+                    <span className="text-sm font-semibold text-default-800 h-[42px] flex items-center">{age ?? '-'}</span>
+                  </div>
+                  <div>
+                    <label className="block font-medium text-default-900 text-sm mb-2">Gender</label>
+                    <div className="flex items-center gap-4 h-[42px]">
+                      <label className="flex items-center gap-2 text-sm">
+                        <input
+                          type="radio"
+                          name="gender"
+                          className="form-radio"
+                          checked={state.gender === 'Male'}
+                          onChange={() => onChange('gender', 'Male')}
+                        />
+                        Male
+                      </label>
+                      <label className="flex items-center gap-2 text-sm">
+                        <input
+                          type="radio"
+                          name="gender"
+                          className="form-radio"
+                          checked={state.gender === 'Female'}
+                          onChange={() => onChange('gender', 'Female')}
+                        />
+                        Female
+                      </label>
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block font-medium text-default-900 text-sm mb-2">Civil Status</label>
+                    <select className="form-input" value={state.civilStatus} onChange={(e) => onChange('civilStatus', e.target.value)}>
+                      <option value="">Select civil status…</option>
+                      {Object.values(CivilStatuses).map((c) => (
+                        <option key={c} value={c}>
+                          {c}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
                 </div>
-                <div>
-                  <label className="block font-medium text-default-900 text-sm mb-2">PRC License No.</label>
-                  <input
-                    className="form-input"
-                    required
-                    value={state.prcLicenseNo}
-                    onChange={(e) => onChange('prcLicenseNo', e.target.value)}
-                  />
+
+                <div className="md:col-span-2 border-t border-default-200 pt-4 grid grid-cols-2 sm:grid-cols-4 gap-4">
+                  <div>
+                    <span className="block font-medium text-default-900 text-sm mb-2">Educational Record</span>
+                    <div className="flex flex-wrap items-center gap-4">
+                      {Object.values(EducationLevels).map((level) => (
+                        <label key={level} className="flex items-center gap-2 text-sm">
+                          <input
+                            type="radio"
+                            name="educationLevel"
+                            className="form-radio"
+                            checked={state.educationLevel === level}
+                            onChange={() => onChange('educationLevel', level)}
+                          />
+                          {level}
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block font-medium text-default-900 text-sm mb-2">Name of School/Institution</label>
+                    <input className="form-input" value={state.schoolName} onChange={(e) => onChange('schoolName', e.target.value)} />
+                  </div>
+                  <div>
+                    <label className="block font-medium text-default-900 text-sm mb-2">Course &amp; Year Graduated</label>
+                    <input
+                      className="form-input"
+                      placeholder="e.g. BSCE 2023"
+                      value={state.courseYearGraduated}
+                      onChange={(e) => onChange('courseYearGraduated', e.target.value)}
+                    />
+                  </div>
+                  <div>
+                    <span className="block font-medium text-default-900 text-sm mb-2">Specified Profession</span>
+                    <div className="flex flex-wrap items-center gap-4">
+                      {Object.values(SpecifiedProfessions).map((profession) => (
+                        <label key={profession} className="flex items-center gap-2 text-sm">
+                          <input
+                            type="radio"
+                            name="specifiedProfession"
+                            className="form-radio"
+                            checked={state.specifiedProfession === profession}
+                            onChange={() => onChange('specifiedProfession', profession)}
+                          />
+                          {profession}
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="md:col-span-2 border-t border-default-200 pt-4 grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  <div>
+                    <label className="block font-medium text-default-900 text-sm mb-2">RMP License No.</label>
+                    <input
+                      className="form-input"
+                      required
+                      value={state.prcLicenseNo}
+                      onChange={(e) => onChange('prcLicenseNo', e.target.value)}
+                    />
+                  </div>
+                  <div>
+                    <label className="block font-medium text-default-900 text-sm mb-2">RMP Registration Date</label>
+                    <input
+                      type="date"
+                      className="form-input"
+                      required
+                      value={state.prcRegistrationDate}
+                      onChange={(e) => onChange('prcRegistrationDate', e.target.value)}
+                    />
+                    {fieldErrors.prcRegistrationDate && <p className="text-xs text-danger mt-1">{fieldErrors.prcRegistrationDate}</p>}
+                  </div>
+                  <div>
+                    <label className="block font-medium text-default-900 text-sm mb-2">RMP Valid Until</label>
+                    <input
+                      type="date"
+                      className="form-input"
+                      required
+                      value={state.prcValidUntilDate}
+                      onChange={(e) => onChange('prcValidUntilDate', e.target.value)}
+                    />
+                    {fieldErrors.prcValidUntilDate && <p className="text-xs text-danger mt-1">{fieldErrors.prcValidUntilDate}</p>}
+                  </div>
                 </div>
                 <div className="md:col-span-2">
-                  <label className="block font-medium text-default-900 text-sm mb-2">Upload PRC ID</label>
+                  <label className="block font-medium text-default-900 text-sm mb-2">Upload RMP ID</label>
                   <div className="flex items-center gap-3">
                     <input
                       ref={prcIdInputRef}
@@ -391,6 +583,16 @@ export const MembershipApplicationWizardCard = ({
                       className="hidden"
                       onChange={handlePrcIdSelected}
                     />
+                    {hasPrcId && (
+                      <button
+                        type="button"
+                        onClick={() => setPreviewOpen('prcId')}
+                        className="btn border border-default-200 inline-flex items-center gap-2"
+                      >
+                        <LuEye className="size-4" />
+                        View
+                      </button>
+                    )}
                     <button
                       type="button"
                       onClick={() => prcIdInputRef.current?.click()}
@@ -398,12 +600,13 @@ export const MembershipApplicationWizardCard = ({
                       className="btn border border-default-200 disabled:opacity-50 inline-flex items-center gap-2"
                     >
                       <LuUpload className="size-4" />
-                      {uploadingPrcId ? 'Uploading…' : hasPrcId ? 'Replace file' : 'Upload'}
+                      {uploadingPrcId ? 'Uploading…' : hasPrcId ? 'Update' : 'Upload'}
                     </button>
                     <span className="text-xs text-default-500">
                       JPG or PNG photos are optimized automatically; PDF files must be under 2 MB.
                     </span>
                   </div>
+                  {fieldErrors.prcId && <p className="text-xs text-danger mt-1">{fieldErrors.prcId}</p>}
                 </div>
               </div>
             </div>
@@ -419,6 +622,7 @@ export const MembershipApplicationWizardCard = ({
                   value={state.housePhone}
                   onChange={(e) => onChange('housePhone', e.target.value)}
                 />
+                {fieldErrors.housePhone && <p className="text-xs text-danger mt-1">{fieldErrors.housePhone}</p>}
               </div>
               <div>
                 <label className="block font-medium text-default-900 text-sm mb-2">Mobile Number</label>
@@ -429,10 +633,7 @@ export const MembershipApplicationWizardCard = ({
                   value={state.mobileNumber}
                   onChange={(e) => onChange('mobileNumber', e.target.value)}
                 />
-              </div>
-              <div className="md:col-span-2">
-                <span className="block font-medium text-default-900 text-sm mb-2">Email Address</span>
-                <span className="text-sm font-semibold text-default-800">{accountEmail}</span>
+                {fieldErrors.mobileNumber && <p className="text-xs text-danger mt-1">{fieldErrors.mobileNumber}</p>}
               </div>
               <div className="md:col-span-2">
                 <label className="block font-medium text-default-900 text-sm mb-2">Website (optional)</label>
@@ -442,6 +643,7 @@ export const MembershipApplicationWizardCard = ({
                   value={state.website}
                   onChange={(e) => onChange('website', e.target.value)}
                 />
+                {fieldErrors.website && <p className="text-xs text-danger mt-1">{fieldErrors.website}</p>}
               </div>
               <div>
                 <label className="block font-medium text-default-900 text-sm mb-2">Facebook (optional)</label>
@@ -451,6 +653,7 @@ export const MembershipApplicationWizardCard = ({
                   value={state.facebookUrl}
                   onChange={(e) => onChange('facebookUrl', e.target.value)}
                 />
+                {fieldErrors.facebookUrl && <p className="text-xs text-danger mt-1">{fieldErrors.facebookUrl}</p>}
               </div>
               <div>
                 <label className="block font-medium text-default-900 text-sm mb-2">LinkedIn (optional)</label>
@@ -460,6 +663,7 @@ export const MembershipApplicationWizardCard = ({
                   value={state.linkedInUrl}
                   onChange={(e) => onChange('linkedInUrl', e.target.value)}
                 />
+                {fieldErrors.linkedInUrl && <p className="text-xs text-danger mt-1">{fieldErrors.linkedInUrl}</p>}
               </div>
               <div>
                 <label className="block font-medium text-default-900 text-sm mb-2">X (optional)</label>
@@ -469,6 +673,7 @@ export const MembershipApplicationWizardCard = ({
                   value={state.xUrl}
                   onChange={(e) => onChange('xUrl', e.target.value)}
                 />
+                {fieldErrors.xUrl && <p className="text-xs text-danger mt-1">{fieldErrors.xUrl}</p>}
               </div>
               <div>
                 <label className="block font-medium text-default-900 text-sm mb-2">Instagram (optional)</label>
@@ -478,43 +683,185 @@ export const MembershipApplicationWizardCard = ({
                   value={state.instagramUrl}
                   onChange={(e) => onChange('instagramUrl', e.target.value)}
                 />
+                {fieldErrors.instagramUrl && <p className="text-xs text-danger mt-1">{fieldErrors.instagramUrl}</p>}
               </div>
-              <div className="md:col-span-2">
-                <label className="block font-medium text-default-900 text-sm mb-2">Home Address</label>
-                <input className="form-input" required value={state.address} onChange={(e) => onChange('address', e.target.value)} />
+
+              <div className="md:col-span-2 border-t border-default-200 pt-4">
+                <h6 className="font-semibold text-default-800">Residence Address</h6>
               </div>
+              <div>
+                <label className="block font-medium text-default-900 text-sm mb-2">House No. (optional)</label>
+                <input className="form-input" value={state.houseNo} onChange={(e) => onChange('houseNo', e.target.value)} />
+              </div>
+              <div>
+                <label className="block font-medium text-default-900 text-sm mb-2">Street</label>
+                <input className="form-input" required value={state.street} onChange={(e) => onChange('street', e.target.value)} />
+              </div>
+              <div>
+                <label className="block font-medium text-default-900 text-sm mb-2">Barangay</label>
+                <input className="form-input" required value={state.barangay} onChange={(e) => onChange('barangay', e.target.value)} />
+              </div>
+              <div>
+                <label className="block font-medium text-default-900 text-sm mb-2">City or Municipality</label>
+                <input
+                  className="form-input"
+                  required
+                  value={state.cityMunicipality}
+                  onChange={(e) => onChange('cityMunicipality', e.target.value)}
+                />
+              </div>
+              <div>
+                <label className="block font-medium text-default-900 text-sm mb-2">Province</label>
+                <input className="form-input" required value={state.province} onChange={(e) => onChange('province', e.target.value)} />
+              </div>
+              <div>
+                <label className="block font-medium text-default-900 text-sm mb-2">Zip Code</label>
+                <input className="form-input" required value={state.zipCode} onChange={(e) => onChange('zipCode', e.target.value)} />
+              </div>
+
+              <div className="md:col-span-2 border-t border-default-200 pt-4 flex items-center justify-between">
+                <h6 className="font-semibold text-default-800">Mailing Address</h6>
+                <label className="flex items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    className="form-checkbox"
+                    checked={state.mailingSameAsResidence}
+                    onChange={(e) => onChange('mailingSameAsResidence', e.target.checked)}
+                  />
+                  Same as Residence Address
+                </label>
+              </div>
+              {!state.mailingSameAsResidence && (
+                <>
+                  <div>
+                    <label className="block font-medium text-default-900 text-sm mb-2">House No. (optional)</label>
+                    <input
+                      className="form-input"
+                      value={state.mailingHouseNo}
+                      onChange={(e) => onChange('mailingHouseNo', e.target.value)}
+                    />
+                  </div>
+                  <div>
+                    <label className="block font-medium text-default-900 text-sm mb-2">Street</label>
+                    <input className="form-input" value={state.mailingStreet} onChange={(e) => onChange('mailingStreet', e.target.value)} />
+                  </div>
+                  <div>
+                    <label className="block font-medium text-default-900 text-sm mb-2">Barangay</label>
+                    <input
+                      className="form-input"
+                      value={state.mailingBarangay}
+                      onChange={(e) => onChange('mailingBarangay', e.target.value)}
+                    />
+                  </div>
+                  <div>
+                    <label className="block font-medium text-default-900 text-sm mb-2">City or Municipality</label>
+                    <input
+                      className="form-input"
+                      value={state.mailingCityMunicipality}
+                      onChange={(e) => onChange('mailingCityMunicipality', e.target.value)}
+                    />
+                  </div>
+                  <div>
+                    <label className="block font-medium text-default-900 text-sm mb-2">Province</label>
+                    <input
+                      className="form-input"
+                      value={state.mailingProvince}
+                      onChange={(e) => onChange('mailingProvince', e.target.value)}
+                    />
+                  </div>
+                  <div>
+                    <label className="block font-medium text-default-900 text-sm mb-2">Zip Code</label>
+                    <input
+                      className="form-input"
+                      value={state.mailingZipCode}
+                      onChange={(e) => onChange('mailingZipCode', e.target.value)}
+                    />
+                  </div>
+                </>
+              )}
             </div>
           )}
 
           {step === 2 && (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block font-medium text-default-900 text-sm mb-2">PTR Number</label>
+                <input className="form-input" required value={state.ptrNumber} onChange={(e) => onChange('ptrNumber', e.target.value)} />
+              </div>
+              <div>
+                <label className="block font-medium text-default-900 text-sm mb-2">TIN (optional)</label>
+                <input
+                  className="form-input"
+                  placeholder="000-000-000-000"
+                  value={state.tin}
+                  onChange={(e) => onChange('tin', e.target.value)}
+                />
+                {fieldErrors.tin && <p className="text-xs text-danger mt-1">{fieldErrors.tin}</p>}
+              </div>
               <div className="md:col-span-2">
-                <span className="block font-medium text-default-900 text-sm mb-2">Email</span>
-                <span className="text-sm font-semibold text-default-800">{accountEmail}</span>
-                <p className="text-xs text-default-500 mt-1">Nothing to fill in here - this previews your Account Information tab.</p>
+                <label className="block font-medium text-default-900 text-sm mb-2">Company (optional)</label>
+                <input className="form-input" value={state.company} onChange={(e) => onChange('company', e.target.value)} />
               </div>
             </div>
           )}
 
           {step === 3 && (
             <div className="flex flex-col gap-6">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block font-medium text-default-900 text-sm mb-2">PTR Number</label>
-                  <input className="form-input" required value={state.ptrNumber} onChange={(e) => onChange('ptrNumber', e.target.value)} />
+              <div>
+                <h6 className="font-semibold text-default-800 mb-3">Payment Details</h6>
+                <div className="text-sm text-default-700 flex flex-col gap-1">
+                  <p className="font-semibold text-default-800">TOTAL: ₱1,700.00</p>
+                  <p>Membership Fee: ₱1,500.00</p>
+                  <p>Annual Dues: ₱600.00 (payable one year after registration)</p>
+                  <p>PVC ID: Included</p>
+                  <p>Shipping Fee (delivery option only): ₱200.00</p>
                 </div>
-                <div>
-                  <label className="block font-medium text-default-900 text-sm mb-2">TIN (optional)</label>
-                  <input
-                    className="form-input"
-                    placeholder="000-000-000-000"
-                    value={state.tin}
-                    onChange={(e) => onChange('tin', e.target.value)}
-                  />
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-3 text-sm">
+                  <div className="border border-default-200 rounded-lg p-3">
+                    <p className="font-semibold text-default-800 mb-1">Bank Deposit</p>
+                    <p>Account Name: PSMPE INC.</p>
+                    <p>Account No: 0007-306506443</p>
+                    <p>Metrobank</p>
+                  </div>
+                  <div className="border border-default-200 rounded-lg p-3">
+                    <p className="font-semibold text-default-800 mb-1">GCash / Bank Transfer</p>
+                    <p>Account Name: PSMPE INC.</p>
+                    <p>Account No: 3067306506443</p>
+                    <p>Metrobank</p>
+                  </div>
                 </div>
-                <div className="md:col-span-2">
-                  <label className="block font-medium text-default-900 text-sm mb-2">Company (optional)</label>
-                  <input className="form-input" value={state.company} onChange={(e) => onChange('company', e.target.value)} />
+                <div className="mt-4">
+                  <label className="block font-medium text-default-900 text-sm mb-2">Proof of Payment</label>
+                  <div className="flex items-center gap-3">
+                    <input
+                      ref={proofOfPaymentInputRef}
+                      type="file"
+                      accept=".jpg,.jpeg,.png,.pdf"
+                      className="hidden"
+                      onChange={handleProofOfPaymentSelected}
+                    />
+                    {hasProofOfPayment && (
+                      <button
+                        type="button"
+                        onClick={() => setPreviewOpen('proofOfPayment')}
+                        className="btn border border-default-200 inline-flex items-center gap-2"
+                      >
+                        <LuEye className="size-4" />
+                        View
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => proofOfPaymentInputRef.current?.click()}
+                      disabled={uploadingProofOfPayment}
+                      className="btn border border-default-200 disabled:opacity-50 inline-flex items-center gap-2"
+                    >
+                      <LuUpload className="size-4" />
+                      {uploadingProofOfPayment ? 'Uploading…' : hasProofOfPayment ? 'Update' : 'Upload'}
+                    </button>
+                    <span className="text-xs text-default-500">JPG, PNG, or PDF - must be under 1 MB.</span>
+                  </div>
+                  {fieldErrors.proofOfPayment && <p className="text-xs text-danger mt-1">{fieldErrors.proofOfPayment}</p>}
                 </div>
               </div>
 
@@ -544,11 +891,15 @@ export const MembershipApplicationWizardCard = ({
                     <span className="font-semibold text-default-800">{state.mobileNumber || '-'}</span>
                   </div>
                   <div className="md:col-span-2">
-                    <span className="text-default-500">Address</span>{' '}
-                    <span className="font-semibold text-default-800">{state.address || '-'}</span>
+                    <span className="text-default-500">Residence Address</span>{' '}
+                    <span className="font-semibold text-default-800">
+                      {[state.houseNo, state.street, state.barangay, state.cityMunicipality, state.province, state.zipCode]
+                        .filter(Boolean)
+                        .join(', ') || '-'}
+                    </span>
                   </div>
                   <div>
-                    <span className="text-default-500">PRC License No.</span>{' '}
+                    <span className="text-default-500">RMP License No.</span>{' '}
                     <span className="font-semibold text-default-800">{state.prcLicenseNo || '-'}</span>
                   </div>
                   <div>
@@ -571,6 +922,29 @@ export const MembershipApplicationWizardCard = ({
                 />
                 I confirm the information above is accurate and agree to the membership terms and conditions.
               </label>
+              <label className="flex items-start gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  className="form-checkbox mt-0.5"
+                  checked={state.dataPrivacyConsent}
+                  onChange={(e) => onChange('dataPrivacyConsent', e.target.checked)}
+                />
+                <span>
+                  I agree that my personal information may be collected, processed, stored, and maintained by the Association, in
+                  digital, electronic, and/or printed form. My personal information shall be kept confidential and used solely for
+                  legitimate organizational purposes in accordance with the Data Privacy Act of 2012 (Republic Act No. 10173).{' '}
+                  <a
+                    href="https://www.privacy.gov.ph/data-privacy-act/"
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-primary underline"
+                  >
+                    Learn more
+                  </a>
+                  .
+                </span>
+              </label>
+              {fieldErrors.terms && <p className="text-xs text-danger">{fieldErrors.terms}</p>}
             </div>
           )}
 
@@ -585,7 +959,7 @@ export const MembershipApplicationWizardCard = ({
             </button>
             <button
               type="submit"
-              disabled={submitting || navigating || (step === steps.length - 1 && !state.agreedToTerms)}
+              disabled={submitting || navigating || (step === steps.length - 1 && (!state.agreedToTerms || !state.dataPrivacyConsent))}
               className="btn bg-primary text-white disabled:opacity-50"
             >
               {step === steps.length - 1 ? (submitting ? 'Submitting…' : 'Submit Application') : 'Save & Continue'}
@@ -593,6 +967,19 @@ export const MembershipApplicationWizardCard = ({
           </div>
         </form>
       </div>
+
+      <FilePreviewModal
+        isOpen={previewOpen === 'prcId'}
+        title="RMP ID"
+        fetchFile={() => uploadApi.fetchMyPrcIdUrl()}
+        onClose={() => setPreviewOpen(null)}
+      />
+      <FilePreviewModal
+        isOpen={previewOpen === 'proofOfPayment'}
+        title="Proof of Payment"
+        fetchFile={() => uploadApi.fetchMyProofOfPaymentUrl()}
+        onClose={() => setPreviewOpen(null)}
+      />
     </div>
   )
 }

@@ -52,11 +52,15 @@ public class MemberService(IApplicationDbContext db, ICacheService? cache = null
 
     private static MemberDto ToDto(Member m, int gracePeriodDays) => new(
         m.Id, m.UserId, m.User.Email ?? string.Empty, m.FirstName, m.MiddleName, m.LastName, m.Suffix,
-        m.Birthdate, m.Gender, m.CivilStatus, m.Address, m.MobileNumber,
+        m.Birthdate, m.Gender, m.CivilStatus,
+        m.EducationLevel, m.SchoolName, m.CourseYearGraduated, m.SpecifiedProfession,
+        m.MobileNumber,
+        m.HouseNo, m.Street, m.Barangay, m.CityMunicipality, m.Province, m.ZipCode,
+        m.MailingHouseNo, m.MailingStreet, m.MailingBarangay, m.MailingCityMunicipality, m.MailingProvince, m.MailingZipCode,
         m.HousePhone, m.Website, m.FacebookUrl, m.LinkedInUrl, m.XUrl, m.InstagramUrl,
-        m.MembershipNo, m.PrcLicenseNo,
+        m.MembershipNo, m.PrcLicenseNo, m.PrcRegistrationDate, m.PrcValidUntilDate,
         m.PtrNumber, m.Tin, m.PrcIdVerified,
-        m.PendingPrcLicenseNo, m.PrcVerificationRejectedReason, m.Chapter,
+        m.PendingPrcLicenseNo, m.PendingPrcRegistrationDate, m.PendingPrcValidUntilDate, m.PrcVerificationRejectedReason, m.Chapter,
         m.EmploymentStatus, m.Company, m.Position, m.BusinessAddress, m.YearsOfPractice, m.Specialization, m.Skills,
         m.MemberType,
         m.Status, m.RenewalDueDate, m.NationalDuesReferenceNo, m.ApprovedAt, m.SubmittedAt,
@@ -152,7 +156,10 @@ public class MemberService(IApplicationDbContext db, ICacheService? cache = null
     {
         var lengthError = ValidateMemberFieldLengths(
             request.FirstName, request.MiddleName, request.LastName, request.Suffix,
-            request.CivilStatus, request.Address, request.Chapter, request.MemberType,
+            request.CivilStatus, request.Chapter, request.MemberType,
+            request.EducationLevel, request.SchoolName, request.CourseYearGraduated, request.SpecifiedProfession,
+            request.HouseNo, request.Street, request.Barangay, request.CityMunicipality, request.Province, request.ZipCode,
+            request.MailingHouseNo, request.MailingStreet, request.MailingBarangay, request.MailingCityMunicipality, request.MailingProvince, request.MailingZipCode,
             request.PrcLicenseNo, request.PtrNumber, request.Company, request.Position,
             request.BusinessAddress, request.Specialization, request.Skills, request.EmploymentStatus,
             request.Website, request.FacebookUrl, request.LinkedInUrl, request.XUrl, request.InstagramUrl);
@@ -172,8 +179,23 @@ public class MemberService(IApplicationDbContext db, ICacheService? cache = null
             Birthdate = request.Birthdate,
             Gender = request.Gender,
             CivilStatus = request.CivilStatus,
-            Address = request.Address,
+            EducationLevel = request.EducationLevel,
+            SchoolName = request.SchoolName,
+            CourseYearGraduated = request.CourseYearGraduated,
+            SpecifiedProfession = request.SpecifiedProfession,
             MobileNumber = request.MobileNumber,
+            HouseNo = request.HouseNo,
+            Street = request.Street,
+            Barangay = request.Barangay,
+            CityMunicipality = request.CityMunicipality,
+            Province = request.Province,
+            ZipCode = request.ZipCode,
+            MailingHouseNo = request.MailingHouseNo,
+            MailingStreet = request.MailingStreet,
+            MailingBarangay = request.MailingBarangay,
+            MailingCityMunicipality = request.MailingCityMunicipality,
+            MailingProvince = request.MailingProvince,
+            MailingZipCode = request.MailingZipCode,
             HousePhone = request.HousePhone,
             Website = request.Website,
             FacebookUrl = request.FacebookUrl,
@@ -181,6 +203,8 @@ public class MemberService(IApplicationDbContext db, ICacheService? cache = null
             XUrl = request.XUrl,
             InstagramUrl = request.InstagramUrl,
             PrcLicenseNo = request.PrcLicenseNo,
+            PrcRegistrationDate = request.PrcRegistrationDate,
+            PrcValidUntilDate = request.PrcValidUntilDate,
             PtrNumber = request.PtrNumber,
             Tin = request.Tin,
             Chapter = request.Chapter,
@@ -211,7 +235,10 @@ public class MemberService(IApplicationDbContext db, ICacheService? cache = null
     {
         var lengthError = ValidateMemberFieldLengths(
             request.FirstName, request.MiddleName, request.LastName, request.Suffix,
-            request.CivilStatus, request.Address, request.Chapter, request.MemberType,
+            request.CivilStatus, request.Chapter, request.MemberType,
+            request.EducationLevel, request.SchoolName, request.CourseYearGraduated, request.SpecifiedProfession,
+            request.HouseNo, request.Street, request.Barangay, request.CityMunicipality, request.Province, request.ZipCode,
+            request.MailingHouseNo, request.MailingStreet, request.MailingBarangay, request.MailingCityMunicipality, request.MailingProvince, request.MailingZipCode,
             request.PrcLicenseNo, request.PtrNumber, request.Company, request.Position,
             request.BusinessAddress, request.Specialization, request.Skills, request.EmploymentStatus,
             request.Website, request.FacebookUrl, request.LinkedInUrl, request.XUrl, request.InstagramUrl);
@@ -233,8 +260,23 @@ public class MemberService(IApplicationDbContext db, ICacheService? cache = null
         member.Birthdate = request.Birthdate;
         member.Gender = request.Gender;
         member.CivilStatus = request.CivilStatus;
-        member.Address = request.Address;
+        member.EducationLevel = request.EducationLevel;
+        member.SchoolName = request.SchoolName;
+        member.CourseYearGraduated = request.CourseYearGraduated;
+        member.SpecifiedProfession = request.SpecifiedProfession;
         member.MobileNumber = request.MobileNumber;
+        member.HouseNo = request.HouseNo;
+        member.Street = request.Street;
+        member.Barangay = request.Barangay;
+        member.CityMunicipality = request.CityMunicipality;
+        member.Province = request.Province;
+        member.ZipCode = request.ZipCode;
+        member.MailingHouseNo = request.MailingHouseNo;
+        member.MailingStreet = request.MailingStreet;
+        member.MailingBarangay = request.MailingBarangay;
+        member.MailingCityMunicipality = request.MailingCityMunicipality;
+        member.MailingProvince = request.MailingProvince;
+        member.MailingZipCode = request.MailingZipCode;
         member.HousePhone = request.HousePhone;
         member.Website = request.Website;
         member.FacebookUrl = request.FacebookUrl;
@@ -242,6 +284,8 @@ public class MemberService(IApplicationDbContext db, ICacheService? cache = null
         member.XUrl = request.XUrl;
         member.InstagramUrl = request.InstagramUrl;
         member.PrcLicenseNo = request.PrcLicenseNo;
+        member.PrcRegistrationDate = request.PrcRegistrationDate;
+        member.PrcValidUntilDate = request.PrcValidUntilDate;
         member.PtrNumber = request.PtrNumber;
         member.Tin = request.Tin;
         member.Chapter = request.Chapter;
@@ -303,6 +347,19 @@ public class MemberService(IApplicationDbContext db, ICacheService? cache = null
             member.PendingPrcLicenseNo = null;
         }
 
+        // RegistrationDate/ValidUntilDate stage/commit together with License No. - all three
+        // describe the same physical RMP/PRC ID card (see UpsertMyProfileAsync's re-upload gate).
+        if (member.PendingPrcRegistrationDate is not null)
+        {
+            member.PrcRegistrationDate = member.PendingPrcRegistrationDate;
+            member.PendingPrcRegistrationDate = null;
+        }
+        if (member.PendingPrcValidUntilDate is not null)
+        {
+            member.PrcValidUntilDate = member.PendingPrcValidUntilDate;
+            member.PendingPrcValidUntilDate = null;
+        }
+
         member.PrcIdVerified = true;
         member.PrcVerificationRejectedReason = null;
         member.UpdatedAt = DateTimeOffset.UtcNow;
@@ -347,6 +404,8 @@ public class MemberService(IApplicationDbContext db, ICacheService? cache = null
         var newValue = member.PendingPrcLicenseNo ?? member.PrcLicenseNo;
 
         member.PendingPrcLicenseNo = null;
+        member.PendingPrcRegistrationDate = null;
+        member.PendingPrcValidUntilDate = null;
         member.PrcVerificationRejectedReason = reason;
         member.UpdatedAt = DateTimeOffset.UtcNow;
 
@@ -380,25 +439,58 @@ public class MemberService(IApplicationDbContext db, ICacheService? cache = null
             return Result.NotFound("No draft application was found - complete at least the Personal Information step first.");
         }
 
-        var missing = new List<string>();
-        if (string.IsNullOrWhiteSpace(member.FirstName)) missing.Add("First name");
-        if (string.IsNullOrWhiteSpace(member.LastName)) missing.Add("Last name");
-        if (string.IsNullOrWhiteSpace(member.Chapter)) missing.Add("Chapter");
-        if (string.IsNullOrWhiteSpace(member.MemberType)) missing.Add("Member type");
-        if (string.IsNullOrWhiteSpace(member.PrcLicenseNo)) missing.Add("PRC License No.");
-        if (string.IsNullOrWhiteSpace(member.Gender)) missing.Add("Gender");
-        if (string.IsNullOrWhiteSpace(member.CivilStatus)) missing.Add("Civil status");
-        if (string.IsNullOrWhiteSpace(member.Address)) missing.Add("Address");
-        if (string.IsNullOrWhiteSpace(member.MobileNumber)) missing.Add("Mobile number");
-        if (string.IsNullOrWhiteSpace(member.PtrNumber)) missing.Add("PTR number");
-        if (member.Birthdate is null) missing.Add("Birthdate");
-        if (!await db.MemberUploads.AnyAsync(u => u.UserId == userId && u.Kind == UploadKind.PrcId, cancellationToken))
-        {
-            missing.Add("PRC ID document");
-        }
+        // Step names/order mirror MembershipApplicationWizardCard's `steps` array - each missing
+        // field is tagged with the wizard step it's actually collected on, so the failure message
+        // can tell the applicant where to go fix it instead of just naming the field.
+        const string personalInfoStep = "Personal Information";
+        const string contactInfoStep = "Contact Information";
+        const string additionalInfoStep = "Additional Information";
+        const string paymentDetailsStep = "Payment Details";
+
+        var missing = new List<(string Label, string Step)>();
+        if (string.IsNullOrWhiteSpace(member.FirstName)) missing.Add(("First name", personalInfoStep));
+        if (string.IsNullOrWhiteSpace(member.LastName)) missing.Add(("Last name", personalInfoStep));
+        if (string.IsNullOrWhiteSpace(member.Chapter)) missing.Add(("Chapter", personalInfoStep));
+        if (string.IsNullOrWhiteSpace(member.MemberType)) missing.Add(("Member type", personalInfoStep));
+        if (string.IsNullOrWhiteSpace(member.PrcLicenseNo)) missing.Add(("RMP License No.", personalInfoStep));
+        if (member.PrcRegistrationDate is null) missing.Add(("RMP License Registration Date", personalInfoStep));
+        if (member.PrcValidUntilDate is null) missing.Add(("RMP License Valid Until Date", personalInfoStep));
+        if (string.IsNullOrWhiteSpace(member.Gender)) missing.Add(("Gender", personalInfoStep));
+        if (string.IsNullOrWhiteSpace(member.CivilStatus)) missing.Add(("Civil status", personalInfoStep));
+        if (string.IsNullOrWhiteSpace(member.EducationLevel)) missing.Add(("Educational record", personalInfoStep));
+        if (string.IsNullOrWhiteSpace(member.SchoolName)) missing.Add(("Name of school/institution", personalInfoStep));
+        if (string.IsNullOrWhiteSpace(member.CourseYearGraduated)) missing.Add(("Course & year graduated", personalInfoStep));
+        if (string.IsNullOrWhiteSpace(member.SpecifiedProfession)) missing.Add(("Specified profession", personalInfoStep));
+        if (member.Birthdate is null) missing.Add(("Birthdate", personalInfoStep));
+        // House No. is deliberately not required - some Philippine addresses genuinely don't have
+        // one (e.g. rural/informal addresses) - the other 5 residence sub-fields are.
+        if (string.IsNullOrWhiteSpace(member.Street)) missing.Add(("Street", contactInfoStep));
+        if (string.IsNullOrWhiteSpace(member.Barangay)) missing.Add(("Barangay", contactInfoStep));
+        if (string.IsNullOrWhiteSpace(member.CityMunicipality)) missing.Add(("City or Municipality", contactInfoStep));
+        if (string.IsNullOrWhiteSpace(member.Province)) missing.Add(("Province", contactInfoStep));
+        if (string.IsNullOrWhiteSpace(member.ZipCode)) missing.Add(("Zip code", contactInfoStep));
+        if (string.IsNullOrWhiteSpace(member.MobileNumber)) missing.Add(("Mobile number", contactInfoStep));
+        if (string.IsNullOrWhiteSpace(member.PtrNumber)) missing.Add(("PTR number", additionalInfoStep));
+
+        var uploadKinds = await db.MemberUploads.AsNoTracking()
+            .Where(u => u.UserId == userId).Select(u => u.Kind).ToListAsync(cancellationToken);
+        if (!uploadKinds.Contains(UploadKind.PrcId)) missing.Add(("RMP ID document", personalInfoStep));
+        if (!uploadKinds.Contains(UploadKind.Photo)) missing.Add(("Photo", personalInfoStep));
+        if (!uploadKinds.Contains(UploadKind.ProofOfPayment)) missing.Add(("Proof of payment", paymentDetailsStep));
+
         if (missing.Count > 0)
         {
-            return Result.Failure($"Complete the following before submitting: {string.Join(", ", missing)}.");
+            var byStep = missing
+                .GroupBy(m => m.Step)
+                .OrderBy(g => g.Key switch
+                {
+                    personalInfoStep => 0,
+                    contactInfoStep => 1,
+                    additionalInfoStep => 2,
+                    _ => 3,
+                })
+                .Select(g => $"{g.Key} ({string.Join(", ", g.Select(m => m.Label))})");
+            return Result.Failure($"Complete the following before submitting: {string.Join("; ", byStep)}.");
         }
 
         // Checked only once the field is confirmed present above - a missing Birthdate already
@@ -418,7 +510,7 @@ public class MemberService(IApplicationDbContext db, ICacheService? cache = null
         return Result.Success();
     }
 
-    private static readonly Regex PhMobileNumberPattern = new(@"^(\+63|0)9\d{9}$", RegexOptions.Compiled);
+    private static readonly Regex PhMobileNumberPattern = new(@"^(\+63|63|0)9\d{9}$", RegexOptions.Compiled);
     // Lenient PH landline - format varies by area code length (e.g. "(02) 8123 4567", "032-2551234"),
     // so this just checks digits/spaces/dashes/parens with 7-11 digits, not an exact pattern.
     private static readonly Regex HousePhonePattern = new(@"^[\d\s\-()]{7,15}$", RegexOptions.Compiled);
@@ -446,7 +538,10 @@ public class MemberService(IApplicationDbContext db, ICacheService? cache = null
     /// </summary>
     private static string? ValidateMemberFieldLengths(
         string firstName, string? middleName, string lastName, string? suffix,
-        string? civilStatus, string? address, string chapter, string memberType,
+        string? civilStatus, string chapter, string memberType,
+        string? educationLevel, string? schoolName, string? courseYearGraduated, string? specifiedProfession,
+        string? houseNo, string? street, string? barangay, string? cityMunicipality, string? province, string? zipCode,
+        string? mailingHouseNo, string? mailingStreet, string? mailingBarangay, string? mailingCityMunicipality, string? mailingProvince, string? mailingZipCode,
         string? prcLicenseNo, string? ptrNumber, string? company, string? position,
         string? businessAddress, string? specialization, string? skills, string? employmentStatus,
         string? website, string? facebookUrl, string? linkedInUrl, string? xUrl, string? instagramUrl)
@@ -459,10 +554,13 @@ public class MemberService(IApplicationDbContext db, ICacheService? cache = null
         if (middleName?.Length > 128) return "Middle name must be 128 characters or fewer.";
         if (suffix?.Length > 32) return "Suffix must be 32 characters or fewer.";
         if (civilStatus?.Length > 32) return "Civil status must be 32 characters or fewer.";
-        if (address?.Length > 512) return "Address must be 512 characters or fewer.";
         if (chapter.Length > 64) return "Chapter must be 64 characters or fewer.";
         if (memberType.Length > 64) return "Member type must be 64 characters or fewer.";
-        if (prcLicenseNo?.Length > 64) return "PRC License No. must be 64 characters or fewer.";
+        if (educationLevel?.Length > 32) return "Educational record must be 32 characters or fewer.";
+        if (schoolName?.Length > 256) return "Name of school/institution must be 256 characters or fewer.";
+        if (courseYearGraduated?.Length > 128) return "Course & year graduated must be 128 characters or fewer.";
+        if (specifiedProfession?.Length > 64) return "Specified profession must be 64 characters or fewer.";
+        if (prcLicenseNo?.Length > 64) return "RMP License No. must be 64 characters or fewer.";
         if (ptrNumber?.Length > 64) return "PTR number must be 64 characters or fewer.";
         if (company?.Length > 256) return "Company must be 256 characters or fewer.";
         if (position?.Length > 128) return "Position must be 128 characters or fewer.";
@@ -470,6 +568,17 @@ public class MemberService(IApplicationDbContext db, ICacheService? cache = null
         if (specialization?.Length > 256) return "Specialization must be 256 characters or fewer.";
         if (skills?.Length > 512) return "Skills must be 512 characters or fewer.";
         if (employmentStatus?.Length > 32) return "Employment status must be 32 characters or fewer.";
+
+        foreach (var (value, label, maxLength) in new (string? Value, string Label, int MaxLength)[]
+        {
+            (houseNo, "House No.", 32), (street, "Street", 128), (barangay, "Barangay", 128),
+            (cityMunicipality, "City/Municipality", 128), (province, "Province", 64), (zipCode, "Zip code", 8),
+            (mailingHouseNo, "Mailing House No.", 32), (mailingStreet, "Mailing Street", 128), (mailingBarangay, "Mailing Barangay", 128),
+            (mailingCityMunicipality, "Mailing City/Municipality", 128), (mailingProvince, "Mailing Province", 64), (mailingZipCode, "Mailing Zip code", 8),
+        })
+        {
+            if (value?.Length > maxLength) return $"{label} must be {maxLength} characters or fewer.";
+        }
 
         foreach (var (value, label) in new (string? Value, string Label)[]
         {
@@ -487,7 +596,7 @@ public class MemberService(IApplicationDbContext db, ICacheService? cache = null
     {
         if (!string.IsNullOrWhiteSpace(request.MobileNumber) && !PhMobileNumberPattern.IsMatch(request.MobileNumber))
         {
-            return Result<MemberDto>.Failure("Mobile number must be in the format +639XXXXXXXXX or 09XXXXXXXXX.");
+            return Result<MemberDto>.Failure("Mobile number must be in the format +639XXXXXXXXX, 639XXXXXXXXX, or 09XXXXXXXXX.");
         }
 
         if (!string.IsNullOrWhiteSpace(request.Tin) && !IsValidTin(request.Tin))
@@ -520,7 +629,10 @@ public class MemberService(IApplicationDbContext db, ICacheService? cache = null
 
         var lengthError = ValidateMemberFieldLengths(
             request.FirstName, request.MiddleName, request.LastName, request.Suffix,
-            request.CivilStatus, request.Address, request.Chapter, request.MemberType,
+            request.CivilStatus, request.Chapter, request.MemberType,
+            request.EducationLevel, request.SchoolName, request.CourseYearGraduated, request.SpecifiedProfession,
+            request.HouseNo, request.Street, request.Barangay, request.CityMunicipality, request.Province, request.ZipCode,
+            request.MailingHouseNo, request.MailingStreet, request.MailingBarangay, request.MailingCityMunicipality, request.MailingProvince, request.MailingZipCode,
             request.PrcLicenseNo, request.PtrNumber, request.Company, request.Position,
             request.BusinessAddress, request.Specialization, request.Skills, request.EmploymentStatus,
             request.Website, request.FacebookUrl, request.LinkedInUrl, request.XUrl, request.InstagramUrl);
@@ -558,15 +670,21 @@ public class MemberService(IApplicationDbContext db, ICacheService? cache = null
             member.UpdatedAt = DateTimeOffset.UtcNow;
         }
 
+        // RegistrationDate/ValidUntilDate describe the same physical RMP/PRC ID card as License
+        // No. - changing any one of the three requires the same fresh-reupload proof and stages
+        // all three together (see Member.PendingPrcRegistrationDate's doc comment).
         var prcLicenseNoChanged = !string.Equals(request.PrcLicenseNo ?? string.Empty, member.PrcLicenseNo ?? string.Empty, StringComparison.Ordinal);
-        if (!isDraft && prcLicenseNoChanged)
+        var prcRegistrationDateChanged = request.PrcRegistrationDate != member.PrcRegistrationDate;
+        var prcValidUntilDateChanged = request.PrcValidUntilDate != member.PrcValidUntilDate;
+        var prcCardChanged = prcLicenseNoChanged || prcRegistrationDateChanged || prcValidUntilDateChanged;
+        if (!isDraft && prcCardChanged)
         {
-            // Changing an already-submitted application's PRC License No. requires proof a new PRC
-            // ID was just uploaded - the client's PrcIdReuploaded flag alone isn't trusted, since a
-            // crafted request could set it without actually re-uploading anything.
+            // Changing an already-submitted application's RMP License No./dates requires proof a
+            // new RMP ID was just uploaded - the client's PrcIdReuploaded flag alone isn't trusted,
+            // since a crafted request could set it without actually re-uploading anything.
             if (!request.PrcIdReuploaded)
             {
-                return Result<MemberDto>.Failure("Changing your PRC License No. requires uploading a new PRC ID document first.");
+                return Result<MemberDto>.Failure("Changing your RMP License No. or dates requires uploading a new RMP ID document first.");
             }
 
             var upload = await db.MemberUploads.AsNoTracking()
@@ -574,13 +692,15 @@ public class MemberService(IApplicationDbContext db, ICacheService? cache = null
             var uploadedAt = upload?.UpdatedAt ?? upload?.CreatedAt;
             if (upload is null || uploadedAt <= baselineAt)
             {
-                return Result<MemberDto>.Failure("Changing your PRC License No. requires uploading a new PRC ID document first.");
+                return Result<MemberDto>.Failure("Changing your RMP License No. or dates requires uploading a new RMP ID document first.");
             }
 
-            // Stage the proposed value rather than overwriting PrcLicenseNo directly - it only
-            // becomes current once an admin approves (MemberService.ApprovePrcVerificationAsync).
-            // A fresh attempt supersedes any earlier rejection message.
+            // Stage the proposed values rather than overwriting directly - they only become
+            // current once an admin approves (MemberService.ApprovePrcVerificationAsync). A fresh
+            // attempt supersedes any earlier rejection message.
             member.PendingPrcLicenseNo = request.PrcLicenseNo;
+            member.PendingPrcRegistrationDate = request.PrcRegistrationDate;
+            member.PendingPrcValidUntilDate = request.PrcValidUntilDate;
             member.PrcVerificationRejectedReason = null;
         }
 
@@ -591,8 +711,23 @@ public class MemberService(IApplicationDbContext db, ICacheService? cache = null
         member.Birthdate = request.Birthdate;
         member.Gender = request.Gender;
         member.CivilStatus = request.CivilStatus;
-        member.Address = request.Address;
+        member.EducationLevel = request.EducationLevel;
+        member.SchoolName = request.SchoolName;
+        member.CourseYearGraduated = request.CourseYearGraduated;
+        member.SpecifiedProfession = request.SpecifiedProfession;
         member.MobileNumber = request.MobileNumber;
+        member.HouseNo = request.HouseNo;
+        member.Street = request.Street;
+        member.Barangay = request.Barangay;
+        member.CityMunicipality = request.CityMunicipality;
+        member.Province = request.Province;
+        member.ZipCode = request.ZipCode;
+        member.MailingHouseNo = request.MailingHouseNo;
+        member.MailingStreet = request.MailingStreet;
+        member.MailingBarangay = request.MailingBarangay;
+        member.MailingCityMunicipality = request.MailingCityMunicipality;
+        member.MailingProvince = request.MailingProvince;
+        member.MailingZipCode = request.MailingZipCode;
         member.HousePhone = request.HousePhone;
         member.Website = request.Website;
         member.FacebookUrl = request.FacebookUrl;
@@ -614,6 +749,8 @@ public class MemberService(IApplicationDbContext db, ICacheService? cache = null
         {
             // Free entry during the wizard, no reupload gating or staging - matches today.
             member.PrcLicenseNo = request.PrcLicenseNo;
+            member.PrcRegistrationDate = request.PrcRegistrationDate;
+            member.PrcValidUntilDate = request.PrcValidUntilDate;
             member.Chapter = request.Chapter;
             member.MemberType = request.MemberType;
         }
@@ -644,23 +781,45 @@ public class MemberService(IApplicationDbContext db, ICacheService? cache = null
         return Result.Success();
     }
 
+    public async Task<bool> HasPrcVerificationHistoryAsync(Guid userId, CancellationToken cancellationToken = default)
+    {
+        var memberId = await db.Members.AsNoTracking()
+            .Where(m => m.UserId == userId)
+            .Select(m => (Guid?)m.Id)
+            .FirstOrDefaultAsync(cancellationToken);
+        if (memberId is null)
+        {
+            return false;
+        }
+
+        return await db.PrcVerificationHistories.AnyAsync(h => h.MemberId == memberId, cancellationToken);
+    }
+
     /// <summary>
-    /// Simple sequential scheme, zero-padded to 6 digits. Not perfectly race-safe under concurrent
-    /// first-time self-registrations, but the unique index on MembershipNo guarantees no duplicate
-    /// ever gets persisted - a rare collision just surfaces as a SaveChanges failure to retry.
+    /// Simple sequential scheme, zero-padded to 6 digits, based on the highest existing
+    /// MembershipNo rather than the row count - a row count would deterministically collide with
+    /// an existing number (and keep failing on every subsequent attempt, not just once) as soon as
+    /// any Member row is ever deleted, leaving a gap below the count. Still not perfectly race-safe
+    /// under concurrent first-time self-registrations, but the unique index on MembershipNo
+    /// guarantees no duplicate ever gets persisted - a rare concurrent collision just surfaces as a
+    /// SaveChanges failure to retry.
     /// </summary>
     private async Task<string> GenerateMembershipNoAsync(CancellationToken cancellationToken)
     {
-        var count = await db.Members.CountAsync(cancellationToken);
-        return (count + 1).ToString("D6");
+        var existingNumbers = await db.Members.Select(m => m.MembershipNo).ToListAsync(cancellationToken);
+        var maxNumber = existingNumbers
+            .Select(no => int.TryParse(no, out var parsed) ? parsed : 0)
+            .DefaultIfEmpty(0)
+            .Max();
+        return (maxNumber + 1).ToString("D6");
     }
 
     /// <summary>
     /// Baseline 50% once submitted (Steps 1-3 registration is done) plus up to 50% more split
-    /// evenly across 5 optional completeness signals: Professional Information, Valid Government
-    /// ID, 2x2 Formal Photo, Signature, and at least one Certificate. Deliberately excludes PRC ID
-    /// from this optional split - that one is already required to submit, so it's always true by
-    /// the time this can return a non-zero percent.
+    /// evenly across 4 optional completeness signals: Professional Information, Valid Government
+    /// ID, Signature, and at least one Certificate. Deliberately excludes PRC ID and Photo from
+    /// this optional split - both are already required to submit, so they're always true by the
+    /// time this can return a non-zero percent.
     /// </summary>
     public async Task<ProfileCompletenessDto?> GetProfileCompletenessAsync(Guid userId, CancellationToken cancellationToken = default)
     {
@@ -676,8 +835,9 @@ public class MemberService(IApplicationDbContext db, ICacheService? cache = null
             .ToListAsync(cancellationToken);
         var hasPrcId = uploadKinds.Contains(UploadKind.PrcId);
         var hasValidGovernmentId = uploadKinds.Contains(UploadKind.ValidGovernmentId);
-        var hasFormalPhoto = uploadKinds.Contains(UploadKind.FormalPhoto);
+        var hasPhoto = uploadKinds.Contains(UploadKind.Photo);
         var hasSignature = uploadKinds.Contains(UploadKind.Signature);
+        var hasProofOfPayment = uploadKinds.Contains(UploadKind.ProofOfPayment);
         var certificateCount = await db.MemberCertificates.AsNoTracking().CountAsync(c => c.UserId == userId, cancellationToken);
 
         var hasProfessionalInfo = !string.IsNullOrWhiteSpace(member.EmploymentStatus)
@@ -689,10 +849,13 @@ public class MemberService(IApplicationDbContext db, ICacheService? cache = null
 
         const int baselinePercent = 50;
         var isSubmitted = member.SubmittedAt is not null;
-        var optionalItemsDone = new[] { hasProfessionalInfo, hasValidGovernmentId, hasFormalPhoto, hasSignature, certificateCount > 0 }.Count(x => x);
-        var percent = isSubmitted ? baselinePercent + (int)Math.Round(optionalItemsDone / 5.0 * (100 - baselinePercent)) : 0;
+        // Photo and ProofOfPayment are excluded from this optional split, same as PrcId - all
+        // three are required to submit (see SubmitMyProfileAsync), so they're always true by the
+        // time this can return a non-zero percent.
+        var optionalItemsDone = new[] { hasProfessionalInfo, hasValidGovernmentId, hasSignature, certificateCount > 0 }.Count(x => x);
+        var percent = isSubmitted ? baselinePercent + (int)Math.Round(optionalItemsDone / 4.0 * (100 - baselinePercent)) : 0;
 
         return new ProfileCompletenessDto(
-            percent, isSubmitted, hasPrcId, hasValidGovernmentId, hasFormalPhoto, hasSignature, certificateCount, hasProfessionalInfo);
+            percent, isSubmitted, hasPrcId, hasValidGovernmentId, hasPhoto, hasSignature, hasProofOfPayment, certificateCount, hasProfessionalInfo);
     }
 }

@@ -15,7 +15,9 @@ export function AdminUsersPage() {
   const [sortDir, setSortDir] = useState<NonNullable<GetUsersParams['sortDir']>>('asc')
   const [loading, setLoading] = useState(true)
 
-  const canManageRoles = user?.roles.includes(Roles.SuperAdmin) ?? false
+  // Gates role-checkbox editing (unchanged) and, as of this change, the per-row Edit/Delete
+  // icons too - both hidden entirely for a regular Admin, leaving only Email Verification.
+  const isSuperAdmin = user?.roles.includes(Roles.SuperAdmin) ?? false
 
   const refetch = () =>
     adminApi.getUsers({ page, pageSize: PAGE_SIZE, sortBy, sortDir }).then((result) => {
@@ -38,6 +40,10 @@ export function AdminUsersPage() {
     adminApi.deleteUser(id).then(refetch)
   }
 
+  const handleVerifyEmail = (userId: string) => {
+    adminApi.verifyEmail(userId).then(refetch)
+  }
+
   const handleSortChange = (column: NonNullable<GetUsersParams['sortBy']>) => {
     if (column === sortBy) {
       setSortDir((current) => (current === 'asc' ? 'desc' : 'asc'))
@@ -58,9 +64,11 @@ export function AdminUsersPage() {
         ) : (
           <AdminUsersTable
             users={users}
-            canManageRoles={canManageRoles}
+            canManageRoles={isSuperAdmin}
+            isSuperAdmin={isSuperAdmin}
             onToggleRole={handleToggleRole}
             onDelete={handleDelete}
+            onVerifyEmail={handleVerifyEmail}
             currentUserEmail={user?.email}
             sortBy={sortBy}
             sortDir={sortDir}

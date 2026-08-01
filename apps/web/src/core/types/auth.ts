@@ -29,6 +29,8 @@ export interface RegisterRequest {
   password: string
   displayName: string
   username?: string
+  /** RA 10173 consent. Required — the API rejects registration when this is false or omitted. */
+  dataPrivacyConsent: boolean
 }
 
 /**
@@ -54,6 +56,33 @@ export interface ResendVerificationEmailRequest {
 export interface ResendVerificationEmailResponse {
   message: string
   devVerificationLink?: string
+}
+
+export interface ForgotPasswordResponse {
+  message: string
+  devResetLink?: string
+}
+
+export interface ResetPasswordRequest {
+  userId: string
+  token: string
+  newPassword: string
+}
+
+export interface ResetPasswordResponse {
+  message: string
+}
+
+/**
+ * `needsConsent` is decided by the server, not derived here — bumping the wording version takes
+ * effect without a frontend deploy. `consentedVersion`/`consentedAt` are null for accounts that
+ * never consented (seeded/admin-created, or registered before it was recorded).
+ */
+export interface DataPrivacyConsentStatus {
+  needsConsent: boolean
+  currentVersion: string
+  consentedVersion: string | null
+  consentedAt: string | null
 }
 
 export interface AuthUser {

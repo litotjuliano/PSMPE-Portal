@@ -136,7 +136,11 @@ public static class MemberSeeder
 
     private static async Task<string> NextMembershipNoAsync(ApplicationDbContext db)
     {
-        var count = await db.Members.CountAsync();
-        return (count + 1).ToString("D6");
+        var existingNumbers = await db.Members.Select(m => m.MembershipNo).ToListAsync();
+        var maxNumber = existingNumbers
+            .Select(no => int.TryParse(no, out var parsed) ? parsed : 0)
+            .DefaultIfEmpty(0)
+            .Max();
+        return (maxNumber + 1).ToString("D6");
     }
 }

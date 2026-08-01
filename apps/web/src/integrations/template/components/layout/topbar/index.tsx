@@ -115,7 +115,7 @@ const Topbar = () => {
                     </div>
                     <div className="flex justify-between w-full text-sm">
                       <h6 className="font-medium text-default-800">
-                        PRC License verification needed: {member.firstName} {member.lastName}
+                        RMP License verification needed: {member.firstName} {member.lastName}
                       </h6>
                     </div>
                   </Link>

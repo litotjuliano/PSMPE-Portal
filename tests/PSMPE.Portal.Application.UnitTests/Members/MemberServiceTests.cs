@@ -13,14 +13,17 @@ public class MemberServiceTests
 {
     private static UpdateMyProfileRequest BuildRequest(
         string chapter = Chapters.Ncr, string memberType = MemberTypes.Regular,
-        string? prcLicenseNo = null, bool prcIdReuploaded = false,
+        string? prcLicenseNo = null, DateOnly? prcRegistrationDate = null, DateOnly? prcValidUntilDate = null, bool prcIdReuploaded = false,
         string firstName = "Juan", string lastName = "Dela Cruz", string? address = "123 Main St",
         string? company = null, string? website = null) => new(
         FirstName: firstName, MiddleName: null, LastName: lastName, Suffix: null,
         Birthdate: new DateOnly(1990, 1, 1), Gender: "Male", CivilStatus: "Single",
-        Address: address, MobileNumber: "09171234567",
+        EducationLevel: null, SchoolName: null, CourseYearGraduated: null, SpecifiedProfession: null,
+        MobileNumber: "09171234567",
+        HouseNo: null, Street: address, Barangay: null, CityMunicipality: null, Province: null, ZipCode: null,
+        MailingHouseNo: null, MailingStreet: null, MailingBarangay: null, MailingCityMunicipality: null, MailingProvince: null, MailingZipCode: null,
         HousePhone: null, Website: website, FacebookUrl: null, LinkedInUrl: null, XUrl: null, InstagramUrl: null,
-        PrcLicenseNo: prcLicenseNo, PtrNumber: "PTR-0012345", Tin: null,
+        PrcLicenseNo: prcLicenseNo, PrcRegistrationDate: prcRegistrationDate, PrcValidUntilDate: prcValidUntilDate, PtrNumber: "PTR-0012345", Tin: null,
         Chapter: chapter,
         EmploymentStatus: null, Company: company, Position: null, BusinessAddress: null, YearsOfPractice: null, Specialization: null, Skills: null,
         MemberType: memberType,
@@ -107,7 +110,7 @@ public class MemberServiceTests
 
         Assert.True(result.Succeeded);
         Assert.Equal("Single", result.Value!.CivilStatus);
-        Assert.Equal("123 Main St", result.Value.Address);
+        Assert.Equal("123 Main St", result.Value.Street);
         Assert.Equal("09171234567", result.Value.MobileNumber);
         Assert.Equal("PTR-0012345", result.Value.PtrNumber);
         Assert.Equal("123-456-789-000", result.Value.Tin);
@@ -116,9 +119,12 @@ public class MemberServiceTests
     private static UpdateMyProfileRequest BuildRequestWithContactDetails(string? mobileNumber, string? tin) => new(
         FirstName: "Juan", MiddleName: null, LastName: "Dela Cruz", Suffix: null,
         Birthdate: new DateOnly(1990, 1, 1), Gender: "Male", CivilStatus: "Single",
-        Address: "123 Main St", MobileNumber: mobileNumber,
+        EducationLevel: null, SchoolName: null, CourseYearGraduated: null, SpecifiedProfession: null,
+        MobileNumber: mobileNumber,
+        HouseNo: null, Street: "123 Main St", Barangay: null, CityMunicipality: null, Province: null, ZipCode: null,
+        MailingHouseNo: null, MailingStreet: null, MailingBarangay: null, MailingCityMunicipality: null, MailingProvince: null, MailingZipCode: null,
         HousePhone: null, Website: null, FacebookUrl: null, LinkedInUrl: null, XUrl: null, InstagramUrl: null,
-        PrcLicenseNo: null, PtrNumber: "PTR-0012345", Tin: tin,
+        PrcLicenseNo: null, PrcRegistrationDate: null, PrcValidUntilDate: null, PtrNumber: "PTR-0012345", Tin: tin,
         Chapter: Chapters.Ncr,
         EmploymentStatus: null, Company: null, Position: null, BusinessAddress: null, YearsOfPractice: null, Specialization: null, Skills: null,
         MemberType: MemberTypes.Regular);
@@ -126,6 +132,7 @@ public class MemberServiceTests
     [Theory]
     [InlineData("09171234567")]
     [InlineData("+639171234567")]
+    [InlineData("639171234567")]
     [InlineData("")]
     public async Task UpsertMyProfileAsync_WithValidOrEmptyMobileNumber_Succeeds(string mobileNumber)
     {
@@ -140,7 +147,7 @@ public class MemberServiceTests
 
     [Theory]
     [InlineData("12345")]
-    [InlineData("639171234567")]
+    [InlineData("8171234567")]
     [InlineData("0917-123-4567")]
     public async Task UpsertMyProfileAsync_WithInvalidMobileNumberFormat_ReturnsFailure(string mobileNumber)
     {
@@ -418,9 +425,12 @@ public class MemberServiceTests
         string? linkedInUrl = null, string? xUrl = null, string? instagramUrl = null) => new(
         FirstName: "Juan", MiddleName: null, LastName: "Dela Cruz", Suffix: null,
         Birthdate: new DateOnly(1990, 1, 1), Gender: "Male", CivilStatus: "Single",
-        Address: "123 Main St", MobileNumber: "09171234567",
+        EducationLevel: null, SchoolName: null, CourseYearGraduated: null, SpecifiedProfession: null,
+        MobileNumber: "09171234567",
+        HouseNo: null, Street: "123 Main St", Barangay: null, CityMunicipality: null, Province: null, ZipCode: null,
+        MailingHouseNo: null, MailingStreet: null, MailingBarangay: null, MailingCityMunicipality: null, MailingProvince: null, MailingZipCode: null,
         HousePhone: housePhone, Website: website, FacebookUrl: facebookUrl, LinkedInUrl: linkedInUrl, XUrl: xUrl, InstagramUrl: instagramUrl,
-        PrcLicenseNo: null, PtrNumber: "PTR-0012345", Tin: null,
+        PrcLicenseNo: null, PrcRegistrationDate: null, PrcValidUntilDate: null, PtrNumber: "PTR-0012345", Tin: null,
         Chapter: Chapters.Ncr,
         EmploymentStatus: null, Company: null, Position: null, BusinessAddress: null, YearsOfPractice: null, Specialization: null, Skills: null,
         MemberType: MemberTypes.Regular);
@@ -500,9 +510,12 @@ public class MemberServiceTests
     private static UpdateMyProfileRequest BuildRequestWithYearsOfPractice(int? yearsOfPractice) => new(
         FirstName: "Juan", MiddleName: null, LastName: "Dela Cruz", Suffix: null,
         Birthdate: new DateOnly(1990, 1, 1), Gender: "Male", CivilStatus: "Single",
-        Address: "123 Main St", MobileNumber: "09171234567",
+        EducationLevel: null, SchoolName: null, CourseYearGraduated: null, SpecifiedProfession: null,
+        MobileNumber: "09171234567",
+        HouseNo: null, Street: "123 Main St", Barangay: null, CityMunicipality: null, Province: null, ZipCode: null,
+        MailingHouseNo: null, MailingStreet: null, MailingBarangay: null, MailingCityMunicipality: null, MailingProvince: null, MailingZipCode: null,
         HousePhone: null, Website: null, FacebookUrl: null, LinkedInUrl: null, XUrl: null, InstagramUrl: null,
-        PrcLicenseNo: null, PtrNumber: "PTR-0012345", Tin: null,
+        PrcLicenseNo: null, PrcRegistrationDate: null, PrcValidUntilDate: null, PtrNumber: "PTR-0012345", Tin: null,
         Chapter: Chapters.Ncr,
         EmploymentStatus: null, Company: null, Position: null, BusinessAddress: null, YearsOfPractice: yearsOfPractice, Specialization: null, Skills: null,
         MemberType: MemberTypes.Regular);
@@ -544,10 +557,20 @@ public class MemberServiceTests
             Chapter = Chapters.Ncr,
             MemberType = MemberTypes.Regular,
             PrcLicenseNo = "MP 99999",
+            PrcRegistrationDate = new DateOnly(2020, 1, 1),
+            PrcValidUntilDate = new DateOnly(2030, 1, 1),
             PtrNumber = "PTR-0099999",
             Gender = "Male",
             CivilStatus = "Single",
-            Address = "123 Sample St",
+            EducationLevel = "College / University",
+            SchoolName = "Sample University",
+            CourseYearGraduated = "BSCE 2015",
+            SpecifiedProfession = "Master Plumber",
+            Street = "123 Sample St",
+            Barangay = "Sample Barangay",
+            CityMunicipality = "Sample City",
+            Province = "Sample Province",
+            ZipCode = "1000",
             MobileNumber = "09171234567",
             Birthdate = new DateOnly(1990, 1, 1),
             Status = MembershipStatus.Pending,
@@ -578,13 +601,28 @@ public class MemberServiceTests
         using var db = TestDbContext.CreateInMemory();
         var service = new MemberService(db);
         var member = await SeedCompleteDraftAsync(db);
-        db.MemberUploads.Add(new MemberUpload
-        {
-            UserId = member.UserId,
-            Kind = UploadKind.PrcId,
-            StorageKey = $"{member.UserId}/prc-id.pdf",
-            ContentType = "application/pdf",
-        });
+        db.MemberUploads.AddRange(
+            new MemberUpload
+            {
+                UserId = member.UserId,
+                Kind = UploadKind.PrcId,
+                StorageKey = $"{member.UserId}/prc-id.pdf",
+                ContentType = "application/pdf",
+            },
+            new MemberUpload
+            {
+                UserId = member.UserId,
+                Kind = UploadKind.Photo,
+                StorageKey = $"{member.UserId}/photo.jpg",
+                ContentType = "image/jpeg",
+            },
+            new MemberUpload
+            {
+                UserId = member.UserId,
+                Kind = UploadKind.ProofOfPayment,
+                StorageKey = $"{member.UserId}/proof-of-payment.jpg",
+                ContentType = "image/jpeg",
+            });
         await db.SaveChangesAsync();
 
         var result = await service.SubmitMyProfileAsync(member.UserId);
@@ -633,7 +671,7 @@ public class MemberServiceTests
         member.EmploymentStatus = "Employed";
         db.MemberUploads.AddRange(
             new MemberUpload { UserId = member.UserId, Kind = UploadKind.ValidGovernmentId, StorageKey = "k1", ContentType = "image/jpeg" },
-            new MemberUpload { UserId = member.UserId, Kind = UploadKind.FormalPhoto, StorageKey = "k2", ContentType = "image/jpeg" },
+            new MemberUpload { UserId = member.UserId, Kind = UploadKind.Photo, StorageKey = "k2", ContentType = "image/jpeg" },
             new MemberUpload { UserId = member.UserId, Kind = UploadKind.Signature, StorageKey = "k3", ContentType = "image/jpeg" });
         db.MemberCertificates.Add(new MemberCertificate
         {
@@ -647,7 +685,7 @@ public class MemberServiceTests
         Assert.Equal(100, completeness!.PercentComplete);
         Assert.True(completeness.HasProfessionalInfo);
         Assert.True(completeness.HasValidGovernmentId);
-        Assert.True(completeness.HasFormalPhoto);
+        Assert.True(completeness.HasPhoto);
         Assert.True(completeness.HasSignature);
         Assert.Equal(1, completeness.CertificateCount);
     }
@@ -678,13 +716,13 @@ public class MemberServiceTests
     }
 
     [Fact]
-    public async Task UpsertMyProfileAsync_OverlongAddress_ReturnsFailure()
+    public async Task UpsertMyProfileAsync_OverlongStreet_ReturnsFailure()
     {
         using var db = TestDbContext.CreateInMemory();
         var service = new MemberService(db);
         var member = await SeedDraftMemberAsync(db);
 
-        var result = await service.UpsertMyProfileAsync(member.UserId, BuildRequest(address: new string('A', 513)));
+        var result = await service.UpsertMyProfileAsync(member.UserId, BuildRequest(address: new string('A', 129)));
 
         Assert.False(result.Succeeded);
     }
@@ -738,9 +776,12 @@ public class MemberServiceTests
     private static CreateMemberRequest BuildCreateRequest(Guid userId, string firstName = "Juan", string? address = "123 Main St") => new(
         UserId: userId, MembershipNo: "000099", FirstName: firstName, MiddleName: null, LastName: "Dela Cruz", Suffix: null,
         Birthdate: new DateOnly(1990, 1, 1), Gender: "Male", CivilStatus: "Single",
-        Address: address, MobileNumber: "09171234567",
+        EducationLevel: null, SchoolName: null, CourseYearGraduated: null, SpecifiedProfession: null,
+        MobileNumber: "09171234567",
+        HouseNo: null, Street: address, Barangay: null, CityMunicipality: null, Province: null, ZipCode: null,
+        MailingHouseNo: null, MailingStreet: null, MailingBarangay: null, MailingCityMunicipality: null, MailingProvince: null, MailingZipCode: null,
         HousePhone: null, Website: null, FacebookUrl: null, LinkedInUrl: null, XUrl: null, InstagramUrl: null,
-        PrcLicenseNo: null, PtrNumber: null, Tin: null,
+        PrcLicenseNo: null, PrcRegistrationDate: null, PrcValidUntilDate: null, PtrNumber: null, Tin: null,
         Chapter: Chapters.Ncr,
         EmploymentStatus: null, Company: null, Position: null, BusinessAddress: null, YearsOfPractice: null, Specialization: null, Skills: null,
         MemberType: MemberTypes.Regular, RenewalDueDate: null, NationalDuesReferenceNo: null);
@@ -774,25 +815,28 @@ public class MemberServiceTests
     private static UpdateMemberRequest BuildUpdateRequest(string? address = "123 Main St") => new(
         FirstName: "Juan", MiddleName: null, LastName: "Dela Cruz", Suffix: null,
         Birthdate: new DateOnly(1990, 1, 1), Gender: "Male", CivilStatus: "Single",
-        Address: address, MobileNumber: "09171234567",
+        EducationLevel: null, SchoolName: null, CourseYearGraduated: null, SpecifiedProfession: null,
+        MobileNumber: "09171234567",
+        HouseNo: null, Street: address, Barangay: null, CityMunicipality: null, Province: null, ZipCode: null,
+        MailingHouseNo: null, MailingStreet: null, MailingBarangay: null, MailingCityMunicipality: null, MailingProvince: null, MailingZipCode: null,
         HousePhone: null, Website: null, FacebookUrl: null, LinkedInUrl: null, XUrl: null, InstagramUrl: null,
-        PrcLicenseNo: null, PtrNumber: null, Tin: null,
+        PrcLicenseNo: null, PrcRegistrationDate: null, PrcValidUntilDate: null, PtrNumber: null, Tin: null,
         Chapter: Chapters.Ncr,
         EmploymentStatus: null, Company: null, Position: null, BusinessAddress: null, YearsOfPractice: null, Specialization: null, Skills: null,
         MemberType: MemberTypes.Regular, Status: MembershipStatus.Pending, RenewalDueDate: null, NationalDuesReferenceNo: null);
 
     [Fact]
-    public async Task UpdateAsync_OverlongAddress_ReturnsFailure_WithoutPersisting()
+    public async Task UpdateAsync_OverlongStreet_ReturnsFailure_WithoutPersisting()
     {
         using var db = TestDbContext.CreateInMemory();
         var service = new MemberService(db);
         var member = await SeedDraftMemberAsync(db);
 
-        var result = await service.UpdateAsync(member.Id, BuildUpdateRequest(address: new string('A', 513)));
+        var result = await service.UpdateAsync(member.Id, BuildUpdateRequest(address: new string('A', 129)));
 
         Assert.False(result.Succeeded);
         var updated = await service.GetByIdAsync(member.Id);
-        Assert.Null(updated!.Address);
+        Assert.Null(updated!.Street);
     }
 
     [Fact]
@@ -820,5 +864,35 @@ public class MemberServiceTests
 
         Assert.False(result.Succeeded);
         Assert.NotNull(await service.GetByIdAsync(member.Id));
+    }
+
+    [Fact]
+    public async Task HasPrcVerificationHistoryAsync_MemberWithHistory_ReturnsTrue()
+    {
+        using var db = TestDbContext.CreateInMemory();
+        var service = new MemberService(db);
+        var member = await SeedSubmittedMemberAsync(db, prcLicenseNo: "MP-1");
+        await service.ApprovePrcVerificationAsync(member.Id, Guid.NewGuid());
+
+        Assert.True(await service.HasPrcVerificationHistoryAsync(member.UserId));
+    }
+
+    [Fact]
+    public async Task HasPrcVerificationHistoryAsync_MemberWithoutHistory_ReturnsFalse()
+    {
+        using var db = TestDbContext.CreateInMemory();
+        var service = new MemberService(db);
+        var member = await SeedSubmittedMemberAsync(db, prcLicenseNo: "MP-1");
+
+        Assert.False(await service.HasPrcVerificationHistoryAsync(member.UserId));
+    }
+
+    [Fact]
+    public async Task HasPrcVerificationHistoryAsync_UserWithNoMemberProfile_ReturnsFalse()
+    {
+        using var db = TestDbContext.CreateInMemory();
+        var service = new MemberService(db);
+
+        Assert.False(await service.HasPrcVerificationHistoryAsync(Guid.NewGuid()));
     }
 }

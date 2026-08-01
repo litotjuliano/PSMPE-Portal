@@ -35,7 +35,9 @@ see Open questions/TODO for what's deferred.
     not by a second endpoint.
 - `POST /api/members` — admin creates a member profile for an existing user
   - Auth: `members:manage` permission
-  - Request: `{ userId, membershipNo, firstName, middleName, lastName, suffix, birthdate, gender, address, prcLicenseNo, chapter, company, memberType, renewalDueDate, nationalDuesReferenceNo }`
+  - Request: `{ userId, membershipNo, firstName, middleName, lastName, suffix, birthdate, gender, civilStatus, educationLevel, schoolName, courseYearGraduated, specifiedProfession, mobileNumber, houseNo, street, barangay, cityMunicipality, province, zipCode, mailingHouseNo, mailingStreet, mailingBarangay, mailingCityMunicipality, mailingProvince, mailingZipCode, prcLicenseNo, prcRegistrationDate, prcValidUntilDate, ptrNumber, tin, chapter, company, memberType, renewalDueDate, nationalDuesReferenceNo }`
+    (see "Membership Application Form fields" below for what each new field maps to on the paper
+    form, and the "RMP" naming note)
   - Does **not** create a login account — that's `POST /api/auth/register`'s job. `400` if
     `userId` doesn't exist; `409` if that user already has a profile or `membershipNo` collides.
   - Always starts as `Status: Pending`, `ApprovedAt: null`, `SubmittedAt: now` — admin-entered
@@ -66,6 +68,12 @@ see Open questions/TODO for what's deferred.
   - Auth: `members:manage` permission
   - Leaves the underlying login/role account intact — retiring someone's membership record
     doesn't delete their system account.
+  - `400` if the member has any RMP/PRC verification history on record (`Restrict` FK on
+    `PrcVerificationHistories`) — a clean rejection instead of a raw `DbUpdateException`.
+  - Contrast with deleting the *User* account entirely (`DELETE /api/admin/users/{id}`, Super
+    Admin only - see `roles.md`), which cascades to remove this `Member` row too (plus
+    `MemberUploads`/`MemberCertificates` and their files), and is blocked the same way (`409`
+    there, since it's checked before the User row itself is touched).
 
 ## Draft vs. Submitted vs. Approved vs. Status
 
@@ -108,43 +116,88 @@ Sign-up and the membership application are two separate, decoupled flows:
   Password, Display Name, optional Username. Calls `POST /api/auth/register` only, then redirects
   to the dashboard (`/`), logged in. No Member profile is created at this point.
 - **`MyProfilePage`** (`/profile`, authenticated) hosts the actual 4-step application wizard from
-  the product spec (Personal Info → Contact Info → Account Info → Additional Info), via
+  the product spec (Personal Info → Contact Info → Additional Info → Payment Details), via
   `MembershipApplicationWizardCard`, whenever the caller has no Member profile yet or has one with
   `submittedAt: null` (still a draft) — once `submittedAt` is set, this page instead shows the
   ordinary flat "My Profile" edit form (`MyProfileCard`) as before.
   - **Autosave/resume**: every "Save & Continue" click calls `PUT /api/members/me` with whatever's
     been filled in so far, then advances the step — so leaving mid-wizard and coming back later
-    resumes with that data intact. Resume position is derived, not stored: if Personal Info's
-    required fields (name/chapter/member type) are already filled, resume at Contact Info;
-    otherwise resume at Personal Info (Contact Info/Account Info have no required fields of their
-    own to detect against, but Back/Next let the applicant freely revisit any step).
-  - **Account Information step** (3rd) is read-only — the account (including password/username)
-    already exists by this point, so it just displays the caller's email/display name with a Next
-    button, rather than re-collecting credentials.
-  - **Final step** ("Additional Information") is a review summary + terms checkbox; Submit calls
+    resumes with that data intact. Resume position is derived, not stored (see
+    `furthestStepReached`/`hasCompleted*Info` in `MyProfilePage.tsx`): resumes at the first step
+    whose own required fields aren't all filled yet - Personal Info (name/chapter/member type/etc.),
+    then Contact Info (mobile number/residence address), then Additional Info (PTR Number) - Payment
+    Details has no required Member field of its own (Proof of Payment is an upload, and the
+    terms/consent checkboxes are never persisted), so it's never a distinct resume gate.
+  - **Additional Information step** (3rd) collects PTR Number, TIN (optional), and Company
+    (optional) - alongside a read-only display of the caller's account email.
+  - **Final step** ("Payment Details") shows the membership fee/payment instructions, collects the
+    Proof of Payment upload, then a review summary + terms checkbox; Submit calls
     `POST /api/members/me/submit`, which is what actually makes the application visible to admins.
   - `DashboardPage` shows a "Complete your membership application" banner (checks
     `GET /api/members/me`, shown whenever there's no profile yet or `submittedAt` is still null)
     linking to `/profile` — this is what surfaces the resumable wizard from the dashboard.
 - Map-based address picker shown in the mockup is not collected — no Maps API integration exists
-  (see Open questions). Phone number shown in the mockup's Contact Info step is likewise not
-  collected — `Member` has no phone field. Photo and PRC ID *are* collected, in Personal Info, via
-  the member-scoped upload endpoints (see "File uploads" below).
+  (see Open questions); the residence/mailing address is instead collected as plain structured
+  text fields (see "Membership Application Form fields" below). Photo and RMP ID are collected in
+  Personal Info; Proof of Payment is collected in the final Payment Details step - all three via
+  the member-scoped upload endpoints (see "File uploads" below), and all three are required to
+  submit (`POST /api/members/me/submit`), along with education, profession, RMP license/dates, and
+  the full residence address (House No. excepted — some Philippine addresses genuinely don't have
+  one). There is no separate 2x2/formal-photo upload — the one required Photo doubles as the
+  ID-print photo, so the UI only ever asks for a single photo.
 
-## File uploads (photo, PRC ID)
+### Membership Application Form fields
+
+Reworked from a single free-text `Address` to match every field the official paper "PSMPE
+Membership Application Form" asks for:
+
+- **RMP vs. PRC naming**: the paper form's "RMP License No." is the *same* underlying field as
+  the original `PrcLicenseNo` — relabeled in every user-facing string (wizard, profile, admin
+  tables, PRC Verifications queue, notifications), but every internal identifier (`PrcLicenseNo`,
+  `PrcIdVerified`, `PendingPrcLicenseNo`, `PrcVerificationRejectedReason`, the `/prc-verifications`
+  route, `UploadKind.PrcId`) deliberately keeps its original name — renaming the actual
+  properties/columns/endpoints would be a large, purely-cosmetic ripple with no functional benefit.
+- **Residence address**: `HouseNo` (optional), `Street`, `Barangay`, `CityMunicipality`, `Province`,
+  `ZipCode` — replaces the old single `Address` string.
+- **Mailing address**: `MailingHouseNo`, `MailingStreet`, `MailingBarangay`,
+  `MailingCityMunicipality`, `MailingProvince`, `MailingZipCode` — new. The wizard/profile offer a
+  client-side-only "Same as Residence Address" checkbox that copies the residence values across at
+  save time; there's no stored flag, just six independent columns.
+- **Education**: `EducationLevel` ("Technical School" / "College / University"), `SchoolName`,
+  `CourseYearGraduated` (free text, e.g. "BSCE 2023").
+- **Profession**: `SpecifiedProfession` ("Master Plumber" / "Other Professional Related").
+- **RMP license dates**: `PrcRegistrationDate`, `PrcValidUntilDate` (plain `DateOnly?` data entry —
+  not the deferred AI/OCR extraction proposal). Staged the same way `PrcLicenseNo` already was:
+  changing the license number **or** either date requires a fresh RMP ID re-upload, and stages all
+  three together as `PendingPrcLicenseNo`/`PendingPrcRegistrationDate`/`PendingPrcValidUntilDate`
+  until an admin approves or rejects via the existing PRC Verifications queue.
+- **Age** is derived from `Birthdate` for display only — never persisted.
+- **Data Privacy Consent**: a second wizard checkbox (RA 10173 text + `privacy.gov.ph` link)
+  alongside the existing membership-terms checkbox — same pre-existing pattern as that checkbox
+  (client-side Submit gate only, not persisted to the `Member` record).
+
+## File uploads (photo, RMP ID, proof of payment, etc.)
 
 Files are **not** stored in Postgres, and are **not** served as plain static URLs - both were
 deliberate calls, not the obvious defaults:
 
 - **`MemberUpload`** (`Domain.Entities`) is a thin pointer row - `UserId`, `Kind`
-  (`Photo`/`PrcId`), `StorageKey`, `ContentType` - a few dozen bytes, regardless of the file's
-  actual size. Keyed by `UserId`, not `MemberId`, so a photo/PRC ID can be uploaded before any
+  (`Photo`/`PrcId`/`ValidGovernmentId`/`Signature`/`ProofOfPayment`/`Receipt`), `StorageKey`,
+  `ContentType` - a few dozen bytes, regardless of the file's actual size. Keyed by `UserId`, not
+  `MemberId`, so a photo/RMP ID can be uploaded before any
   `Member` row exists yet (before Personal Info is saved). One row per `(UserId, Kind)` - a
   re-upload overwrites the pointer (and the file at the same storage key), no accumulation.
   Storing the bytes directly in Postgres was considered and rejected: DigitalOcean prices managed
   Postgres storage far more expensively than object storage, and it only gets worse as photos +
   PRC IDs + eventual CPD certificates accumulate across the whole membership base - that would
   force costly compute-tier upgrades just for storage headroom.
+  - **`Kind` is a string-backed enum** (`HasConversion<string>()` in `MemberUploadConfiguration`),
+    not EF's default raw int. This fixed a real data-corruption incident: removing `FormalPhoto`
+    from the middle of the enum shifted every later ordinal down by one, so a stale row written
+    before the removal was silently reinterpreted as a *different* `Kind` once a new value
+    (`Receipt`) was appended at the now-vacant ordinal - a member's PRC ID scan was served back as
+    their payment receipt. The string conversion (with an explicit ordinal→name migration to
+    correct already-persisted rows) makes the column immune to any future enum reordering.
 - **`IFileStorageService`** (`Application.Common.Interfaces`) abstracts *where* the bytes actually
   live, behind `SaveAsync`/`OpenReadAsync` keyed by an opaque string. `LocalDiskFileStorageService`
   (`Infrastructure.Services`) is the only implementation today - writes/reads under
@@ -153,24 +206,32 @@ deliberate calls, not the obvious defaults:
   repo's CI/CD targets). The seam exists specifically so a real object-store implementation (e.g.
   DigitalOcean Spaces, S3-compatible and correctly priced for this) can be swapped in later as a
   contained change - it needs real Spaces credentials to build and verify, which don't exist yet.
-- **Serving is authenticated**, not a plain static file - `GET /api/members/me/photo`/`prc-id`
-  (self) and `GET /api/members/{id}/photo`/`prc-id` (admin, `members:view` permission) stream
+- **Serving is authenticated**, not a plain static file - `GET /api/members/me/{kind}`
+  (self) and `GET /api/members/{id}/{kind}` (admin, `members:view` permission) stream
   bytes through `MembersController`, checking "is this the caller's own file, or an authorized
   staff member's?" first. This closes a real gap the old `app.UseStaticFiles()` approach had -
-  anyone with a URL (or who guessed one) could fetch any member's PRC ID scan, no login required.
+  anyone with a URL (or who guessed one) could fetch any member's RMP ID scan, no login required.
 
 **Endpoints** (all on `MembersController`, replacing the old standalone `/api/uploads`):
-- `POST /api/members/me/photo`, `POST /api/members/me/prc-id` - `[Authorize]` only, multipart file.
-- `GET /api/members/me/photo`, `GET /api/members/me/prc-id` - `[Authorize]` only, own file.
-- `GET /api/members/{id}/photo`, `GET /api/members/{id}/prc-id` - `members:view` permission.
+- `POST /api/members/me/photo`, `.../prc-id`, `.../valid-government-id`,
+  `.../signature`, `.../proof-of-payment` - `[Authorize]` only, multipart file.
+- `GET /api/members/me/{kind}` (same kinds) - `[Authorize]` only, own file.
+- `GET /api/members/me/receipt` - `[Authorize]` only, own file - no matching `POST`, members never
+  upload this themselves (see Membership Approvals below for how it's created).
+- `GET /api/members/{id}/{kind}` (same kinds, `Receipt` excluded) - `members:view` permission.
 
 **Images are optimized, not just size-gated**: users frequently don't know how large their phone
 photos are before picking one, so `.jpg`/`.jpeg`/`.png` uploads are accepted up to `24MB` raw, then
 decoded, downscaled (only if needed - longest side capped at `1600px`, aspect ratio preserved,
 never upscaled) and re-encoded as JPEG at quality `82` via `SkiaSharp` (this logic lives in
 `MemberUploadService`, Application layer) before being handed to `IFileStorageService` - always
-stored as `.jpg` regardless of the original extension. `.pdf` files (PRC ID only) have no such
-optimization path and keep a stricter `2MB` hard cap.
+stored as `.jpg` regardless of the original extension. `.pdf` files (`PrcId`/`ProofOfPayment` only)
+have no such optimization path and keep a stricter `2MB` hard cap - except `ProofOfPayment`, which
+gets its own tighter `1MB` cap regardless of whether it's an image or a PDF, per the application
+form. `Photo` (also used for ID printing) and `ProofOfPayment` also get a distinct storage-key
+naming convention - `{userId}/{kind}-{surname}-{firstname}-{birthdate:yyyyMMdd}-{timestamp}.ext`
+instead of the plain `{userId}/{kind}.ext` other kinds use - purely a storage-key cosmetic
+difference; the DB row is still upserted by `(userId, kind)` exactly like every other kind.
 
 **Why SkiaSharp, not SixLabors.ImageSharp** (the more commonly-reached-for .NET image library):
 ImageSharp's license requires a paid commercial license for organizations above roughly 1 employee
@@ -192,15 +253,40 @@ Still no orphan-file cleanup if a photo/PRC ID's *extension* changes between upl
 switching from an image to a PDF) - the storage key changes, so the previous file at the old key
 is left behind. Minor, same-extension re-uploads (the common case) simply overwrite in place.
 
+**Deployment note**: the WebAPI container runs as the base image's non-root `app` user, so the
+`wwwroot/uploads` volume it writes to must be owned by that user. Docker only applies the image's
+ownership to a *freshly created* named volume - an already-existing volume keeps whatever
+ownership it was first initialized with, which was `root` here (predating the Dockerfile
+explicitly creating this directory under `USER app`), causing every upload to fail with an
+`UnauthorizedAccessException` until manually `chown`'d on the running containers (staging and
+production both hit this).
+
 ## Membership Approvals + notifications
 
 `MembershipApprovalsPage` (`/membership-approvals`, Admin/Super Admin) lists members with
 `pendingApprovalOnly=true` and lets an admin Approve inline, or click through to `/members/{id}`
 (`MemberFormCard` also has an inline Approve button there, since that's where a notification click
-lands). The topbar notification bell and the dedicated `NotificationsPage` (`/notifications`) both
-derive their content from the same `pendingApprovalOnly=true` query — no separate notifications
-entity, no read/unread tracking (an item simply stops matching the filter once approved). This is
-pull-based (fetched on page load), not real-time push — no email or WebSocket/SignalR.
+lands - that page also opens read-only, "Approval"-titled, per the same review-not-edit reasoning
+as the applicant-facing flow below). The topbar notification bell and the dedicated
+`NotificationsPage` (`/notifications`) both derive their content from the same
+`pendingApprovalOnly=true` query — no separate notifications entity, no read/unread tracking (an
+item simply stops matching the filter once approved). This admin-facing side is pull-based
+(fetched on page load), not real-time push — no WebSocket/SignalR.
+
+**Approving *does* notify the member**, both ways, from `MembersController.Approve` (only the one
+time an application actually transitions to approved - `ApproveAsync` itself is idempotent, so a
+repeat call doesn't regenerate/resend):
+- `IssueApprovalReceiptAsync` renders a system-generated JPEG receipt (`ReceiptGenerator`, plain
+  SkiaSharp canvas+text - Membership No./Name/Chapter/Member Type/Date Approved plus the fixed fee
+  breakdown already shown in the wizard's Payment Details step) and stores it as this member's
+  `UploadKind.Receipt` (same `MemberUpload` pointer-row mechanism as every other document above) -
+  that's what `DashboardPage`'s `ReceiptBanner` and `GET /api/members/me/receipt` serve back.
+- The same JPEG bytes are emailed to the member as an attachment via `IEmailSender` (now extended
+  with an optional `attachments` parameter - `SmtpEmailSender` via MimeKit's `BodyBuilder
+  .Attachments`, `ConsoleEmailSender` just logs the attachment names in dev).
+- **Requires real fonts at runtime**: SkiaSharp text drawing needs an actual font file + fontconfig
+  on Linux (unlike a Windows dev box, which always has one) - the WebAPI `Dockerfile`'s final stage
+  installs `fontconfig`/`fonts-dejavu-core` specifically for this.
 
 ## Authorization rules
 
@@ -223,10 +309,13 @@ pull-based (fetched on page load), not real-time push — no email or WebSocket/
 - **Payments/Dues domain doesn't exist yet**: `Status` transitions to `Active` are entirely manual
   (an admin edits the record once dues are confirmed paid out of band). Once a Payments domain
   exists, it should be the thing that flips `Status`, not manual admin edits.
-- **`MembershipNo` auto-generation is not race-safe**: `MemberService`'s self-service upsert path
-  generates a sequential zero-padded number from the current row count. The unique index
-  guarantees no duplicate is ever persisted, but a concurrent collision would surface as a
-  `SaveChanges` failure rather than a graceful retry — acceptable at current scale, revisit if
+- **`MembershipNo` auto-generation is not perfectly race-safe under concurrency**:
+  `GenerateMembershipNoAsync` generates a sequential zero-padded number one past the *highest*
+  existing `MembershipNo` (not a row count - a row-count-based scheme deterministically collides,
+  on every subsequent attempt, as soon as any Member row is ever deleted and leaves a gap below the
+  count). The unique index still guarantees no duplicate is ever persisted, but a genuine
+  concurrent collision (two first-time registrations landing in the same instant) would surface as
+  a `SaveChanges` failure rather than a graceful retry — acceptable at current scale, revisit if
   registration volume grows.
 - No audit log for profile/status changes yet (same gap noted for role changes in `roles.md`).
 - **Semi-automated, AI/OCR-assisted PRC License verification is a deferred future feature** - a

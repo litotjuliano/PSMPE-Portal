@@ -3,32 +3,20 @@ import { Link, useNavigate } from 'react-router-dom'
 import { isAxiosError } from 'axios'
 import { useAuth } from '../auth/useAuth'
 import { authApi } from '../api/endpoints/authApi'
-import { BlueprintBg, PageMeta } from '../../integrations/template'
-import logoDark from '../../integrations/template/assets/images/logo-dark.png'
-import logoLight from '../../integrations/template/assets/images/logo-light.png'
-import IconifyIcon from '../../integrations/template/components/shared/IconifyIcon'
+import { passwordErrors } from '../utils/passwordPolicy'
+import { DataPrivacyConsentText } from '../constants/dataPrivacyConsent'
+import { AuthSplitLayout, AuthTextInput, PageMeta } from '../../integrations/template'
 
 type UsernameAvailability = 'idle' | 'checking' | 'available' | 'taken'
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
-
-// Mirrors the backend's Identity password policy (see DependencyInjection.AddInfrastructure):
-// RequiredLength = 8, RequireNonAlphanumeric = false; RequireDigit/Uppercase/Lowercase are
-// Identity's unmodified defaults (true).
-function passwordErrors(password: string): string[] {
-  const errors: string[] = []
-  if (password.length < 8) errors.push('Password must be at least 8 characters.')
-  if (!/[0-9]/.test(password)) errors.push('Password must contain at least one digit.')
-  if (!/[A-Z]/.test(password)) errors.push('Password must contain at least one uppercase letter.')
-  if (!/[a-z]/.test(password)) errors.push('Password must contain at least one lowercase letter.')
-  return errors
-}
 
 interface FieldErrors {
   displayName?: string
   email?: string
   password?: string
   confirmPassword?: string
+  terms?: string
 }
 
 export function RegisterPage() {
@@ -40,6 +28,7 @@ export function RegisterPage() {
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
+  const [termsAccepted, setTermsAccepted] = useState(false)
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({})
   const [serverErrors, setServerErrors] = useState<string[]>([])
   const [error, setError] = useState<string | null>(null)
@@ -80,6 +69,7 @@ export function RegisterPage() {
     const passwordIssues = passwordErrors(password)
     if (passwordIssues.length > 0) nextFieldErrors.password = passwordIssues.join(' ')
     if (password !== confirmPassword) nextFieldErrors.confirmPassword = 'Passwords do not match.'
+    if (!termsAccepted) nextFieldErrors.terms = 'You must give your data privacy consent to continue.'
 
     setFieldErrors(nextFieldErrors)
     if (Object.keys(nextFieldErrors).length > 0) {
@@ -88,7 +78,13 @@ export function RegisterPage() {
 
     setSubmitting(true)
     try {
-      const response = await register({ email, password, displayName, username: username || undefined })
+      const response = await register({
+        email,
+        password,
+        displayName,
+        username: username || undefined,
+        dataPrivacyConsent: termsAccepted,
+      })
       navigate('/verify-email', { state: { email: response.email, devVerificationLink: response.devVerificationLink } })
     } catch (err) {
       if (isAxiosError(err) && err.response?.status === 409) {
@@ -107,128 +103,96 @@ export function RegisterPage() {
   return (
     <>
       <PageMeta title="Register" />
-      <div className="relative min-h-screen w-full flex flex-col justify-center items-center py-16 md:py-10">
-        <div className="card md:w-lg w-screen z-10">
-          <div className="text-center px-10 py-12">
-            <Link to="/" className="flex justify-center">
-              <img src={logoDark} alt="logo dark" className="h-6 flex dark:hidden" width={111} />
-              <img src={logoLight} alt="logo light" className="h-6 hidden dark:flex" width={111} />
-            </Link>
+      <AuthSplitLayout heading="Create an Account" subheading="Register as a service partner or plumber.">
+        <form onSubmit={handleSubmit} className="text-start w-full">
+          <AuthTextInput
+            label="Full Name"
+            placeholder="Juan Dela Cruz"
+            required
+            value={displayName}
+            onChange={(e) => setDisplayName(e.target.value)}
+            error={fieldErrors.displayName}
+          />
 
-            <div className="mt-8 text-center">
-              <h4 className="mb-2.5 text-xl font-semibold text-primary">Create Your Account</h4>
-              <p className="text-base text-default-500">
-                Sign up with the basics - you can complete your membership application afterward from your dashboard.
-              </p>
-            </div>
+          <AuthTextInput
+            label="Email Address"
+            type="email"
+            placeholder="you@example.com"
+            required
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            error={fieldErrors.email}
+          />
 
-            <form onSubmit={handleSubmit} className="text-left w-full mt-10">
-              <div className="mb-4">
-                <label className="block font-medium text-default-900 text-sm mb-2">Full Name</label>
-                <input
-                  className="form-input"
-                  required
-                  value={displayName}
-                  onChange={(e) => setDisplayName(e.target.value)}
-                />
-                {fieldErrors.displayName && <p className="text-xs text-danger mt-1">{fieldErrors.displayName}</p>}
-              </div>
-
-              <div className="mb-4">
-                <label className="block font-medium text-default-900 text-sm mb-2">Email</label>
-                <input
-                  type="email"
-                  className="form-input"
-                  required
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                />
-                {fieldErrors.email && <p className="text-xs text-danger mt-1">{fieldErrors.email}</p>}
-              </div>
-
-              <div className="mb-4">
-                <label className="block font-medium text-default-900 text-sm mb-2">Username (optional)</label>
-                <input className="form-input" value={username} onChange={(e) => setUsername(e.target.value)} />
-                {usernameAvailability === 'checking' && <p className="text-xs text-default-500 mt-1">Checking availability…</p>}
-                {usernameAvailability === 'available' && <p className="text-xs text-success mt-1">Username available!</p>}
-                {usernameAvailability === 'taken' && <p className="text-xs text-danger mt-1">Username is already taken.</p>}
-              </div>
-
-              <div className="mb-4">
-                <label className="block font-medium text-default-900 text-sm mb-2">Password</label>
-                <input
-                  type="password"
-                  className="form-input"
-                  required
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                />
-                <p className="text-xs text-default-500 mt-1">
-                  At least 8 characters, with an uppercase letter, a lowercase letter, and a digit.
-                </p>
-                {fieldErrors.password && <p className="text-xs text-danger mt-1">{fieldErrors.password}</p>}
-              </div>
-
-              <div className="mb-4">
-                <label className="block font-medium text-default-900 text-sm mb-2">Confirm Password</label>
-                <input
-                  type="password"
-                  className="form-input"
-                  required
-                  value={confirmPassword}
-                  onChange={(e) => setConfirmPassword(e.target.value)}
-                />
-                {fieldErrors.confirmPassword && <p className="text-xs text-danger mt-1">{fieldErrors.confirmPassword}</p>}
-              </div>
-
-              {error && <p className="text-sm text-danger mb-4">{error}</p>}
-              {serverErrors.length > 0 && (
-                <ul className="text-sm text-danger mb-4 list-disc pl-5">
-                  {serverErrors.map((message) => (
-                    <li key={message}>{message}</li>
-                  ))}
-                </ul>
-              )}
-
-              <p className="italic text-sm font-medium text-default-500">
-                By registering you agree to the PSMPE Portal <Link to="#" className="underline">Terms of Use</Link>
-              </p>
-
-              <div className="mt-10 text-center">
-                <button type="submit" disabled={submitting} className="btn bg-primary text-white w-full">
-                  {submitting ? 'Creating account…' : 'Create Account'}
-                </button>
-              </div>
-
-              <div className="my-9 relative text-center before:absolute before:top-2.5 before:left-0 before:border-t before:border-t-default-200 before:w-full before:h-0.5 before:right-0 before:-z-0">
-                <h4 className="relative z-1 py-0.5 px-2 inline-block font-medium text-default-600 bg-card">Create Account With</h4>
-              </div>
-
-              <div className="flex w-full justify-center items-center gap-2">
-                {/* TODO: no OAuth backend wired up yet - these are visual placeholders. */}
-                <Link to="#" className="btn border border-default-200 flex-grow hover:bg-default-150 shadow-sm hover:text-default-800">
-                  <IconifyIcon icon={'logos:google-icon'} />
-                  Use Google
-                </Link>
-
-                <Link to="#" className="btn border border-default-200 flex-grow hover:bg-default-150 shadow-sm hover:text-default-800">
-                  <IconifyIcon icon={'logos:apple'} className="text-mono" />
-                  Use Apple
-                </Link>
-              </div>
-
-              <p className="mt-6 text-center text-sm text-default-500">
-                Already have an account?{' '}
-                <Link to="/login" className="font-semibold text-primary">
-                  Sign In
-                </Link>
-              </p>
-            </form>
+          <div className="mb-4">
+            <AuthTextInput label="Username (optional)" value={username} onChange={(e) => setUsername(e.target.value)} />
+            {usernameAvailability === 'checking' && <p className="text-xs text-default-500 -mt-3">Checking availability…</p>}
+            {usernameAvailability === 'available' && <p className="text-xs text-success -mt-3">Username available!</p>}
+            {usernameAvailability === 'taken' && <p className="text-xs text-danger -mt-3">Username is already taken.</p>}
           </div>
-        </div>
 
-        <BlueprintBg />
-      </div>
+          <AuthTextInput
+            label="Password"
+            type="password"
+            placeholder="Enter your password"
+            required
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            error={fieldErrors.password}
+          />
+          <p className="text-xs text-default-500 -mt-3 mb-4">
+            At least 8 characters, with an uppercase letter, a lowercase letter, and a digit.
+          </p>
+
+          <AuthTextInput
+            label="Confirm Password"
+            type="password"
+            placeholder="Enter your confirm password"
+            required
+            value={confirmPassword}
+            onChange={(e) => setConfirmPassword(e.target.value)}
+            error={fieldErrors.confirmPassword}
+          />
+
+          {error && <p className="text-sm text-danger mb-4">{error}</p>}
+          {serverErrors.length > 0 && (
+            <ul className="text-sm text-danger mb-4 list-disc pl-5">
+              {serverErrors.map((message) => (
+                <li key={message}>{message}</li>
+              ))}
+            </ul>
+          )}
+
+          {/* items-start (not items-center) so the box stays on the first line of what is now a
+              full consent paragraph rather than floating at its vertical middle. */}
+          <div className="flex items-start gap-2 text-start mb-6 mt-3">
+            <input
+              type="checkbox"
+              id="checkbox-terms"
+              className="mt-1 size-4 shrink-0 rounded border-default-300 text-primary focus:ring focus:ring-primary/30 focus:ring-offset-0"
+              checked={termsAccepted}
+              onChange={(e) => setTermsAccepted(e.target.checked)}
+            />
+            <label className="text-sm text-default-500 font-medium select-none leading-relaxed" htmlFor="checkbox-terms">
+              <DataPrivacyConsentText />
+            </label>
+          </div>
+          {fieldErrors.terms && <p className="text-xs text-danger -mt-4 mb-4">{fieldErrors.terms}</p>}
+
+          <button type="submit" disabled={submitting} className="btn bg-primary text-white w-full min-h-11">
+            {submitting ? 'Creating account…' : 'Create Account'}
+          </button>
+
+          {/* TODO: OAuth sign-up (Google/Apple) hidden until backend is wired up - re-enable then. */}
+        </form>
+
+        <p className="mt-6 text-center text-sm text-default-500">
+          Already have an account?{' '}
+          <Link to="/login" className="font-semibold text-primary">
+            Sign In
+          </Link>
+        </p>
+      </AuthSplitLayout>
     </>
   )
 }
