@@ -8,6 +8,10 @@ export interface UserSummary {
   roles: Role[]
   createdAt: string
   emailConfirmed: boolean
+  /** Null for accounts that never went through public sign-up (seeded, admin-created) — "no
+   *  consent on record", not "refused". */
+  dataPrivacyConsentAt: string | null
+  dataPrivacyConsentVersion: string | null
 }
 
 export interface RoleSummary {

@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using PSMPE.Portal.Application.Auth;
@@ -69,6 +70,17 @@ public class AuthController(
     [HttpPost("register")]
     public async Task<ActionResult<RegisterResponse>> Register(RegisterRequest request)
     {
+        // Checked before anything else: without consent there is no lawful basis to process the
+        // rest of the payload, so we don't want it reaching a uniqueness lookup either.
+        if (!request.DataPrivacyConsent)
+        {
+            return ValidationProblem(new ValidationProblemDetails(new Dictionary<string, string[]>
+            {
+                [nameof(RegisterRequest.DataPrivacyConsent)] =
+                    ["Data privacy consent is required to create an account."],
+            }));
+        }
+
         // TODO: gate this behind the seeded SystemConfig "AllowPublicRegistration" flag once an
         // admin-facing settings UI exists to toggle it.
         var existing = await userManager.FindByEmailAsync(request.Email);
@@ -92,7 +104,12 @@ public class AuthController(
         {
             UserName = userName,
             Email = request.Email,
-            DisplayName = request.DisplayName
+            DisplayName = request.DisplayName,
+            // Server clock, not a client-supplied time - the record is only worth keeping if the
+            // caller can't backdate it. Version comes from the constant above rather than the
+            // request for the same reason.
+            DataPrivacyConsentAt = DateTimeOffset.UtcNow,
+            DataPrivacyConsentVersion = DataPrivacyConsent.CurrentVersion,
         };
 
         var result = await userManager.CreateAsync(user, request.Password);
@@ -212,6 +229,61 @@ public class AuthController(
         // No JWT issued here - the user logs in fresh at /login rather than being silently
         // authenticated by whoever holds the link (see ForgotPasswordPage/ResetPasswordPage).
         return Ok(new ResetPasswordResponse("Your password has been reset. You can now sign in."));
+    }
+
+    /// <summary>
+    /// Both consent endpoints resolve the caller from the JWT rather than a route/body id - a
+    /// user may only read or give their own consent, so there is nothing to authorize beyond
+    /// being signed in.
+    /// </summary>
+    private async Task<ApplicationUser?> GetCurrentUserAsync() =>
+        await userManager.GetUserAsync(User);
+
+    [Authorize]
+    [HttpGet("me/data-privacy-consent")]
+    public async Task<ActionResult<DataPrivacyConsentStatusResponse>> GetDataPrivacyConsent()
+    {
+        var user = await GetCurrentUserAsync();
+        if (user is null)
+        {
+            // Token is valid but the account is gone (deleted mid-session).
+            return Unauthorized();
+        }
+
+        return Ok(new DataPrivacyConsentStatusResponse(
+            DataPrivacyConsent.NeedsConsent(user.DataPrivacyConsentVersion),
+            DataPrivacyConsent.CurrentVersion,
+            user.DataPrivacyConsentVersion,
+            user.DataPrivacyConsentAt));
+    }
+
+    [Authorize]
+    [HttpPost("me/data-privacy-consent")]
+    public async Task<ActionResult<DataPrivacyConsentStatusResponse>> GiveDataPrivacyConsent()
+    {
+        var user = await GetCurrentUserAsync();
+        if (user is null)
+        {
+            return Unauthorized();
+        }
+
+        // No request body: consenting is always to the *current* wording at the server's clock.
+        // Accepting a version from the caller would let them claim consent to text they never saw.
+        user.DataPrivacyConsentAt = DateTimeOffset.UtcNow;
+        user.DataPrivacyConsentVersion = DataPrivacyConsent.CurrentVersion;
+
+        var result = await userManager.UpdateAsync(user);
+        if (!result.Succeeded)
+        {
+            return ValidationProblem(new ValidationProblemDetails(
+                result.Errors.ToDictionary(e => e.Code, e => new[] { e.Description })));
+        }
+
+        return Ok(new DataPrivacyConsentStatusResponse(
+            DataPrivacyConsent.NeedsConsent(user.DataPrivacyConsentVersion),
+            DataPrivacyConsent.CurrentVersion,
+            user.DataPrivacyConsentVersion,
+            user.DataPrivacyConsentAt));
     }
 
     [HttpGet("username-available")]

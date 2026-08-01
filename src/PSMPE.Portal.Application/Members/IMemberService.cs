@@ -19,6 +19,10 @@ public interface IMemberService
     Task<Result<MemberDto>> UpsertMyProfileAsync(Guid userId, UpdateMyProfileRequest request, CancellationToken cancellationToken = default);
     Task<Result> SubmitMyProfileAsync(Guid userId, CancellationToken cancellationToken = default);
     Task<Result> DeleteAsync(Guid id, CancellationToken cancellationToken = default);
+    /// <summary>Used by AdminController.DeleteUser before deleting the login account - the Member
+    /// row cascades away with it, which would throw a raw DbUpdateException if PRC verification
+    /// history exists (same Restrict FK DeleteAsync above already guards against by Member.Id).</summary>
+    Task<bool> HasPrcVerificationHistoryAsync(Guid userId, CancellationToken cancellationToken = default);
     Task<Result> ApprovePrcVerificationAsync(Guid memberId, Guid decidedByUserId, CancellationToken cancellationToken = default);
     Task<Result> RejectPrcVerificationAsync(Guid memberId, string reason, Guid decidedByUserId, CancellationToken cancellationToken = default);
     Task<ProfileCompletenessDto?> GetProfileCompletenessAsync(Guid userId, CancellationToken cancellationToken = default);

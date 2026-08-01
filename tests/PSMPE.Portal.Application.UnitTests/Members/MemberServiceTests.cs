@@ -865,4 +865,34 @@ public class MemberServiceTests
         Assert.False(result.Succeeded);
         Assert.NotNull(await service.GetByIdAsync(member.Id));
     }
+
+    [Fact]
+    public async Task HasPrcVerificationHistoryAsync_MemberWithHistory_ReturnsTrue()
+    {
+        using var db = TestDbContext.CreateInMemory();
+        var service = new MemberService(db);
+        var member = await SeedSubmittedMemberAsync(db, prcLicenseNo: "MP-1");
+        await service.ApprovePrcVerificationAsync(member.Id, Guid.NewGuid());
+
+        Assert.True(await service.HasPrcVerificationHistoryAsync(member.UserId));
+    }
+
+    [Fact]
+    public async Task HasPrcVerificationHistoryAsync_MemberWithoutHistory_ReturnsFalse()
+    {
+        using var db = TestDbContext.CreateInMemory();
+        var service = new MemberService(db);
+        var member = await SeedSubmittedMemberAsync(db, prcLicenseNo: "MP-1");
+
+        Assert.False(await service.HasPrcVerificationHistoryAsync(member.UserId));
+    }
+
+    [Fact]
+    public async Task HasPrcVerificationHistoryAsync_UserWithNoMemberProfile_ReturnsFalse()
+    {
+        using var db = TestDbContext.CreateInMemory();
+        var service = new MemberService(db);
+
+        Assert.False(await service.HasPrcVerificationHistoryAsync(Guid.NewGuid()));
+    }
 }

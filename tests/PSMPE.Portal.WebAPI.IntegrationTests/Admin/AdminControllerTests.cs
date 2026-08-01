@@ -5,6 +5,8 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using PSMPE.Portal.Application.Common.Models;
+using PSMPE.Portal.Application.Members;
+using PSMPE.Portal.Application.Members.Dtos;
 using PSMPE.Portal.Domain.Entities;
 using PSMPE.Portal.Domain.Enums;
 using PSMPE.Portal.WebAPI.Controllers;
@@ -32,6 +34,9 @@ public class AdminControllerTests : IClassFixture<CustomWebApplicationFactory>, 
     private readonly AdminController _controller;
     private readonly UserManager<ApplicationUser> _userManager;
     private readonly RoleManager<IdentityRole<Guid>> _roleManager;
+    private readonly IMemberService _memberService;
+    private readonly IMemberUploadService _memberUploadService;
+    private readonly IMemberCertificateService _memberCertificateService;
 
     public AdminControllerTests(CustomWebApplicationFactory factory)
     {
@@ -39,6 +44,9 @@ public class AdminControllerTests : IClassFixture<CustomWebApplicationFactory>, 
         _scope = factory.Services.CreateScope();
         _userManager = _scope.ServiceProvider.GetRequiredService<UserManager<ApplicationUser>>();
         _roleManager = _scope.ServiceProvider.GetRequiredService<RoleManager<IdentityRole<Guid>>>();
+        _memberService = _scope.ServiceProvider.GetRequiredService<IMemberService>();
+        _memberUploadService = _scope.ServiceProvider.GetRequiredService<IMemberUploadService>();
+        _memberCertificateService = _scope.ServiceProvider.GetRequiredService<IMemberCertificateService>();
         _controller = CreateController(callerRoles: RoleNames.SuperAdmin);
     }
 
@@ -55,7 +63,9 @@ public class AdminControllerTests : IClassFixture<CustomWebApplicationFactory>, 
         var claims = new List<Claim> { new(ClaimTypes.NameIdentifier, (callerId ?? Guid.NewGuid()).ToString()) };
         claims.AddRange(callerRoles.Select(r => new Claim(ClaimTypes.Role, r)));
         var httpContext = new DefaultHttpContext { User = new ClaimsPrincipal(new ClaimsIdentity(claims, "TestAuth")) };
-        return new AdminController(_userManager, _roleManager, NullLogger<AdminController>.Instance)
+        return new AdminController(
+            _userManager, _roleManager, NullLogger<AdminController>.Instance,
+            _memberService, _memberUploadService, _memberCertificateService)
         {
             ControllerContext = new ControllerContext { HttpContext = httpContext }
         };
@@ -337,6 +347,87 @@ public class AdminControllerTests : IClassFixture<CustomWebApplicationFactory>, 
 
         Assert.IsType<NotFoundResult>(result);
         Assert.NotNull(await _userManager.FindByIdAsync(superAdmin.Id.ToString()));
+    }
+
+    private static CreateMemberRequest BuildMemberRequest(Guid userId, string? prcLicenseNo = null) => new(
+        UserId: userId,
+        MembershipNo: Guid.NewGuid().ToString("N")[..8],
+        FirstName: "Test",
+        MiddleName: null,
+        LastName: "User",
+        Suffix: null,
+        Birthdate: null,
+        Gender: null,
+        CivilStatus: null,
+        EducationLevel: null,
+        SchoolName: null,
+        CourseYearGraduated: null,
+        SpecifiedProfession: null,
+        MobileNumber: null,
+        HouseNo: null,
+        Street: null,
+        Barangay: null,
+        CityMunicipality: null,
+        Province: null,
+        ZipCode: null,
+        MailingHouseNo: null,
+        MailingStreet: null,
+        MailingBarangay: null,
+        MailingCityMunicipality: null,
+        MailingProvince: null,
+        MailingZipCode: null,
+        HousePhone: null,
+        Website: null,
+        FacebookUrl: null,
+        LinkedInUrl: null,
+        XUrl: null,
+        InstagramUrl: null,
+        PrcLicenseNo: prcLicenseNo,
+        PrcRegistrationDate: null,
+        PrcValidUntilDate: null,
+        PtrNumber: null,
+        Tin: null,
+        Chapter: Chapters.Ncr,
+        EmploymentStatus: null,
+        Company: null,
+        Position: null,
+        BusinessAddress: null,
+        YearsOfPractice: null,
+        Specialization: null,
+        Skills: null,
+        MemberType: MemberTypes.Regular,
+        RenewalDueDate: null,
+        NationalDuesReferenceNo: null);
+
+    [Fact]
+    public async Task DeleteUser_WithPrcVerificationHistory_ReturnsConflict()
+    {
+        var user = await CreateUserAsync(RoleNames.Member);
+        var created = await _memberService.CreateAsync(BuildMemberRequest(user.Id, prcLicenseNo: "MP-1"));
+        var member = Assert.IsType<MemberDto>(created.Value);
+        await _memberService.ApprovePrcVerificationAsync(member.Id, Guid.NewGuid());
+
+        var result = await _controller.DeleteUser(user.Id);
+
+        Assert.IsType<ConflictObjectResult>(result);
+        Assert.NotNull(await _userManager.FindByIdAsync(user.Id.ToString()));
+    }
+
+    [Fact]
+    public async Task DeleteUser_RemovesUploadsAndCertificates()
+    {
+        var user = await CreateUserAsync(RoleNames.Member);
+        await using (var stream = new MemoryStream([1, 2, 3, 4]))
+        {
+            await _memberCertificateService.UploadAsync(user.Id, stream, "cert.pdf", stream.Length);
+        }
+        var certificatesBefore = await _memberCertificateService.ListAsync(user.Id);
+        Assert.Single(certificatesBefore);
+
+        var result = await _controller.DeleteUser(user.Id);
+
+        Assert.IsType<NoContentResult>(result);
+        Assert.Empty(await _memberCertificateService.ListAsync(user.Id));
     }
 
     [Fact]

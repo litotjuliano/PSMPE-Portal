@@ -68,6 +68,12 @@ see Open questions/TODO for what's deferred.
   - Auth: `members:manage` permission
   - Leaves the underlying login/role account intact — retiring someone's membership record
     doesn't delete their system account.
+  - `400` if the member has any RMP/PRC verification history on record (`Restrict` FK on
+    `PrcVerificationHistories`) — a clean rejection instead of a raw `DbUpdateException`.
+  - Contrast with deleting the *User* account entirely (`DELETE /api/admin/users/{id}`, Super
+    Admin only - see `roles.md`), which cascades to remove this `Member` row too (plus
+    `MemberUploads`/`MemberCertificates` and their files), and is blocked the same way (`409`
+    there, since it's checked before the User row itself is touched).
 
 ## Draft vs. Submitted vs. Approved vs. Status
 
@@ -176,7 +182,7 @@ Files are **not** stored in Postgres, and are **not** served as plain static URL
 deliberate calls, not the obvious defaults:
 
 - **`MemberUpload`** (`Domain.Entities`) is a thin pointer row - `UserId`, `Kind`
-  (`Photo`/`PrcId`/`ValidGovernmentId`/`Signature`/`ProofOfPayment`), `StorageKey`,
+  (`Photo`/`PrcId`/`ValidGovernmentId`/`Signature`/`ProofOfPayment`/`Receipt`), `StorageKey`,
   `ContentType` - a few dozen bytes, regardless of the file's actual size. Keyed by `UserId`, not
   `MemberId`, so a photo/RMP ID can be uploaded before any
   `Member` row exists yet (before Personal Info is saved). One row per `(UserId, Kind)` - a
@@ -185,6 +191,13 @@ deliberate calls, not the obvious defaults:
   Postgres storage far more expensively than object storage, and it only gets worse as photos +
   PRC IDs + eventual CPD certificates accumulate across the whole membership base - that would
   force costly compute-tier upgrades just for storage headroom.
+  - **`Kind` is a string-backed enum** (`HasConversion<string>()` in `MemberUploadConfiguration`),
+    not EF's default raw int. This fixed a real data-corruption incident: removing `FormalPhoto`
+    from the middle of the enum shifted every later ordinal down by one, so a stale row written
+    before the removal was silently reinterpreted as a *different* `Kind` once a new value
+    (`Receipt`) was appended at the now-vacant ordinal - a member's PRC ID scan was served back as
+    their payment receipt. The string conversion (with an explicit ordinal→name migration to
+    correct already-persisted rows) makes the column immune to any future enum reordering.
 - **`IFileStorageService`** (`Application.Common.Interfaces`) abstracts *where* the bytes actually
   live, behind `SaveAsync`/`OpenReadAsync` keyed by an opaque string. `LocalDiskFileStorageService`
   (`Infrastructure.Services`) is the only implementation today - writes/reads under
@@ -203,7 +216,9 @@ deliberate calls, not the obvious defaults:
 - `POST /api/members/me/photo`, `.../prc-id`, `.../valid-government-id`,
   `.../signature`, `.../proof-of-payment` - `[Authorize]` only, multipart file.
 - `GET /api/members/me/{kind}` (same kinds) - `[Authorize]` only, own file.
-- `GET /api/members/{id}/{kind}` (same kinds) - `members:view` permission.
+- `GET /api/members/me/receipt` - `[Authorize]` only, own file - no matching `POST`, members never
+  upload this themselves (see Membership Approvals below for how it's created).
+- `GET /api/members/{id}/{kind}` (same kinds, `Receipt` excluded) - `members:view` permission.
 
 **Images are optimized, not just size-gated**: users frequently don't know how large their phone
 photos are before picking one, so `.jpg`/`.jpeg`/`.png` uploads are accepted up to `24MB` raw, then
@@ -237,6 +252,14 @@ Object URLs are revoked on replacement/unmount to avoid leaking memory.
 Still no orphan-file cleanup if a photo/PRC ID's *extension* changes between uploads (e.g. PRC ID
 switching from an image to a PDF) - the storage key changes, so the previous file at the old key
 is left behind. Minor, same-extension re-uploads (the common case) simply overwrite in place.
+
+**Deployment note**: the WebAPI container runs as the base image's non-root `app` user, so the
+`wwwroot/uploads` volume it writes to must be owned by that user. Docker only applies the image's
+ownership to a *freshly created* named volume - an already-existing volume keeps whatever
+ownership it was first initialized with, which was `root` here (predating the Dockerfile
+explicitly creating this directory under `USER app`), causing every upload to fail with an
+`UnauthorizedAccessException` until manually `chown`'d on the running containers (staging and
+production both hit this).
 
 ## Membership Approvals + notifications
 

@@ -1,11 +1,9 @@
 import { useEffect, useState } from 'react'
-import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
+import { useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import { isAxiosError } from 'axios'
 import { useAuth } from '../auth/useAuth'
 import { authApi } from '../api/endpoints/authApi'
-import { BlueprintBg, PageMeta } from '../../integrations/template'
-import logoDark from '../../integrations/template/assets/images/logo-dark.png'
-import logoLight from '../../integrations/template/assets/images/logo-light.png'
+import { AuthSplitLayout, PageMeta } from '../../integrations/template'
 import emailImg from '../../integrations/template/assets/images/auth-email.png'
 
 interface LocationState {
@@ -61,71 +59,60 @@ export function VerifyEmailPage() {
     }
   }
 
+  // AuthSplitLayout takes a single subheading string, so the three states collapse to one line
+  // here and the detail lives in the body below.
+  const subheading = verifying
+    ? 'Verifying your email…'
+    : verifyError
+      ? "We couldn't verify this link."
+      : 'Check your email to activate your account.'
+
   return (
     <>
       <PageMeta title="Verify Email" />
-      <div className="relative min-h-screen w-full flex flex-col justify-center items-center py-16 md:py-10">
-        <div className="card md:w-lg w-screen z-10">
-          <div className="text-center px-10 py-12">
-            <Link to="/" className="flex justify-center">
-              <img src={logoDark} alt="logo dark" className="h-6 flex dark:hidden" width={111} />
-              <img src={logoLight} alt="logo light" className="h-6 hidden dark:flex" width={111} />
-            </Link>
-
-            <div className="mt-8 text-center">
-              <h4 className="mb-3 text-xl font-semibold text-primary">Verify Email</h4>
-
-              {verifying ? (
-                <p className="text-base text-default-500 mb-4">Verifying your email…</p>
-              ) : verifyError ? (
-                <>
-                  <p className="text-sm text-danger mb-4">{verifyError}</p>
-                  <p className="text-base text-default-500 mb-4">
-                    Need a new link?{' '}
-                    <button type="button" onClick={handleResend} disabled={resending || !email} className="text-primary disabled:opacity-50">
-                      Resend verification email
-                    </button>
-                  </p>
-                </>
-              ) : (
-                <>
-                  <p className="text-base text-default-500 mb-4">
-                    {email ? (
-                      <>
-                        We sent a verification link to <span className="font-semibold text-default-800">{email}</span>. Click it to
-                        activate your account.
-                      </>
-                    ) : (
-                      'Check your email for a verification link to activate your account.'
-                    )}
-                  </p>
-                  <p className="text-base text-default-500 mb-4">
-                    Did you not receive an email?{' '}
-                    <button type="button" onClick={handleResend} disabled={resending || !email} className="text-primary disabled:opacity-50">
-                      {resending ? 'Sending…' : 'Try again'}
-                    </button>
-                  </p>
-                  {resendMessage && <p className="text-sm text-default-500 mb-4">{resendMessage}</p>}
-                  {devLink && (
-                    <p className="text-xs text-default-500 mb-4 break-all">
-                      Dev only (no email provider configured):{' '}
-                      <a href={devLink} className="text-primary underline">
-                        {devLink}
-                      </a>
-                    </p>
-                  )}
-                </>
+      <AuthSplitLayout heading="Verify Email" subheading={subheading}>
+        <div className="w-full">
+          {verifyError ? (
+            <>
+              <p className="text-sm text-danger mb-4">{verifyError}</p>
+              <p className="text-base text-default-500 mb-4">
+                Need a new link?{' '}
+                <button type="button" onClick={handleResend} disabled={resending || !email} className="text-primary disabled:opacity-50">
+                  {resending ? 'Sending…' : 'Resend verification email'}
+                </button>
+              </p>
+            </>
+          ) : !verifying ? (
+            <>
+              {/* Only rendered when we know the address - without it this would just restate the
+                  subheading verbatim. */}
+              {email && (
+                <p className="text-base text-default-500 mb-4">
+                  We sent a verification link to <span className="font-semibold text-default-800">{email}</span>. Click it to
+                  activate your account.
+                </p>
               )}
+              <p className="text-base text-default-500 mb-4">
+                Did you not receive an email?{' '}
+                <button type="button" onClick={handleResend} disabled={resending || !email} className="text-primary disabled:opacity-50">
+                  {resending ? 'Sending…' : 'Try again'}
+                </button>
+              </p>
+              {resendMessage && <p className="text-sm text-default-500 mb-4">{resendMessage}</p>}
+              {devLink && (
+                <p className="text-xs text-default-500 mb-4 break-all">
+                  Dev only (no email provider configured):{' '}
+                  <a href={devLink} className="text-primary underline">
+                    {devLink}
+                  </a>
+                </p>
+              )}
+            </>
+          ) : null}
 
-              <div className="mt-10 text-center">
-                <img src={emailImg} alt="" className="block w-1/2 mx-auto" />
-              </div>
-            </div>
-          </div>
+          <img src={emailImg} alt="" className="block w-1/2 max-w-[180px] mx-auto mt-6" />
         </div>
-
-        <BlueprintBg />
-      </div>
+      </AuthSplitLayout>
     </>
   )
 }
