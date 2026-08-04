@@ -1,3 +1,5 @@
+using System.Net;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -15,6 +17,34 @@ builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddPortalSwagger();
 builder.Services.AddHealthChecks();
+
+// The app sits behind nginx, which is the only thing that ever talks to Kestrel directly.
+// Without this, every request appears to come from the Docker bridge gateway and every
+// IP-partitioned rate limit collapses into a single global bucket.
+builder.Services.Configure<ForwardedHeadersOptions>(options =>
+{
+    options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
+
+    // Defaults trust loopback only. nginx proxies to localhost:5000, which is docker-proxy, so
+    // the container sees the bridge gateway (172.x.x.1) instead - the default would silently
+    // reject the header.
+    options.KnownNetworks.Clear();
+    options.KnownProxies.Clear();
+    var cidrs = builder.Configuration["ForwardedHeaders:KnownNetworks"] ?? "172.16.0.0/12";
+    foreach (var cidr in cidrs.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+    {
+        var parts = cidr.Split('/');
+        // Fully qualified: System.Net.IPNetwork (.NET 8) is a different type with the same name,
+        // and KnownNetworks takes the HttpOverrides one.
+        options.KnownNetworks.Add(new Microsoft.AspNetCore.HttpOverrides.IPNetwork(
+            IPAddress.Parse(parts[0]), int.Parse(parts[1])));
+    }
+
+    // Exactly one hop. nginx's $proxy_add_x_forwarded_for APPENDS the real peer to whatever the
+    // client sent, so the rightmost entry is the only trustworthy one. Raising this would let an
+    // attacker pick their own rate limit partition with a forged header.
+    options.ForwardLimit = 1;
+});
 
 builder.Services.AddApplication();
 builder.Services.AddInfrastructure(builder.Configuration);
@@ -35,6 +65,10 @@ if (app.Environment.IsDevelopment())
     app.UseSwagger();
     app.UseSwaggerUI();
 }
+
+// First in the pipeline: everything downstream (CORS, auth, rate limiting, logging) should
+// see the real client address, not the proxy's.
+app.UseForwardedHeaders();
 
 app.UseMiddleware<ExceptionHandlingMiddleware>();
 
