@@ -42,8 +42,7 @@ public class CustomWebApplicationFactory : WebApplicationFactory<Program>
         {
             services.RemoveAll<DbContextOptions<ApplicationDbContext>>();
             services.AddDbContext<ApplicationDbContext>(options => options.UseInMemoryDatabase(_databaseName));
-            services.AddSingleton<Microsoft.AspNetCore.Hosting.IStartupFilter,
-                TestSupport.FakeRemoteIpStartupFilter>();
+            services.AddSingleton<IStartupFilter, TestSupport.FakeRemoteIpStartupFilter>();
         });
     }
 
