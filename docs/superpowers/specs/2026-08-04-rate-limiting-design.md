@@ -29,13 +29,19 @@ The public unauthenticated surface is wider than login alone: `register`, `verif
 `resend-verification-email`, `forgot-password`, `reset-password`, `username-available`,
 `login`. `username-available` is a user-enumeration oracle;
 `forgot-password` and `resend-verification-email` are email-send amplifiers that cost SMTP
-reputation, not just CPU. `POST /api/ai/prompt` bills a real OpenAI key per call and
-already carries a `// TODO: add per-user rate limiting` comment.
+reputation, not just CPU.
+
+`POST /api/ai/prompt` is **excluded from this design**. It bills a real OpenAI key per call
+(the key is set in both the production and staging `.env`), but it is unused scaffolding:
+the README describes it as a stub, the controller calls itself "starter endpoint structure
+for future prompt execution", and `apps/web/src/core/api/endpoints/aiApi.ts` is imported by
+no file in the frontend. There is no user-facing AI feature. Rate limiting a funded endpoint
+with no product behind it is the wrong fix — it is being disabled instead, under a separate
+change (see "Related work").
 
 ## Goal
 
-One coherent policy set covering both credential/account abuse and AI spend. These need
-different partition keys and different windows; doing only one leaves an obvious hole.
+One coherent policy set covering credential and account abuse across the public auth surface.
 
 ## Approach
 
@@ -44,9 +50,9 @@ available in net8.0 — no package reference needed).
 
 Rejected alternatives:
 
-- **nginx-only (`limit_req_zone`).** nginx only knows IP addresses. It cannot partition by
-  authenticated user (no per-user AI quota) and cannot limit attempts against a specific
-  account — the two things we most need. Limits would live in a droplet file outside git:
+- **nginx-only (`limit_req_zone`).** nginx only knows IP addresses. It cannot limit attempts
+  against a specific account, which is the defense that actually matters here, and it cannot
+  see request bodies to throttle per email address. Limits would live in a droplet file outside git:
   unreviewable, untestable, free to drift between staging and production. Also bypassable
   today via `:5000`.
 - **Defense in depth (coarse nginx + fine-grained app).** Strictly the best protection, and
@@ -62,24 +68,19 @@ Rather than forcing everything through the rate limiter, responsibilities split 
 information each mechanism has access to.
 
 **Mechanism 1 — rate limiter middleware.** Partitions on what is available without reading
-the request body: client IP, or authenticated user id. Cheap, generic, runs before MVC.
+the request body — in practice the client IP. Cheap, generic, runs before MVC.
 
 | Policy | Endpoints | Partition key | Limit |
 |---|---|---|---|
 | `auth-ip` | `login`, `register`, `verify-email`, `reset-password` | client IP | 20 / 5 min |
 | `auth-email-send` | `forgot-password`, `resend-verification-email` | client IP | 10 / hour |
 | `username-probe` | `username-available` | client IP | 30 / min |
-| `ai-user` | `POST /api/ai/prompt` | authenticated user id | 20 / hour |
 | `global` | everything else | client IP | 300 / min |
 
-All five policies use a **fixed window** limiter. Fixed window is chosen over sliding window
+All four policies use a **fixed window** limiter. Fixed window is chosen over sliding window
 or token bucket for its cheaper state (one counter per partition rather than a timestamp log)
 and because the limits above are generous enough that boundary bursts — up to 2× the permit
 across a window edge — are not a meaningful weakness.
-
-`ai-user` partitions on the authenticated user id; `AiController` is `[Authorize]`, so an
-unauthenticated request is rejected by auth before the limiter matters. If the user id is
-somehow absent, the policy falls back to the client IP rather than to an unlimited partition.
 
 `username-probe` is deliberately loose: `username-available` is called from a 500ms-debounced
 typeahead in `RegisterPage.tsx`, so one honest person filling in the form produces ~10–15
@@ -198,6 +199,25 @@ chain in every test rather than mocking it away.
 3. Exercise the limits by hand.
 4. Production.
 5. The port-binding change ships as its own step, verified independently.
+
+## Related work
+
+**Disable the AI prompt endpoint** — a separate, small change, not part of this spec, but the
+reason `/api/ai/prompt` is absent from the policy table above.
+
+Add an `Ai:Enabled` configuration flag (defaulting to `false`, following the same
+`GetValue<bool?>("Section:Key") ?? default` idiom as `Cache:Enabled`) and return 503 from
+`AiController` when it is off. This keeps the scaffolding intact for whenever a real AI
+feature is built, while removing a live, billable, unused endpoint from the attack surface
+today. Flipping one env var re-enables it.
+
+Cost context, for whenever it is switched back on: at `gpt-4o-mini`'s approximate
+$0.15/1M input and $0.60/1M output pricing (verify before budgeting — this is subject to
+change), a typical call costs ~$0.0004 while a worst-case one costs ~$0.029, a ~75× spread.
+`OpenAiPromptExecutionService` sets no `MaxOutputTokenCount`, `AiController` caps no prompt
+length, and `completion.Value.Usage` is discarded, so per-call cost is unbounded by our code
+and unrecorded. If the endpoint is ever enabled, it needs an output token cap, a prompt
+length cap, and usage logging — rate limiting alone caps call count, not cost per call.
 
 ## Out of scope
 
