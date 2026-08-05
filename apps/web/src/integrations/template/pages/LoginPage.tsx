@@ -46,7 +46,12 @@ export const LoginPage = () => {
       navigate('/')
     } catch (err) {
       if (isAxiosError(err)) {
-        if (err.response?.status === 403 && (err.response.data as { code?: string } | undefined)?.code === 'EMAIL_NOT_CONFIRMED') {
+        if (err.response?.status === 403 && (err.response.data as { code?: string } | undefined)?.code === 'ACCOUNT_LOCKED') {
+          // Must precede the generic err.response arm below, which would otherwise blame our
+          // servers for what is a deliberate lockout - and invite the immediate retry that is
+          // exactly what won't work. Wording matches AuthController.Login's lockedMessage.
+          setError('This account is temporarily locked after too many failed sign-in attempts. Please try again later.')
+        } else if (err.response?.status === 403 && (err.response.data as { code?: string } | undefined)?.code === 'EMAIL_NOT_CONFIRMED') {
           setError('Please verify your email before signing in.')
           setNeedsVerification(true)
         } else if (err.response?.status === 401) {
