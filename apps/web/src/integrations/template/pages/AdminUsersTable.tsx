@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
-import { LuCheck, LuChevronDown, LuChevronUp, LuPlus, LuSquarePen, LuTrash2 } from 'react-icons/lu'
+import { LuCheck, LuChevronDown, LuChevronUp, LuKeyRound, LuPlus, LuSquarePen, LuTrash2 } from 'react-icons/lu'
 import type { GetUsersParams, UserSummary } from '../../../core/api/endpoints/adminApi'
 import { AssignableRoles, Roles, type Role } from '../../../core/types/auth'
 import { ConfirmationModal } from '../components/shared/ConfirmationModal'
@@ -17,6 +17,10 @@ interface AdminUsersTableProps {
   onToggleRole: (userId: string, role: Role, hasRole: boolean) => void
   onDelete: (id: string) => void
   onVerifyEmail: (userId: string) => void
+  /** Server gate is the admin:manage-users permission; the client approximates it by role, since
+   *  the token carries roles but not permissions. The API rejects it either way. */
+  canSendPasswordReset: boolean
+  onSendPasswordReset: (userId: string) => void
   currentUserEmail?: string
   sortBy: SortableColumn
   sortDir: 'asc' | 'desc'
@@ -67,6 +71,8 @@ export const AdminUsersTable = ({
   onToggleRole,
   onDelete,
   onVerifyEmail,
+  canSendPasswordReset,
+  onSendPasswordReset,
   currentUserEmail,
   sortBy,
   sortDir,
@@ -79,6 +85,7 @@ export const AdminUsersTable = ({
   const totalPages = Math.max(1, Math.ceil(totalCount / pageSize))
   const [deletingUser, setDeletingUser] = useState<UserSummary | null>(null)
   const [verifyingUser, setVerifyingUser] = useState<UserSummary | null>(null)
+  const [resettingUser, setResettingUser] = useState<UserSummary | null>(null)
 
   return (
     <div className="card">
@@ -188,6 +195,20 @@ export const AdminUsersTable = ({
                       <td className="py-3 px-3.5 text-default-500">{new Date(user.createdAt).toLocaleDateString()}</td>
                       <td className="py-3 px-3.5">
                         <div className="flex items-center gap-1.5">
+                          {/* Outside the isSuperAdmin block: an Admin holds admin:manage-users and
+                              should be able to help someone back into their account, even though
+                              they cannot edit or delete the record. Super Admin rows are excluded
+                              because the API hides them from every other caller. */}
+                          {canSendPasswordReset && !isSuperAdminRow && user.emailConfirmed && (
+                            <button
+                              onClick={() => setResettingUser(user)}
+                              className="btn btn-icon size-8 hover:bg-default-150 rounded-full text-default-500"
+                              aria-label="Send password reset email"
+                              title="Send password reset email"
+                            >
+                              <LuKeyRound className="size-4" />
+                            </button>
+                          )}
                           {isSuperAdmin && (
                             <>
                               {isSuperAdminRow ? (
@@ -292,6 +313,23 @@ export const AdminUsersTable = ({
           setVerifyingUser(null)
         }}
         onCancel={() => setVerifyingUser(null)}
+      />
+
+      <ConfirmationModal
+        isOpen={resettingUser !== null}
+        title="Send a password reset email?"
+        message={
+          resettingUser
+            ? `${resettingUser.email} will be emailed a link to choose a new password. You won't see or set the password yourself, and their current one keeps working until they use the link.`
+            : undefined
+        }
+        confirmLabel="Send"
+        confirmVariant="primary"
+        onConfirm={() => {
+          if (resettingUser) onSendPasswordReset(resettingUser.id)
+          setResettingUser(null)
+        }}
+        onCancel={() => setResettingUser(null)}
       />
     </div>
   )

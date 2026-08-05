@@ -44,6 +44,12 @@ export function AdminUsersPage() {
     adminApi.verifyEmail(userId).then(refetch)
   }
 
+  const handleSendPasswordReset = (userId: string) => {
+    // No refetch: sending a reset changes nothing on this list. The account keeps its current
+    // password until the member actually uses the emailed link.
+    adminApi.sendPasswordReset(userId)
+  }
+
   const handleSortChange = (column: NonNullable<GetUsersParams['sortBy']>) => {
     if (column === sortBy) {
       setSortDir((current) => (current === 'asc' ? 'desc' : 'asc'))
@@ -66,6 +72,10 @@ export function AdminUsersPage() {
             users={users}
             canManageRoles={isSuperAdmin}
             isSuperAdmin={isSuperAdmin}
+            // Approximates the server's admin:manage-users gate, which the token doesn't carry -
+            // it ships with both roles by default, and the API enforces the real check.
+            canSendPasswordReset={isSuperAdmin || (user?.roles.includes(Roles.Admin) ?? false)}
+            onSendPasswordReset={handleSendPasswordReset}
             onToggleRole={handleToggleRole}
             onDelete={handleDelete}
             onVerifyEmail={handleVerifyEmail}

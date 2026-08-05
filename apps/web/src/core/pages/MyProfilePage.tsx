@@ -4,7 +4,7 @@ import { useAuth } from '../auth/useAuth'
 import { Roles } from '../types/auth'
 import { MemberTypes } from '../types/member'
 import type { Member } from '../types/member'
-import { AdminAccountPhotoCard } from './AdminAccountPhotoCard'
+import { AccountSection } from './AccountSection'
 import { describeError } from '../utils/apiError'
 import {
   MembershipApplicationWizardCard,
@@ -366,24 +366,33 @@ export function MyProfilePage() {
         {loading ? (
           <p className="text-sm text-default-500">Loading…</p>
         ) : isAdministrativeAccount && hasNoMembershipProfile ? (
-          <AdminAccountPhotoCard />
-        ) : isDraft ? (
-          <MembershipApplicationWizardCard
-            step={wizardStep}
-            maxStepReached={maxStepReached}
-            state={wizardState}
-            onChange={handleWizardChange}
-            onNext={handleWizardNext}
-            onBack={handleWizardBack}
-            onStepClick={handleStepClick}
-            onSubmit={handleWizardSubmit}
-            accountEmail={user?.email ?? ''}
-            error={wizardError}
-            submitting={submitting}
-            navigating={navigating}
-          />
+          // Administrative accounts have no membership application at all, so the account section
+          // is the whole page rather than an addition to it.
+          <AccountSection />
         ) : (
-          <MyProfileTabsCard existing={existing as Member} onUpdated={setExisting} />
+          <div className="flex flex-col gap-4">
+            {isDraft ? (
+              <MembershipApplicationWizardCard
+                step={wizardStep}
+                maxStepReached={maxStepReached}
+                state={wizardState}
+                onChange={handleWizardChange}
+                onNext={handleWizardNext}
+                onBack={handleWizardBack}
+                onStepClick={handleStepClick}
+                onSubmit={handleWizardSubmit}
+                accountEmail={user?.email ?? ''}
+                error={wizardError}
+                submitting={submitting}
+                navigating={navigating}
+              />
+            ) : (
+              <MyProfileTabsCard existing={existing as Member} onUpdated={setExisting} />
+            )}
+            {/* Members get the same self-service account controls - name, photo, password are on
+                ApplicationUser, which every role has, and nothing about them is membership data. */}
+            <AccountSection />
+          </div>
         )}
       </main>
     </>
