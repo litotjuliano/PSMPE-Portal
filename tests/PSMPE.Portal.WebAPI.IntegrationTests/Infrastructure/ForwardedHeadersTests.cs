@@ -84,8 +84,8 @@ public class ForwardedHeadersTests : IClassFixture<CustomWebApplicationFactory>,
         // empty, and ForwardedHeadersMiddleware only performs its known-peer check when
         // KnownProxies.Count + KnownNetworks.Count > 0 - so an empty set silently trusted
         // X-Forwarded-For from any peer, with no exception and no log. Asserted on the options
-        // rather than a resolved IP because the diagnostics endpoint that would expose one does
-        // not exist yet; the empty set IS the defect, so this pins it at the source.
+        // rather than a resolved IP because the empty set IS the defect - pinning it at the source
+        // catches a misconfiguration that a resolved-IP assertion would only catch indirectly.
         using var factory = _factory.WithWebHostBuilder(builder =>
             builder.ConfigureAppConfiguration((_, config) => config.AddInMemoryCollection(
                 new Dictionary<string, string?> { ["ForwardedHeaders:KnownNetworks"] = configured })));

@@ -31,8 +31,15 @@ public static class RateLimitingServiceExtensions
 
     private static int _proxyIpWarningLogged;
 
-    /// <summary>The config sections each carrying a PermitLimit/WindowMinutes pair.</summary>
-    private static readonly string[] LimitSections = ["AuthIp", "AuthEmailSend", "UsernameProbe", "Global"];
+    /// <summary>
+    /// The config sections each carrying a PermitLimit/WindowMinutes pair. EmailSendPerAddress is
+    /// validated here despite being enforced by MemoryCacheEmailSendThrottle rather than by a
+    /// limiter policy: a WindowMinutes of 0 there makes every window end the instant it opens, so
+    /// the throttle silently permits every send. That fails open on the control protecting our
+    /// SMTP reputation, so it gets the same startup rejection as the rest.
+    /// </summary>
+    private static readonly string[] LimitSections =
+        ["AuthIp", "AuthEmailSend", "UsernameProbe", "Global", "EmailSendPerAddress"];
 
     private static readonly string[] LimitSettings = ["PermitLimit", "WindowMinutes"];
 
