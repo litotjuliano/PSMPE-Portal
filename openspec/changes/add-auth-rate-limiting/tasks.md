@@ -24,7 +24,7 @@ Nothing else in this plan works until the app can see a real client IP. Do this 
 
 - [ ] **1.1 Add the test-side remote IP filter**
 
-`TestServer` leaves `HttpContext.Connection.RemoteIpAddress` null, so `UseForwardedHeaders` would reject every `X-Forwarded-For` as coming from an untrusted peer and no test could exercise the real path. This filter simulates the Docker bridge peer. `IStartupFilter` middleware runs *before* the pipeline in `Program.cs`, which is exactly where a real proxy hop sits.
+`TestServer` leaves `HttpContext.Connection.RemoteIpAddress` null, and `ForwardedHeadersMiddleware` **skips its known-peer check entirely when the peer is null** (its guard reads `RemoteIpAndPort != null && checkKnownIps && !CheckKnownAddress(...)`, deliberately allowing null "for servers that don't support it natively"). So a null peer is maximally *trusted*, not untrusted — without this filter the trusted-path tests would pass through that bypass rather than through the real `KnownNetworks` check, and the untrusted-peer test could not be written at all. This filter stands in for the Docker bridge gateway hop present in every real deployment. `IStartupFilter` middleware runs *before* the pipeline in `Program.cs`, which is exactly where a real proxy hop sits.
 
 Create `tests/PSMPE.Portal.WebAPI.IntegrationTests/TestSupport/FakeRemoteIpStartupFilter.cs`:
 
