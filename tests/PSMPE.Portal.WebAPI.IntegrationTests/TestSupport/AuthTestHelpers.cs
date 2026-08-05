@@ -14,18 +14,67 @@ namespace PSMPE.Portal.WebAPI.IntegrationTests.TestSupport;
 /// </summary>
 public static class AuthTestHelpers
 {
+    private static int _clientIpCounter;
+
+    /// <summary>
+    /// A client IP not yet handed to any other caller. The auth endpoints are rate limited per
+    /// client IP (see RateLimitingServiceExtensions), and every test request would otherwise
+    /// resolve to FakeRemoteIpStartupFilter's single proxy peer - so a class making more than the
+    /// limit's worth of auth calls would start collecting 429s purely by test count. Each caller
+    /// is a distinct notional user, so a distinct address is also the honest simulation; the
+    /// alternative of loosening the limits would leave them untested.
+    ///
+    /// Sequential off a shared counter rather than random, so callers cannot collide by luck.
+    /// Addresses sit in 198.18.0.0/15 (the benchmarking range, RFC 2544) so they are
+    /// unmistakably synthetic; only the low two octets vary, so the sequence repeats after
+    /// 65,536 - orders of magnitude beyond what a full suite run consumes.
+    /// </summary>
+    /// <param name="secondOctet">
+    /// Lets a caller claim a visibly separate range. Cosmetic - the shared counter already
+    /// guarantees uniqueness - but it keeps addresses in a failure message traceable to the
+    /// test that produced them. 18 and 19 are both inside the /15.
+    /// </param>
+    public static string NextClientIp(int secondOctet = 18)
+    {
+        var n = Interlocked.Increment(ref _clientIpCounter);
+        return $"198.{secondOctet}.{n / 256 % 256}.{n % 256}";
+    }
+
+    /// <summary>Posts JSON as if from a brand new client IP, so the request lands in its own
+    /// rate limit partition. Drop-in replacement for HttpClient.PostAsJsonAsync.</summary>
+    public static Task<HttpResponseMessage> PostAsJsonFromNewClientIpAsync<TValue>(
+        this HttpClient client, string requestUri, TValue value)
+    {
+        var request = new HttpRequestMessage(HttpMethod.Post, requestUri)
+        {
+            Content = JsonContent.Create(value)
+        };
+        request.Headers.Add("X-Forwarded-For", NextClientIp());
+        return client.SendAsync(request);
+    }
+
+    /// <summary>GET counterpart of <see cref="PostAsJsonFromNewClientIpAsync{TValue}"/>. Needed
+    /// for username-available, which is rate limited too.</summary>
+    public static Task<HttpResponseMessage> GetFromNewClientIpAsync(this HttpClient client, string requestUri)
+    {
+        var request = new HttpRequestMessage(HttpMethod.Get, requestUri);
+        request.Headers.Add("X-Forwarded-For", NextClientIp());
+        return client.SendAsync(request);
+    }
+
     /// <summary>Registers, then completes the required email-verification step via the
     /// dev-only verification link (no real email provider exists - see AuthController), so the
     /// resulting token actually works. Always yields a Member-role-only token.</summary>
     public static async Task<string> RegisterAndLoginAsync(this HttpClient client, string displayName = "Test User")
     {
         var email = $"{Guid.NewGuid()}@example.com";
-        var register = await client.PostAsJsonAsync("/api/auth/register",
+        var register = await client.PostAsJsonFromNewClientIpAsync("/api/auth/register",
             new RegisterRequest(email, "Password123!", displayName, DataPrivacyConsent: true));
         var registerBody = await register.Content.ReadFromJsonAsync<RegisterResponse>();
 
         var (userId, token) = ParseVerificationLink(registerBody!.DevVerificationLink!);
-        var verify = await client.PostAsJsonAsync("/api/auth/verify-email", new VerifyEmailRequest(userId, token));
+        var verify = await client.PostAsJsonFromNewClientIpAsync(
+            "/api/auth/verify-email", new VerifyEmailRequest(userId, token));
         var verifyBody = await verify.Content.ReadFromJsonAsync<AuthResponse>();
         return verifyBody!.Token;
     }
@@ -48,7 +97,8 @@ public static class AuthTestHelpers
         await userManager.CreateAsync(user, "Password123!");
         await userManager.AddToRoleAsync(user, role);
 
-        var login = await client.PostAsJsonAsync("/api/auth/login", new LoginRequest(email, "Password123!"));
+        var login = await client.PostAsJsonFromNewClientIpAsync(
+            "/api/auth/login", new LoginRequest(email, "Password123!"));
         var body = await login.Content.ReadFromJsonAsync<AuthResponse>();
         return (user.Id, body!.Token);
     }

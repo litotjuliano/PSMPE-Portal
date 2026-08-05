@@ -1,3 +1,5 @@
+using System.Net;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -14,7 +16,62 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddPortalSwagger();
+builder.Services.AddPortalRateLimiting(builder.Configuration);
 builder.Services.AddHealthChecks();
+
+// The app sits behind nginx, which is the only thing that ever talks to Kestrel directly.
+// Without this, every request appears to come from the Docker bridge gateway and every
+// IP-partitioned rate limit collapses into a single global bucket.
+builder.Services.Configure<ForwardedHeadersOptions>(options =>
+{
+    options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
+
+    // Defaults trust loopback only. nginx proxies to localhost:5000, which is docker-proxy, so
+    // the container sees the bridge gateway (172.x.x.1) instead - the default would silently
+    // reject the header.
+    options.KnownNetworks.Clear();
+    options.KnownProxies.Clear();
+    // Guard the PARSED result, not the raw string. ForwardedHeadersMiddleware only runs its
+    // known-peer check when KnownProxies.Count + KnownNetworks.Count > 0, and both were just
+    // cleared - so ending up with zero entries here silently trusts X-Forwarded-For from every
+    // peer on earth, with no exception and no log. That is the exact forgery this configuration
+    // exists to prevent. Null, "", "   " and "," all reach that state by different routes
+    // (the indexer returns "" for a present-but-empty key; TrimEntries|RemoveEmptyEntries
+    // discards the rest), and checking after the split covers all of them at once.
+    const string defaultKnownNetworks = "172.16.0.0/12";
+    var configured = builder.Configuration["ForwardedHeaders:KnownNetworks"] ?? string.Empty;
+    var entries = configured.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+    if (entries.Length == 0)
+    {
+        entries = [defaultKnownNetworks];
+    }
+
+    foreach (var cidr in entries)
+    {
+        try
+        {
+            var parts = cidr.Split('/');
+            // Fully qualified: System.Net.IPNetwork (.NET 8) is a different type with the same name,
+            // and KnownNetworks takes the HttpOverrides one.
+            options.KnownNetworks.Add(new Microsoft.AspNetCore.HttpOverrides.IPNetwork(
+                IPAddress.Parse(parts[0]), int.Parse(parts[1])));
+        }
+        catch (Exception ex)
+        {
+            // This throws during pipeline construction, so a bad value is a startup crash. Name the
+            // key and the offending token, or the operator gets a bare FormatException on loop under
+            // restart: unless-stopped with nothing pointing at the env var they just edited.
+            throw new InvalidOperationException(
+                $"ForwardedHeaders:KnownNetworks contains an invalid entry '{cidr}'. Expected a " +
+                "comma-separated list of CIDR ranges, for example '172.16.0.0/12'.", ex);
+        }
+    }
+
+    // Exactly one hop. nginx's $proxy_add_x_forwarded_for APPENDS the real peer to whatever the
+    // client sent, so the rightmost entry is the only trustworthy one. Raising this would let an
+    // attacker pick their own rate limit partition with a forged header.
+    options.ForwardLimit = 1;
+});
 
 builder.Services.AddApplication();
 builder.Services.AddInfrastructure(builder.Configuration);
@@ -36,9 +93,22 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI();
 }
 
+// First in the pipeline: everything downstream (CORS, auth, rate limiting, logging) should
+// see the real client address, not the proxy's.
+app.UseForwardedHeaders();
+
 app.UseMiddleware<ExceptionHandlingMiddleware>();
 
 app.UseCors("Frontend");
+
+// Ahead of authentication on purpose. AuthorizationMiddleware short-circuits unauthenticated
+// requests with a 401 before later middleware runs, so a limiter placed after it never sees
+// them - leaving the entire [Authorize] surface exempt from the global ceiling for exactly the
+// callers it most needs to bound. Measured before this was moved: 340 unauthenticated requests
+// to /api/admin/users returned 340 x 401 and zero 429s.
+// Named policies are unaffected by the position: they resolve from endpoint metadata, which
+// WebApplication's auto-inserted UseRouting has already populated by this point.
+app.UseRateLimiter();
 
 app.UseAuthentication();
 app.UseAuthorization();
@@ -47,7 +117,14 @@ app.MapControllers();
 
 // Unauthenticated liveness probe used by the DigitalOcean App Platform health check
 // (see infra/digitalocean/app.*.yaml). Kept simple: 200 OK means the process is up.
-app.MapHealthChecks("/health");
+//
+// Exempt from rate limiting, because the global limiter partitions on client IP and would
+// otherwise count probes against the same 300/min bucket as everything else. That only bites
+// when the feature is already failing - a broken X-Forwarded-For chain collapses every caller
+// into one partition, or a flood fills it - and the failure mode is a loop: probes start
+// getting 429s, the container is marked unhealthy, restart: unless-stopped restarts it,
+// counters reset, repeat. Liveness must stay answerable while the app is shedding load.
+app.MapHealthChecks("/health").DisableRateLimiting();
 
 if (builder.Configuration.GetValue<bool>("Seed:Enabled"))
 {

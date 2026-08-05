@@ -62,6 +62,11 @@ export function ResetPasswordPage() {
       if (isAxiosError(err) && err.response?.status === 400 && err.response.data?.errors) {
         const messages = Object.values(err.response.data.errors as Record<string, string[]>).flat()
         setError(messages.length > 0 ? messages.join(' ') : 'Please check your new password and try again.')
+      } else if (isAxiosError(err) && err.response?.status === 429) {
+        // Ahead of the generic arm, which would otherwise tell someone holding a perfectly good
+        // reset link that it is invalid or expired - and send them back to request another,
+        // against a per-address cap of three an hour.
+        setError('Too many attempts from your connection. Please wait a few minutes and try again - your reset link is still valid.')
       } else if (isAxiosError(err) && err.response) {
         setError((err.response.data as { message?: string } | undefined)?.message ?? 'This password reset link is invalid or has expired.')
       } else {
