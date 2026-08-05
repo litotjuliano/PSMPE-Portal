@@ -110,7 +110,14 @@ app.MapControllers();
 
 // Unauthenticated liveness probe used by the DigitalOcean App Platform health check
 // (see infra/digitalocean/app.*.yaml). Kept simple: 200 OK means the process is up.
-app.MapHealthChecks("/health");
+//
+// Exempt from rate limiting, because the global limiter partitions on client IP and would
+// otherwise count probes against the same 300/min bucket as everything else. That only bites
+// when the feature is already failing - a broken X-Forwarded-For chain collapses every caller
+// into one partition, or a flood fills it - and the failure mode is a loop: probes start
+// getting 429s, the container is marked unhealthy, restart: unless-stopped restarts it,
+// counters reset, repeat. Liveness must stay answerable while the app is shedding load.
+app.MapHealthChecks("/health").DisableRateLimiting();
 
 if (builder.Configuration.GetValue<bool>("Seed:Enabled"))
 {

@@ -13,9 +13,15 @@ namespace PSMPE.Portal.WebAPI.Extensions;
 ///
 /// Fixed window rather than sliding/token bucket: one counter per partition instead of a
 /// timestamp log, and the limits are loose enough that a 2x burst across a window edge doesn't
-/// matter. Per-account defenses live elsewhere (Identity lockout, the per-address email
-/// throttle) because a limiter partitioned on IP can't see accounts, and because members
-/// sharing an office IP would otherwise be throttled collectively.
+/// matter.
+///
+/// This is deliberately only half the defence. A limiter partitioned on IP cannot see accounts,
+/// and members sharing an office IP would be throttled collectively if it tried, so per-account
+/// protection is meant to live elsewhere - Identity lockout and a per-address email send
+/// throttle. Neither exists yet: they are Tasks 3 and 4 of
+/// openspec/changes/add-auth-rate-limiting/tasks.md. Until they land, the gap is real and worth
+/// knowing about: forgot-password and resend-verification-email are capped per IP only, so an
+/// attacker with a handful of proxies can still flood one member's inbox indefinitely.
 /// </summary>
 public static class RateLimitingServiceExtensions
 {
@@ -25,14 +31,29 @@ public static class RateLimitingServiceExtensions
 
     private static int _proxyIpWarningLogged;
 
+    /// <summary>The config sections each carrying a PermitLimit/WindowMinutes pair.</summary>
+    private static readonly string[] LimitSections = ["AuthIp", "AuthEmailSend", "UsernameProbe", "Global"];
+
+    private static readonly string[] LimitSettings = ["PermitLimit", "WindowMinutes"];
+
     public static IServiceCollection AddPortalRateLimiting(this IServiceCollection services, IConfiguration configuration)
     {
-        // Deferred, not read here. This runs while the host is still being built, and under
-        // WebApplicationFactory the test's configuration sources are only layered on at Build() -
-        // so an eager read sees neither the kill switch nor the configured proxy networks and
-        // silently falls back to the defaults. Lazy keeps the read-once cost while moving it to
-        // the first request, by which point configuration is complete in every host.
-        var enabled = new Lazy<bool>(() => configuration.GetValue<bool?>("RateLimit:Enabled") ?? true);
+        // Reject a malformed value here, while the host is still starting, mirroring Program.cs's
+        // KnownNetworks guard. This matters most for the kill switch: it is what an operator
+        // reaches for when limiting is already hurting members, so a typo in it ("no", "0",
+        // "off") must not be able to make things worse than the problem being rolled back. A
+        // named startup crash is diagnosable; a deferred throw is not, because the reads below
+        // are memoised and an exception raised inside one would be cached and replayed on every
+        // request - including /health - for the life of the process.
+        ValidateSettings(configuration);
+
+        // The reads themselves stay deferred. This runs while the host is still being built, and
+        // under WebApplicationFactory the test's configuration sources are only layered on at
+        // Build() - so an eager read sees neither the kill switch nor the configured proxy
+        // networks and silently falls back to the defaults. Lazy keeps the read-once cost while
+        // moving it to the first request, by which point configuration is complete in every host.
+        // Every factory below is total by construction; see ReadBool/ReadInt.
+        var enabled = new Lazy<bool>(() => ReadBool(configuration, "RateLimit:Enabled", true));
         var knownNetworks = new Lazy<IPNetwork[]>(() => ParseKnownNetworks(configuration));
 
         services.AddRateLimiter(options =>
@@ -55,8 +76,8 @@ public static class RateLimitingServiceExtensions
                     ClientIpPartitionKey(context, knownNetworks.Value),
                     _ => new FixedWindowRateLimiterOptions
                     {
-                        PermitLimit = configuration.GetValue<int?>("RateLimit:Global:PermitLimit") ?? 300,
-                        Window = TimeSpan.FromMinutes(configuration.GetValue<int?>("RateLimit:Global:WindowMinutes") ?? 1),
+                        PermitLimit = ReadInt(configuration, "RateLimit:Global:PermitLimit", 300),
+                        Window = TimeSpan.FromMinutes(ReadInt(configuration, "RateLimit:Global:WindowMinutes", 1)),
                         QueueLimit = 0
                     });
             });
@@ -66,8 +87,12 @@ public static class RateLimitingServiceExtensions
             {
                 if (context.Lease.TryGetMetadata(MetadataName.RetryAfter, out var retryAfter))
                 {
+                    // Round up, never down. Truncating a rejection in the last fraction of a
+                    // window yields "Retry-After: 0", which tells a compliant client to retry
+                    // straight into another 429 and would render as "try again in 0 seconds".
+                    var seconds = Math.Max(1, (int)Math.Ceiling(retryAfter.TotalSeconds));
                     context.HttpContext.Response.Headers.RetryAfter =
-                        ((int)retryAfter.TotalSeconds).ToString(NumberFormatInfo.InvariantInfo);
+                        seconds.ToString(NumberFormatInfo.InvariantInfo);
                 }
 
                 var problem = new ProblemDetails
@@ -111,13 +136,69 @@ public static class RateLimitingServiceExtensions
                 $"{policyName}:{ClientIpPartitionKey(context, knownNetworks.Value)}",
                 _ => new FixedWindowRateLimiterOptions
                 {
-                    PermitLimit = configuration.GetValue<int?>($"RateLimit:{configSection}:PermitLimit") ?? defaultPermitLimit,
+                    PermitLimit = ReadInt(configuration, $"RateLimit:{configSection}:PermitLimit", defaultPermitLimit),
                     Window = TimeSpan.FromMinutes(
-                        configuration.GetValue<int?>($"RateLimit:{configSection}:WindowMinutes") ?? defaultWindowMinutes),
+                        ReadInt(configuration, $"RateLimit:{configSection}:WindowMinutes", defaultWindowMinutes)),
                     QueueLimit = 0
                 });
         });
     }
+
+    /// <summary>
+    /// Rejects a value the readers below would otherwise have to cope with silently. Only values
+    /// that are actually present are checked - an absent key legitimately means "use the default".
+    /// Limits must be at least 1, because FixedWindowRateLimiterOptions throws on a PermitLimit
+    /// below 1 or a non-positive Window, and it would do so inside the partition factory, i.e.
+    /// once per request rather than once at startup.
+    /// </summary>
+    private static void ValidateSettings(IConfiguration configuration)
+    {
+        const string enabledKey = "RateLimit:Enabled";
+        var enabled = configuration[enabledKey];
+        if (enabled is not null && !bool.TryParse(enabled, out _))
+        {
+            throw new InvalidOperationException(
+                $"{enabledKey} has an invalid value '{enabled}'. Expected 'true' or 'false'.");
+        }
+
+        foreach (var section in LimitSections)
+        {
+            foreach (var setting in LimitSettings)
+            {
+                var key = $"RateLimit:{section}:{setting}";
+                var value = configuration[key];
+                if (value is null)
+                {
+                    continue;
+                }
+
+                if (!int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed)
+                    || parsed < 1)
+                {
+                    throw new InvalidOperationException(
+                        $"{key} has an invalid value '{value}'. Expected a whole number of at least 1.");
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// Total by construction - never throws. ValidateSettings has already rejected anything
+    /// unparseable at startup, so the fallback is unreachable in a real host. It exists because
+    /// both readers run inside memoised paths (a Lazy, and a partition factory whose result is
+    /// cached per partition), where a throw would be replayed on every later request instead of
+    /// surfacing once. Falling back to the caller's default keeps limiting on, which is the safe
+    /// direction for a value that failed to parse.
+    /// </summary>
+    private static bool ReadBool(IConfiguration configuration, string key, bool defaultValue) =>
+        bool.TryParse(configuration[key], out var value) ? value : defaultValue;
+
+    /// <inheritdoc cref="ReadBool"/>
+    private static int ReadInt(IConfiguration configuration, string key, int defaultValue) =>
+        int.TryParse(configuration[key], NumberStyles.Integer, CultureInfo.InvariantCulture, out var value)
+        && value >= 1
+            ? value
+            : defaultValue;
 
     /// <summary>
     /// Read purely to recognise a proxy address in the warning below. The actual trust decision

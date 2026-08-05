@@ -174,7 +174,7 @@ public class AuthControllerTests : IClassFixture<CustomWebApplicationFactory>, I
         var login = await _client.PostAsJsonFromNewClientIpAsync("/api/auth/login", new LoginRequest(email, "Password123!"));
         Assert.Equal(HttpStatusCode.OK, login.StatusCode);
 
-        var available = await _client.GetAsync($"/api/auth/username-available?username={username}");
+        var available = await _client.GetFromNewClientIpAsync($"/api/auth/username-available?username={username}");
         var isAvailable = await available.Content.ReadFromJsonAsync<bool>();
         Assert.False(isAvailable);
     }
