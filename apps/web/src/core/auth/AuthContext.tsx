@@ -9,6 +9,13 @@ interface AuthContextValue {
   login: (request: LoginRequest) => Promise<void>
   register: (request: RegisterRequest) => Promise<RegisterResponse>
   verifyEmail: (userId: string, token: string) => Promise<void>
+  /**
+   * Refreshes the cached display name after the account edits itself. The JWT is not reissued -
+   * its ClaimTypes.Name keeps the old value until it expires - but nothing authorizes on that
+   * claim, and the interface reads this cache. Without it a rename appears not to have saved
+   * until the user signs out and back in.
+   */
+  updateCachedDisplayName: (displayName: string) => void
   logout: () => void
 }
 
@@ -60,6 +67,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [persist],
   )
 
+  const updateCachedDisplayName = useCallback((displayName: string) => {
+    setUser((current) => {
+      if (current === null) {
+        return current
+      }
+      const next = { ...current, displayName }
+      // Token deliberately untouched - only the cached profile changes.
+      localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(next))
+      return next
+    })
+  }, [])
+
   const logout = useCallback(() => {
     tokenStorage.clear()
     localStorage.removeItem(USER_STORAGE_KEY)
@@ -67,8 +86,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const value = useMemo(
-    () => ({ user, isAuthenticated: user !== null, login, register, verifyEmail, logout }),
-    [user, login, register, verifyEmail, logout],
+    () => ({ user, isAuthenticated: user !== null, login, register, verifyEmail, updateCachedDisplayName, logout }),
+    [user, login, register, verifyEmail, updateCachedDisplayName, logout],
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

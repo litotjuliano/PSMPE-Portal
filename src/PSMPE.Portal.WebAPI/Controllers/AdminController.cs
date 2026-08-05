@@ -4,12 +4,14 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using PSMPE.Portal.Application.Common.Interfaces;
 using PSMPE.Portal.Application.Common.Models;
 using PSMPE.Portal.Application.Members;
 using PSMPE.Portal.Domain.Entities;
 using PSMPE.Portal.Domain.Enums;
 using PSMPE.Portal.Infrastructure.Authorization;
 using PSMPE.Portal.Infrastructure.Authorization.Policies;
+using PSMPE.Portal.WebAPI.Extensions;
 
 namespace PSMPE.Portal.WebAPI.Controllers;
 
@@ -31,7 +33,9 @@ public class AdminController(
     ILogger<AdminController> logger,
     IMemberService memberService,
     IMemberUploadService memberUploadService,
-    IMemberCertificateService memberCertificateService) : ControllerBase
+    IMemberCertificateService memberCertificateService,
+    IEmailSender emailSender,
+    IConfiguration configuration) : ControllerBase
 {
     /// <summary>
     /// DataPrivacyConsentAt/Version are null for accounts that never went through public
@@ -345,6 +349,64 @@ public class AdminController(
             return ValidationProblem(new ValidationProblemDetails(
                 result.Errors.ToDictionary(e => e.Code, e => new[] { e.Description })));
         }
+
+        return NoContent();
+    }
+
+    /// <summary>
+    /// Emails the account the same reset link self-service forgot-password issues, so an
+    /// administrator never learns or chooses the resulting password - unlike UpdateUser's
+    /// NewPassword, which requires the admin to type one and pass it on out of band.
+    ///
+    /// Gated on the permission rather than a role policy so it can be granted or revoked through
+    /// the roles UI without a deploy, and so it travels with admin:manage-users - "can create
+    /// accounts" and "can help someone back into theirs" belong together.
+    ///
+    /// Doubles as the recovery path for a locked-out member: completing a reset clears LockoutEnd
+    /// (see AuthController.ResetPassword), which otherwise needs direct database access.
+    /// </summary>
+    [HttpPost("users/{id:guid}/password-reset")]
+    [RequirePermission(Permissions.Admin.ManageUsers)]
+    public async Task<IActionResult> SendPasswordReset(Guid id)
+    {
+        var user = await userManager.FindByIdAsync(id.ToString());
+        if (user is null || await IsHiddenFromCallerAsync(user))
+        {
+            return NotFound();
+        }
+
+        if (await IsSuperAdminAccountAsync(user))
+        {
+            logger.LogWarning("Rejected attempt by {CallerId} to send a password reset to Super Admin account {TargetId}.", CurrentUserId, user.Id);
+            return Forbid();
+        }
+
+        if (!user.EmailConfirmed)
+        {
+            // Mirrors ForgotPassword: sending a reset to an unproven address undermines the reason
+            // that rule exists. The admin has verify-email for this case.
+            return BadRequest(new
+            {
+                message = "This account's email isn't verified yet. Verify it first, then send a password reset.",
+                code = "EMAIL_NOT_CONFIRMED",
+            });
+        }
+
+        var token = await userManager.GeneratePasswordResetTokenAsync(user);
+        var resetLink = AuthLinks.ResetPassword(configuration, user.Id, token);
+
+        // Deliberately not routed through IEmailSendThrottle. That cap is per address, and counting
+        // administrator sends against it would let a member's own earlier attempts block the person
+        // trying to help them - the worse failure. This endpoint is authenticated and
+        // permission-gated, so it is not an open amplifier.
+        await emailSender.SendEmailAsync(
+            user.Email!,
+            "Reset your PSMPE Portal password",
+            $"<p>An administrator has started a password reset for your PSMPE Portal account. Click the link below to choose a new password:</p><p><a href=\"{resetLink}\">{resetLink}</a></p><p>If you weren't expecting this, you can safely ignore this email - your current password still works.</p>");
+
+        // The closest thing to an audit trail this system has (see the audit logging item in the
+        // backlog). An administrator acting on someone else's credentials should leave a trace.
+        logger.LogInformation("Password reset email sent by {CallerId} for account {TargetId}.", CurrentUserId, user.Id);
 
         return NoContent();
     }

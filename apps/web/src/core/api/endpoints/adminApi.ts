@@ -69,6 +69,12 @@ export const adminApi = {
 
   verifyEmail: (userId: string) => apiClient.post(`/api/admin/users/${userId}/verify-email`).then((res) => res.data),
 
+  /** Emails the same reset link self-service forgot-password issues - the administrator never
+   *  sees or sets the password. Also the recovery path for a locked-out account, since completing
+   *  a reset clears the lockout. */
+  sendPasswordReset: (userId: string) =>
+    apiClient.post(`/api/admin/users/${userId}/password-reset`).then(() => undefined),
+
   getRoles: () => apiClient.get<RoleSummary[]>('/api/admin/roles').then((res) => res.data),
 
   updateRolePermissions: (roleId: string, permissions: string[]) =>
