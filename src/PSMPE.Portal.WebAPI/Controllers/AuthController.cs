@@ -310,11 +310,36 @@ public class AuthController(
     [EnableRateLimiting(RateLimitingServiceExtensions.AuthIpPolicy)]
     public async Task<ActionResult<AuthResponse>> Login(LoginRequest request)
     {
+        const string genericFailure = "Invalid email or password.";
+        const string lockedMessage = "This account is temporarily locked after too many failed sign-in attempts. Please try again later.";
+
         var user = await userManager.FindByEmailAsync(request.Email);
-        if (user is null || !await userManager.CheckPasswordAsync(user, request.Password))
+        if (user is null)
         {
-            return Unauthorized(new { message = "Invalid email or password." });
+            // Same response as a wrong password - never reveal whether the account exists.
+            return Unauthorized(new { message = genericFailure });
         }
+
+        if (await userManager.IsLockedOutAsync(user))
+        {
+            return StatusCode(403, new { message = lockedMessage, code = "ACCOUNT_LOCKED" });
+        }
+
+        if (!await userManager.CheckPasswordAsync(user, request.Password))
+        {
+            await userManager.AccessFailedAsync(user);
+
+            // Re-checked immediately so the attempt that trips the threshold says so, rather
+            // than returning a plain 401 and only reporting the lockout on the next try.
+            if (await userManager.IsLockedOutAsync(user))
+            {
+                return StatusCode(403, new { message = lockedMessage, code = "ACCOUNT_LOCKED" });
+            }
+
+            return Unauthorized(new { message = genericFailure });
+        }
+
+        await userManager.ResetAccessFailedCountAsync(user);
 
         if (!user.EmailConfirmed)
         {
