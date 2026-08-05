@@ -32,7 +32,9 @@ public class CustomWebApplicationFactory : WebApplicationFactory<Program>
                 ["Jwt:Issuer"] = "PSMPE.Portal.Tests",
                 ["Jwt:Audience"] = "PSMPE.Portal.Tests.Client",
                 ["Seed:Enabled"] = "false",
-                ["OpenAI:ApiKey"] = "test-key-not-used"
+                ["OpenAI:ApiKey"] = "test-key-not-used",
+                ["RateLimit:Enabled"] = "true",
+                ["ForwardedHeaders:KnownNetworks"] = "172.16.0.0/12"
             });
         });
 
@@ -40,6 +42,7 @@ public class CustomWebApplicationFactory : WebApplicationFactory<Program>
         {
             services.RemoveAll<DbContextOptions<ApplicationDbContext>>();
             services.AddDbContext<ApplicationDbContext>(options => options.UseInMemoryDatabase(_databaseName));
+            services.AddSingleton<IStartupFilter, TestSupport.FakeRemoteIpStartupFilter>();
         });
     }
 

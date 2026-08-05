@@ -1,10 +1,12 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using PSMPE.Portal.Application.Auth;
 using PSMPE.Portal.Application.Common.Interfaces;
 using PSMPE.Portal.Domain.Entities;
 using PSMPE.Portal.Domain.Enums;
+using PSMPE.Portal.WebAPI.Extensions;
 
 namespace PSMPE.Portal.WebAPI.Controllers;
 
@@ -15,6 +17,7 @@ public class AuthController(
     RoleManager<IdentityRole<Guid>> roleManager,
     IJwtTokenGenerator jwtTokenGenerator,
     IEmailSender emailSender,
+    IEmailSendThrottle emailSendThrottle,
     IConfiguration configuration,
     IWebHostEnvironment env) : ControllerBase
 {
@@ -68,6 +71,7 @@ public class AuthController(
     }
 
     [HttpPost("register")]
+    [EnableRateLimiting(RateLimitingServiceExtensions.AuthIpPolicy)]
     public async Task<ActionResult<RegisterResponse>> Register(RegisterRequest request)
     {
         // Checked before anything else: without consent there is no lawful basis to process the
@@ -137,6 +141,7 @@ public class AuthController(
     }
 
     [HttpPost("verify-email")]
+    [EnableRateLimiting(RateLimitingServiceExtensions.AuthIpPolicy)]
     public async Task<ActionResult<AuthResponse>> VerifyEmail(VerifyEmailRequest request)
     {
         var user = await userManager.FindByIdAsync(request.UserId.ToString());
@@ -158,6 +163,7 @@ public class AuthController(
     }
 
     [HttpPost("resend-verification-email")]
+    [EnableRateLimiting(RateLimitingServiceExtensions.AuthEmailSendPolicy)]
     public async Task<ActionResult<ResendVerificationEmailResponse>> ResendVerificationEmail(ResendVerificationEmailRequest request)
     {
         const string genericMessage = "If an account with that email exists and isn't yet verified, a new verification email has been sent.";
@@ -166,6 +172,11 @@ public class AuthController(
         if (user is null || user.EmailConfirmed)
         {
             // Don't reveal whether the account exists or is already verified.
+            return Ok(new ResendVerificationEmailResponse(genericMessage));
+        }
+
+        if (!emailSendThrottle.TryRecordSend(request.Email))
+        {
             return Ok(new ResendVerificationEmailResponse(genericMessage));
         }
 
@@ -180,6 +191,7 @@ public class AuthController(
     }
 
     [HttpPost("forgot-password")]
+    [EnableRateLimiting(RateLimitingServiceExtensions.AuthEmailSendPolicy)]
     public async Task<ActionResult<ForgotPasswordResponse>> ForgotPassword(ForgotPasswordRequest request)
     {
         const string genericMessage = "If an account with that email exists, a password reset link has been sent.";
@@ -190,6 +202,13 @@ public class AuthController(
             // Don't reveal whether the account exists, and don't let an unverified account
             // request a reset link before it's even confirmed - mirrors ResendVerificationEmail's
             // anti-enumeration pattern above.
+            return Ok(new ForgotPasswordResponse(genericMessage));
+        }
+
+        if (!emailSendThrottle.TryRecordSend(request.Email))
+        {
+            // Same generic response as every other path here - a throttled caller must not be
+            // able to tell they were throttled, let alone that the account exists.
             return Ok(new ForgotPasswordResponse(genericMessage));
         }
 
@@ -204,6 +223,7 @@ public class AuthController(
     }
 
     [HttpPost("reset-password")]
+    [EnableRateLimiting(RateLimitingServiceExtensions.AuthIpPolicy)]
     public async Task<ActionResult<ResetPasswordResponse>> ResetPassword(ResetPasswordRequest request)
     {
         var user = await userManager.FindByIdAsync(request.UserId.ToString());
@@ -225,6 +245,15 @@ public class AuthController(
             return ValidationProblem(new ValidationProblemDetails(
                 result.Errors.ToDictionary(e => e.Code, e => new[] { e.Description })));
         }
+
+        // Clear any lockout. Without this the two mechanisms combine into a dead end for the
+        // members most likely to hit it: someone who forgot their password, failed five times,
+        // then reset it correctly would still be refused with ACCOUNT_LOCKED and would
+        // reasonably conclude the reset failed - burning their 3-per-hour reset email allowance
+        // on retries that cannot help. Holding the emailed token already proves inbox control,
+        // which is a stronger claim than the failed password attempts disproved.
+        await userManager.ResetAccessFailedCountAsync(user);
+        await userManager.SetLockoutEndDateAsync(user, null);
 
         // No JWT issued here - the user logs in fresh at /login rather than being silently
         // authenticated by whoever holds the link (see ForgotPasswordPage/ResetPasswordPage).
@@ -287,6 +316,7 @@ public class AuthController(
     }
 
     [HttpGet("username-available")]
+    [EnableRateLimiting(RateLimitingServiceExtensions.UsernameProbePolicy)]
     public async Task<ActionResult<bool>> IsUsernameAvailable(string username)
     {
         if (string.IsNullOrWhiteSpace(username))
@@ -299,13 +329,39 @@ public class AuthController(
     }
 
     [HttpPost("login")]
+    [EnableRateLimiting(RateLimitingServiceExtensions.AuthIpPolicy)]
     public async Task<ActionResult<AuthResponse>> Login(LoginRequest request)
     {
+        const string genericFailure = "Invalid email or password.";
+        const string lockedMessage = "This account is temporarily locked after too many failed sign-in attempts. Please try again later.";
+
         var user = await userManager.FindByEmailAsync(request.Email);
-        if (user is null || !await userManager.CheckPasswordAsync(user, request.Password))
+        if (user is null)
         {
-            return Unauthorized(new { message = "Invalid email or password." });
+            // Same response as a wrong password - never reveal whether the account exists.
+            return Unauthorized(new { message = genericFailure });
         }
+
+        if (await userManager.IsLockedOutAsync(user))
+        {
+            return StatusCode(403, new { message = lockedMessage, code = "ACCOUNT_LOCKED" });
+        }
+
+        if (!await userManager.CheckPasswordAsync(user, request.Password))
+        {
+            await userManager.AccessFailedAsync(user);
+
+            // Re-checked immediately so the attempt that trips the threshold says so, rather
+            // than returning a plain 401 and only reporting the lockout on the next try.
+            if (await userManager.IsLockedOutAsync(user))
+            {
+                return StatusCode(403, new { message = lockedMessage, code = "ACCOUNT_LOCKED" });
+            }
+
+            return Unauthorized(new { message = genericFailure });
+        }
+
+        await userManager.ResetAccessFailedCountAsync(user);
 
         if (!user.EmailConfirmed)
         {

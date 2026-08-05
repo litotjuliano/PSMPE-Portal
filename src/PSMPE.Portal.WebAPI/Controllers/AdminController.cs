@@ -57,6 +57,16 @@ public class AdminController(
 
     public record UpdateUserRequest(string DisplayName, string Email, string? NewPassword);
 
+    /// <summary>
+    /// Confirms the nginx -> ForwardedHeaders trust chain end to end after a deploy. If this
+    /// returns a 172.x address, X-Forwarded-For isn't reaching the app and every rate limit
+    /// partition has collapsed into one bucket.
+    /// </summary>
+    [HttpGet("diagnostics/client-ip")]
+    [Authorize(Policy = PolicyNames.RequireAdmin)]
+    public ActionResult<object> GetClientIp() =>
+        Ok(new { clientIp = HttpContext.Connection.RemoteIpAddress?.ToString() });
+
     [HttpGet("users")]
     [Authorize(Policy = PolicyNames.RequireAdmin)]
     public async Task<ActionResult<PagedResult<UserSummaryDto>>> GetUsers(

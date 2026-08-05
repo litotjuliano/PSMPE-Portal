@@ -8,6 +8,7 @@ using Microsoft.Extensions.DependencyInjection;
 using PSMPE.Portal.Application.Auth;
 using PSMPE.Portal.Domain.Entities;
 using PSMPE.Portal.Domain.Enums;
+using PSMPE.Portal.WebAPI.IntegrationTests.TestSupport;
 using Xunit;
 
 namespace PSMPE.Portal.WebAPI.IntegrationTests.Auth;
@@ -36,7 +37,7 @@ public class AuthControllerTests : IClassFixture<CustomWebApplicationFactory>, I
     private async Task<(string Email, Guid UserId, string Token)> RegisterAsync(string? username = null)
     {
         var email = $"{Guid.NewGuid()}@example.com";
-        var register = await _client.PostAsJsonAsync("/api/auth/register",
+        var register = await _client.PostAsJsonFromNewClientIpAsync("/api/auth/register",
             new RegisterRequest(email, "Password123!", "Test User", username, DataPrivacyConsent: true));
         var body = await register.Content.ReadFromJsonAsync<RegisterResponse>();
         var (userId, token) = ParseVerificationLink(body!.DevVerificationLink!);
@@ -47,7 +48,7 @@ public class AuthControllerTests : IClassFixture<CustomWebApplicationFactory>, I
     public async Task Register_ReturnsNoTokenAndADevVerificationLink()
     {
         var email = $"{Guid.NewGuid()}@example.com";
-        var response = await _client.PostAsJsonAsync("/api/auth/register",
+        var response = await _client.PostAsJsonFromNewClientIpAsync("/api/auth/register",
             new RegisterRequest(email, "Password123!", "Test User", DataPrivacyConsent: true));
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -62,7 +63,7 @@ public class AuthControllerTests : IClassFixture<CustomWebApplicationFactory>, I
     {
         var (email, _, _) = await RegisterAsync();
 
-        var response = await _client.PostAsJsonAsync("/api/auth/login", new LoginRequest(email, "Password123!"));
+        var response = await _client.PostAsJsonFromNewClientIpAsync("/api/auth/login", new LoginRequest(email, "Password123!"));
 
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
         var body = await response.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>();
@@ -74,7 +75,7 @@ public class AuthControllerTests : IClassFixture<CustomWebApplicationFactory>, I
     {
         var (email, userId, token) = await RegisterAsync();
 
-        var verify = await _client.PostAsJsonAsync("/api/auth/verify-email", new VerifyEmailRequest(userId, token));
+        var verify = await _client.PostAsJsonFromNewClientIpAsync("/api/auth/verify-email", new VerifyEmailRequest(userId, token));
 
         Assert.Equal(HttpStatusCode.OK, verify.StatusCode);
         var verifyBody = await verify.Content.ReadFromJsonAsync<AuthResponse>();
@@ -82,7 +83,7 @@ public class AuthControllerTests : IClassFixture<CustomWebApplicationFactory>, I
         Assert.False(string.IsNullOrWhiteSpace(verifyBody!.Token));
         Assert.Contains("Member", verifyBody.Roles);
 
-        var login = await _client.PostAsJsonAsync("/api/auth/login", new LoginRequest(email, "Password123!"));
+        var login = await _client.PostAsJsonFromNewClientIpAsync("/api/auth/login", new LoginRequest(email, "Password123!"));
         Assert.Equal(HttpStatusCode.OK, login.StatusCode);
     }
 
@@ -91,7 +92,7 @@ public class AuthControllerTests : IClassFixture<CustomWebApplicationFactory>, I
     {
         var (_, userId, _) = await RegisterAsync();
 
-        var response = await _client.PostAsJsonAsync("/api/auth/verify-email", new VerifyEmailRequest(userId, "not-a-real-token"));
+        var response = await _client.PostAsJsonFromNewClientIpAsync("/api/auth/verify-email", new VerifyEmailRequest(userId, "not-a-real-token"));
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
@@ -101,21 +102,21 @@ public class AuthControllerTests : IClassFixture<CustomWebApplicationFactory>, I
     {
         var (email, _, _) = await RegisterAsync();
 
-        var response = await _client.PostAsJsonAsync("/api/auth/resend-verification-email", new ResendVerificationEmailRequest(email));
+        var response = await _client.PostAsJsonFromNewClientIpAsync("/api/auth/resend-verification-email", new ResendVerificationEmailRequest(email));
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var body = await response.Content.ReadFromJsonAsync<ResendVerificationEmailResponse>();
         Assert.NotNull(body!.DevVerificationLink);
 
         var (userId, token) = ParseVerificationLink(body.DevVerificationLink!);
-        var verify = await _client.PostAsJsonAsync("/api/auth/verify-email", new VerifyEmailRequest(userId, token));
+        var verify = await _client.PostAsJsonFromNewClientIpAsync("/api/auth/verify-email", new VerifyEmailRequest(userId, token));
         Assert.Equal(HttpStatusCode.OK, verify.StatusCode);
     }
 
     [Fact]
     public async Task ResendVerificationEmail_ForNonexistentEmail_StillReturnsGenericOk()
     {
-        var response = await _client.PostAsJsonAsync("/api/auth/resend-verification-email",
+        var response = await _client.PostAsJsonFromNewClientIpAsync("/api/auth/resend-verification-email",
             new ResendVerificationEmailRequest($"{Guid.NewGuid()}@example.com"));
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -128,7 +129,7 @@ public class AuthControllerTests : IClassFixture<CustomWebApplicationFactory>, I
     {
         var (_, userId, token) = await RegisterAsync();
 
-        var verify = await _client.PostAsJsonAsync("/api/auth/verify-email", new VerifyEmailRequest(userId, token));
+        var verify = await _client.PostAsJsonFromNewClientIpAsync("/api/auth/verify-email", new VerifyEmailRequest(userId, token));
         var verifyBody = await verify.Content.ReadFromJsonAsync<AuthResponse>();
 
         Assert.Contains("Member", verifyBody!.Roles);
@@ -140,7 +141,7 @@ public class AuthControllerTests : IClassFixture<CustomWebApplicationFactory>, I
     {
         var (_, userId, token) = await RegisterAsync();
 
-        var verify = await _client.PostAsJsonAsync("/api/auth/verify-email", new VerifyEmailRequest(userId, token));
+        var verify = await _client.PostAsJsonFromNewClientIpAsync("/api/auth/verify-email", new VerifyEmailRequest(userId, token));
         var verifyBody = await verify.Content.ReadFromJsonAsync<AuthResponse>();
 
         var handler = new JwtSecurityTokenHandler();
@@ -156,9 +157,9 @@ public class AuthControllerTests : IClassFixture<CustomWebApplicationFactory>, I
     public async Task Login_WithWrongPassword_ReturnsUnauthorized()
     {
         var (email, userId, token) = await RegisterAsync();
-        await _client.PostAsJsonAsync("/api/auth/verify-email", new VerifyEmailRequest(userId, token));
+        await _client.PostAsJsonFromNewClientIpAsync("/api/auth/verify-email", new VerifyEmailRequest(userId, token));
 
-        var response = await _client.PostAsJsonAsync("/api/auth/login", new LoginRequest(email, "WrongPassword!"));
+        var response = await _client.PostAsJsonFromNewClientIpAsync("/api/auth/login", new LoginRequest(email, "WrongPassword!"));
 
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
@@ -168,12 +169,12 @@ public class AuthControllerTests : IClassFixture<CustomWebApplicationFactory>, I
     {
         var username = $"user{Guid.NewGuid():N}"[..15];
         var (email, userId, token) = await RegisterAsync(username);
-        await _client.PostAsJsonAsync("/api/auth/verify-email", new VerifyEmailRequest(userId, token));
+        await _client.PostAsJsonFromNewClientIpAsync("/api/auth/verify-email", new VerifyEmailRequest(userId, token));
 
-        var login = await _client.PostAsJsonAsync("/api/auth/login", new LoginRequest(email, "Password123!"));
+        var login = await _client.PostAsJsonFromNewClientIpAsync("/api/auth/login", new LoginRequest(email, "Password123!"));
         Assert.Equal(HttpStatusCode.OK, login.StatusCode);
 
-        var available = await _client.GetAsync($"/api/auth/username-available?username={username}");
+        var available = await _client.GetFromNewClientIpAsync($"/api/auth/username-available?username={username}");
         var isAvailable = await available.Content.ReadFromJsonAsync<bool>();
         Assert.False(isAvailable);
     }
@@ -185,7 +186,7 @@ public class AuthControllerTests : IClassFixture<CustomWebApplicationFactory>, I
         await RegisterAsync(username);
 
         var secondEmail = $"{Guid.NewGuid()}@example.com";
-        var response = await _client.PostAsJsonAsync("/api/auth/register",
+        var response = await _client.PostAsJsonFromNewClientIpAsync("/api/auth/register",
             new RegisterRequest(secondEmail, "Password123!", "Test User", username, DataPrivacyConsent: true));
 
         Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
@@ -195,9 +196,9 @@ public class AuthControllerTests : IClassFixture<CustomWebApplicationFactory>, I
     public async Task Register_WithoutUsername_PreservesExistingBehavior()
     {
         var (email, userId, token) = await RegisterAsync();
-        await _client.PostAsJsonAsync("/api/auth/verify-email", new VerifyEmailRequest(userId, token));
+        await _client.PostAsJsonFromNewClientIpAsync("/api/auth/verify-email", new VerifyEmailRequest(userId, token));
 
-        var login = await _client.PostAsJsonAsync("/api/auth/login", new LoginRequest(email, "Password123!"));
+        var login = await _client.PostAsJsonFromNewClientIpAsync("/api/auth/login", new LoginRequest(email, "Password123!"));
         Assert.Equal(HttpStatusCode.OK, login.StatusCode);
     }
 
@@ -208,13 +209,13 @@ public class AuthControllerTests : IClassFixture<CustomWebApplicationFactory>, I
 
         // DataPrivacyConsent defaults to false, so this mirrors both an explicit refusal and a
         // caller that omits the field entirely.
-        var response = await _client.PostAsJsonAsync("/api/auth/register",
+        var response = await _client.PostAsJsonFromNewClientIpAsync("/api/auth/register",
             new RegisterRequest(email, "Password123!", "Test User"));
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
 
         // The account must not exist afterwards - a rejected consent can't leave a partial user.
-        var login = await _client.PostAsJsonAsync("/api/auth/login", new LoginRequest(email, "Password123!"));
+        var login = await _client.PostAsJsonFromNewClientIpAsync("/api/auth/login", new LoginRequest(email, "Password123!"));
         Assert.Equal(HttpStatusCode.Unauthorized, login.StatusCode);
     }
 
@@ -247,7 +248,7 @@ public class AuthControllerTests : IClassFixture<CustomWebApplicationFactory>, I
     public async Task DataPrivacyConsentStatus_ForFreshlyRegisteredUser_NeedsNoConsent()
     {
         var (_, userId, token) = await RegisterAsync();
-        var verify = await _client.PostAsJsonAsync("/api/auth/verify-email", new VerifyEmailRequest(userId, token));
+        var verify = await _client.PostAsJsonFromNewClientIpAsync("/api/auth/verify-email", new VerifyEmailRequest(userId, token));
         var auth = await verify.Content.ReadFromJsonAsync<AuthResponse>();
 
         using var client = _factory.CreateClient();
@@ -268,7 +269,7 @@ public class AuthControllerTests : IClassFixture<CustomWebApplicationFactory>, I
     public async Task GiveDataPrivacyConsent_ClearsStaleConsent()
     {
         var (email, userId, token) = await RegisterAsync();
-        var verify = await _client.PostAsJsonAsync("/api/auth/verify-email", new VerifyEmailRequest(userId, token));
+        var verify = await _client.PostAsJsonFromNewClientIpAsync("/api/auth/verify-email", new VerifyEmailRequest(userId, token));
         var auth = await verify.Content.ReadFromJsonAsync<AuthResponse>();
 
         // Simulate a wording change by ageing this user's recorded version.
@@ -302,7 +303,7 @@ public class AuthControllerTests : IClassFixture<CustomWebApplicationFactory>, I
     [Fact]
     public async Task ForgotPassword_ForNonexistentEmail_StillReturnsGenericOk()
     {
-        var response = await _client.PostAsJsonAsync("/api/auth/forgot-password",
+        var response = await _client.PostAsJsonFromNewClientIpAsync("/api/auth/forgot-password",
             new ForgotPasswordRequest($"{Guid.NewGuid()}@example.com"));
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -315,7 +316,7 @@ public class AuthControllerTests : IClassFixture<CustomWebApplicationFactory>, I
     {
         var (email, _, _) = await RegisterAsync();
 
-        var response = await _client.PostAsJsonAsync("/api/auth/forgot-password", new ForgotPasswordRequest(email));
+        var response = await _client.PostAsJsonFromNewClientIpAsync("/api/auth/forgot-password", new ForgotPasswordRequest(email));
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var body = await response.Content.ReadFromJsonAsync<ForgotPasswordResponse>();
@@ -326,22 +327,22 @@ public class AuthControllerTests : IClassFixture<CustomWebApplicationFactory>, I
     public async Task ForgotPassword_ThenResetPassword_AllowsLoginWithNewPassword()
     {
         var (email, userId, token) = await RegisterAsync();
-        await _client.PostAsJsonAsync("/api/auth/verify-email", new VerifyEmailRequest(userId, token));
+        await _client.PostAsJsonFromNewClientIpAsync("/api/auth/verify-email", new VerifyEmailRequest(userId, token));
 
-        var forgot = await _client.PostAsJsonAsync("/api/auth/forgot-password", new ForgotPasswordRequest(email));
+        var forgot = await _client.PostAsJsonFromNewClientIpAsync("/api/auth/forgot-password", new ForgotPasswordRequest(email));
         Assert.Equal(HttpStatusCode.OK, forgot.StatusCode);
         var forgotBody = await forgot.Content.ReadFromJsonAsync<ForgotPasswordResponse>();
         Assert.NotNull(forgotBody!.DevResetLink);
 
         var (resetUserId, resetToken) = ParseVerificationLink(forgotBody.DevResetLink!);
-        var reset = await _client.PostAsJsonAsync("/api/auth/reset-password",
+        var reset = await _client.PostAsJsonFromNewClientIpAsync("/api/auth/reset-password",
             new ResetPasswordRequest(resetUserId, resetToken, "NewPassword456!"));
         Assert.Equal(HttpStatusCode.OK, reset.StatusCode);
 
-        var loginWithNewPassword = await _client.PostAsJsonAsync("/api/auth/login", new LoginRequest(email, "NewPassword456!"));
+        var loginWithNewPassword = await _client.PostAsJsonFromNewClientIpAsync("/api/auth/login", new LoginRequest(email, "NewPassword456!"));
         Assert.Equal(HttpStatusCode.OK, loginWithNewPassword.StatusCode);
 
-        var loginWithOldPassword = await _client.PostAsJsonAsync("/api/auth/login", new LoginRequest(email, "Password123!"));
+        var loginWithOldPassword = await _client.PostAsJsonFromNewClientIpAsync("/api/auth/login", new LoginRequest(email, "Password123!"));
         Assert.Equal(HttpStatusCode.Unauthorized, loginWithOldPassword.StatusCode);
     }
 
@@ -349,9 +350,9 @@ public class AuthControllerTests : IClassFixture<CustomWebApplicationFactory>, I
     public async Task ResetPassword_WithTamperedToken_ReturnsBadRequest()
     {
         var (_, userId, token) = await RegisterAsync();
-        await _client.PostAsJsonAsync("/api/auth/verify-email", new VerifyEmailRequest(userId, token));
+        await _client.PostAsJsonFromNewClientIpAsync("/api/auth/verify-email", new VerifyEmailRequest(userId, token));
 
-        var response = await _client.PostAsJsonAsync("/api/auth/reset-password",
+        var response = await _client.PostAsJsonFromNewClientIpAsync("/api/auth/reset-password",
             new ResetPasswordRequest(userId, "not-a-real-token", "NewPassword456!"));
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
@@ -361,13 +362,13 @@ public class AuthControllerTests : IClassFixture<CustomWebApplicationFactory>, I
     public async Task ResetPassword_WithWeakPassword_ReturnsValidationProblem()
     {
         var (email, userId, token) = await RegisterAsync();
-        await _client.PostAsJsonAsync("/api/auth/verify-email", new VerifyEmailRequest(userId, token));
+        await _client.PostAsJsonFromNewClientIpAsync("/api/auth/verify-email", new VerifyEmailRequest(userId, token));
 
-        var forgot = await _client.PostAsJsonAsync("/api/auth/forgot-password", new ForgotPasswordRequest(email));
+        var forgot = await _client.PostAsJsonFromNewClientIpAsync("/api/auth/forgot-password", new ForgotPasswordRequest(email));
         var forgotBody = await forgot.Content.ReadFromJsonAsync<ForgotPasswordResponse>();
         var (resetUserId, resetToken) = ParseVerificationLink(forgotBody!.DevResetLink!);
 
-        var response = await _client.PostAsJsonAsync("/api/auth/reset-password",
+        var response = await _client.PostAsJsonFromNewClientIpAsync("/api/auth/reset-password",
             new ResetPasswordRequest(resetUserId, resetToken, "weak"));
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);

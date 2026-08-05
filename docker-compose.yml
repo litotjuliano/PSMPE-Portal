@@ -54,8 +54,31 @@ services:
       Cache__ContentDurationSeconds: ${Cache__ContentDurationSeconds:-300}
       Cache__LayoutDurationSeconds: ${Cache__LayoutDurationSeconds:-300}
       Cache__GracePeriodDurationSeconds: ${Cache__GracePeriodDurationSeconds:-600}
+      # Every value below uses the ${VAR:-default} form deliberately. Without the colon, a blank
+      # line in .env injects an empty string rather than falling back - and a blank
+      # ForwardedHeaders__KnownNetworks is the one value that fails *open*, leaving the app
+      # trusting X-Forwarded-For from any peer on the internet.
+      RateLimit__Enabled: ${RateLimit__Enabled:-true}
+      RateLimit__AuthIp__PermitLimit: ${RateLimit__AuthIp__PermitLimit:-20}
+      RateLimit__AuthIp__WindowMinutes: ${RateLimit__AuthIp__WindowMinutes:-5}
+      RateLimit__AuthEmailSend__PermitLimit: ${RateLimit__AuthEmailSend__PermitLimit:-10}
+      RateLimit__AuthEmailSend__WindowMinutes: ${RateLimit__AuthEmailSend__WindowMinutes:-60}
+      RateLimit__UsernameProbe__PermitLimit: ${RateLimit__UsernameProbe__PermitLimit:-30}
+      RateLimit__UsernameProbe__WindowMinutes: ${RateLimit__UsernameProbe__WindowMinutes:-1}
+      RateLimit__Global__PermitLimit: ${RateLimit__Global__PermitLimit:-300}
+      RateLimit__Global__WindowMinutes: ${RateLimit__Global__WindowMinutes:-1}
+      RateLimit__EmailSendPerAddress__PermitLimit: ${RateLimit__EmailSendPerAddress__PermitLimit:-3}
+      RateLimit__EmailSendPerAddress__WindowMinutes: ${RateLimit__EmailSendPerAddress__WindowMinutes:-60}
+      Lockout__MaxFailedAttempts: ${Lockout__MaxFailedAttempts:-5}
+      Lockout__MinutesLockedOut: ${Lockout__MinutesLockedOut:-15}
+      ForwardedHeaders__KnownNetworks: ${ForwardedHeaders__KnownNetworks:-172.16.0.0/12}
+    # Bound to loopback so nginx is the only way in. Published on 0.0.0.0 this was directly
+    # reachable at http://<droplet-ip>:5000, which skips nginx entirely - and with it the
+    # X-Forwarded-For header every rate limit partition is keyed on.
+    # nginx proxies to 127.0.0.1 explicitly (not "localhost", which resolves to ::1 first on
+    # this host and would fail against an IPv4-only binding).
     ports:
-      - "5000:8080"
+      - "127.0.0.1:5000:8080"
     volumes:
       - uploads_data:/app/wwwroot/uploads
 
@@ -67,8 +90,9 @@ services:
     restart: unless-stopped
     depends_on:
       - backend
+    # Loopback only, same reasoning as the backend above - nginx is the sole ingress.
     ports:
-      - "5173:80"
+      - "127.0.0.1:5173:80"
 
 volumes:
   pgdata:

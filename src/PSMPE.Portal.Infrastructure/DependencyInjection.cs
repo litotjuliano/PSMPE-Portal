@@ -33,6 +33,16 @@ public static class DependencyInjection
                 options.Password.RequiredLength = 8;
                 options.Password.RequireNonAlphanumeric = false;
                 options.User.RequireUniqueEmail = true;
+
+                // Per-account, so an attacker rotating IPs to defeat the per-IP rate limiter
+                // gains nothing. The LockoutEnd/LockoutEnabled columns already exist (Identity
+                // created them in InitialCreate) - nothing wrote to them until now, so this
+                // needs no migration.
+                options.Lockout.MaxFailedAccessAttempts =
+                    configuration.GetValue<int?>("Lockout:MaxFailedAttempts") ?? 5;
+                options.Lockout.DefaultLockoutTimeSpan = TimeSpan.FromMinutes(
+                    configuration.GetValue<int?>("Lockout:MinutesLockedOut") ?? 15);
+                options.Lockout.AllowedForNewUsers = true;
             })
             .AddEntityFrameworkStores<ApplicationDbContext>()
             .AddDefaultTokenProviders();
@@ -86,6 +96,7 @@ public static class DependencyInjection
         // See docs/caching-strategy.md.
         services.AddMemoryCache();
         services.AddSingleton<ICacheService, MemoryCacheService>();
+        services.AddSingleton<IEmailSendThrottle, MemoryCacheEmailSendThrottle>();
 
         // Falls back to logging-only when no real SMTP host is configured, so local dev keeps
         // working without real credentials - see ConsoleEmailSender / SmtpEmailSender.

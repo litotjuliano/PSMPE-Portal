@@ -33,6 +33,11 @@ apiClient.interceptors.response.use(
         window.location.assign('/login')
       }
     }
+    // A 429 deliberately falls straight through to the caller. Being throttled is not being
+    // signed out, so it must never take the branch above: clearing the session would turn a
+    // short wait into a forced re-login, precisely when the server is already shedding load.
+    // The user-facing message belongs in the pages, where it can be specific about what the
+    // caller was doing - see LoginPage and ResetPasswordPage.
     return Promise.reject(error)
   },
 )
