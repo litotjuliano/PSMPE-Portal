@@ -1092,10 +1092,25 @@ git commit -m "Add admin client-IP diagnostics endpoint"
 
 ---
 
-## 6. Frontend 429 handling
+## 6. Frontend 429 and lockout handling
 
 **Files:**
 - Modify: `apps/web/src/core/api/apiClient.ts:26-37`
+- Modify: `apps/web/src/integrations/template/pages/LoginPage.tsx:49-57`
+
+- [ ] **6.0 Add the `ACCOUNT_LOCKED` branch to the login page**
+
+Task 3 made `login` return **403 with `code = "ACCOUNT_LOCKED"`**. `LoginPage.tsx` currently branches on `403 + EMAIL_NOT_CONFIRMED` (line 49) and `401` (line 52), so a locked-out member falls through to the generic arm and is told *"Something went wrong on our end. Please try again in a moment."* — which is both wrong and unactionable. They are locked out, it is not a server fault, and retrying immediately is exactly what won't work.
+
+Add a branch alongside the existing `EMAIL_NOT_CONFIRMED` check, matching its shape:
+
+```tsx
+        if (err.response?.status === 403 && (err.response.data as { code?: string } | undefined)?.code === 'ACCOUNT_LOCKED') {
+          setError('This account is temporarily locked after too many failed sign-in attempts. Please try again later.')
+        } else if (err.response?.status === 403 && (err.response.data as { code?: string } | undefined)?.code === 'EMAIL_NOT_CONFIRMED') {
+```
+
+Keep the message consistent with the server's `lockedMessage` in `AuthController.Login`.
 
 - [ ] **6.1 Add the 429 branch**
 
