@@ -38,6 +38,9 @@ API calls. Backed by ASP.NET Core Identity (`PSMPE.Portal.Domain.Entities.Applic
     if the account exists, the password is correct, but the email hasn't been verified yet —
     distinct from `401` so the frontend can show a "Resend verification email" action specifically
     instead of a plain "wrong credentials" message.
+  - Also returns `403` with `{ message, code: "ACCOUNT_LOCKED" }` after repeated failed attempts —
+    see "Abuse protection" below. An unknown email always returns the same `401` as a wrong
+    password, so neither path reveals whether an account exists.
 
 - `POST /api/auth/verify-email` — confirm an account's email
   - Auth: anonymous
@@ -99,6 +102,53 @@ not skippable. Uses ASP.NET Core Identity's built-in support directly
 ## Authorization rules
 
 None beyond credential validation — all endpoints are anonymous by design.
+
+## Abuse protection
+
+Three mechanisms, deliberately separated by what each can see. See
+`openspec/changes/add-auth-rate-limiting/` for the design and the operational runbook.
+
+**1. Rate limiting, per client IP.** Fixed-window limits on every endpoint above. Exceeding one
+returns `429` with a `ProblemDetails` body (`application/problem+json`) and a `Retry-After` header.
+
+| Endpoints | Limit |
+|---|---|
+| `login`, `register`, `verify-email`, `reset-password` | 20 / 5 min |
+| `forgot-password`, `resend-verification-email` | 10 / hour |
+| `username-available` | 30 / min |
+| everything else | 300 / min |
+
+`Retry-After` reports the **whole window**, not the time remaining in it — the underlying
+`FixedWindowRateLimiter` doesn't expose the remainder. It therefore over-states the wait, which is
+the safe direction for a header but is why the UI says "a few minutes" rather than counting down.
+
+`/health` is exempt: it is the liveness probe, and throttling it would turn a load problem into a
+container restart loop.
+
+**2. Account lockout, per account.** 5 consecutive failed passwords lock an account for 15 minutes,
+via Identity's existing `LockoutEnd`/`LockoutEnabled` columns. This is the defense that matters
+against a distributed attack — an attacker rotating IP addresses defeats every per-IP limit above,
+but not this. A successful login resets the count, and **a successful password reset clears the
+lockout** (holding the emailed token proves inbox control). There is no admin unlock endpoint; see
+the runbook for the database fallback.
+
+**3. Email send throttling, per address.** `forgot-password` and `resend-verification-email` send at
+most 3 emails per address per hour. The per-IP limit above does not stop someone flooding one
+member's inbox from a handful of proxies, and every such request sends a real email — the cost is
+SMTP reputation, not CPU. A throttled request returns the **same generic response** as a served one,
+so the throttle cannot become the account-enumeration oracle these endpoints otherwise avoid being.
+
+**Configuration.** All limits, the lockout thresholds, and the trusted-proxy CIDRs are environment
+variables (`RateLimit__*`, `Lockout__*`, `ForwardedHeaders__KnownNetworks`) — see `.env.example`.
+`RateLimit__Enabled=false` disables limiting entirely. Malformed values are rejected at **startup**
+with a named error rather than silently ignored, so a typo stops the container instead of quietly
+removing protection.
+
+**Dependency worth knowing.** Every per-IP limit above depends on nginx forwarding
+`X-Forwarded-For` and the app trusting it (`UseForwardedHeaders`). Without that, all callers
+resolve to the Docker bridge gateway and share a single bucket — meaning the limits apply to the
+whole portal at once rather than per member. `GET /api/admin/diagnostics/client-ip` (Admin only)
+returns the resolved address so this can be confirmed after a deploy.
 
 ## Password reset
 
@@ -176,6 +226,9 @@ the constant in the same commit.**
 ## Open questions / TODO
 
 - Refresh token rotation (currently a short-lived access token only, see `Jwt:ExpiryMinutes`).
+- No admin unlock endpoint. A locked-out account waits out the window or resets its password;
+  anything else needs direct database access. This matters most for Super Admin, of which
+  production has exactly one — see the runbook's "Known risk".
 - Consent history is last-write-wins: re-consenting overwrites the previous timestamp/version
   rather than appending. Enough to answer "does this user hold current consent"; not enough to
   reconstruct *when* they agreed to a superseded version. Needs a separate consent-events table
