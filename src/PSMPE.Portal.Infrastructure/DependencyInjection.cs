@@ -96,6 +96,7 @@ public static class DependencyInjection
         // See docs/caching-strategy.md.
         services.AddMemoryCache();
         services.AddSingleton<ICacheService, MemoryCacheService>();
+        services.AddSingleton<IEmailSendThrottle, MemoryCacheEmailSendThrottle>();
 
         // Falls back to logging-only when no real SMTP host is configured, so local dev keeps
         // working without real credentials - see ConsoleEmailSender / SmtpEmailSender.

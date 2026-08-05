@@ -17,6 +17,7 @@ public class AuthController(
     RoleManager<IdentityRole<Guid>> roleManager,
     IJwtTokenGenerator jwtTokenGenerator,
     IEmailSender emailSender,
+    IEmailSendThrottle emailSendThrottle,
     IConfiguration configuration,
     IWebHostEnvironment env) : ControllerBase
 {
@@ -174,6 +175,11 @@ public class AuthController(
             return Ok(new ResendVerificationEmailResponse(genericMessage));
         }
 
+        if (!emailSendThrottle.TryRecordSend(request.Email))
+        {
+            return Ok(new ResendVerificationEmailResponse(genericMessage));
+        }
+
         var confirmationToken = await userManager.GenerateEmailConfirmationTokenAsync(user);
         var verificationLink = BuildVerificationLink(user.Id, confirmationToken);
         await emailSender.SendEmailAsync(
@@ -196,6 +202,13 @@ public class AuthController(
             // Don't reveal whether the account exists, and don't let an unverified account
             // request a reset link before it's even confirmed - mirrors ResendVerificationEmail's
             // anti-enumeration pattern above.
+            return Ok(new ForgotPasswordResponse(genericMessage));
+        }
+
+        if (!emailSendThrottle.TryRecordSend(request.Email))
+        {
+            // Same generic response as every other path here - a throttled caller must not be
+            // able to tell they were throttled, let alone that the account exists.
             return Ok(new ForgotPasswordResponse(genericMessage));
         }
 
