@@ -16,6 +16,7 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddPortalSwagger();
+builder.Services.AddPortalRateLimiting(builder.Configuration);
 builder.Services.AddHealthChecks();
 
 // The app sits behind nginx, which is the only thing that ever talks to Kestrel directly.
@@ -102,6 +103,8 @@ app.UseCors("Frontend");
 
 app.UseAuthentication();
 app.UseAuthorization();
+
+app.UseRateLimiter();
 
 app.MapControllers();
 

@@ -1,10 +1,12 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using PSMPE.Portal.Application.Auth;
 using PSMPE.Portal.Application.Common.Interfaces;
 using PSMPE.Portal.Domain.Entities;
 using PSMPE.Portal.Domain.Enums;
+using PSMPE.Portal.WebAPI.Extensions;
 
 namespace PSMPE.Portal.WebAPI.Controllers;
 
@@ -68,6 +70,7 @@ public class AuthController(
     }
 
     [HttpPost("register")]
+    [EnableRateLimiting(RateLimitingServiceExtensions.AuthIpPolicy)]
     public async Task<ActionResult<RegisterResponse>> Register(RegisterRequest request)
     {
         // Checked before anything else: without consent there is no lawful basis to process the
@@ -137,6 +140,7 @@ public class AuthController(
     }
 
     [HttpPost("verify-email")]
+    [EnableRateLimiting(RateLimitingServiceExtensions.AuthIpPolicy)]
     public async Task<ActionResult<AuthResponse>> VerifyEmail(VerifyEmailRequest request)
     {
         var user = await userManager.FindByIdAsync(request.UserId.ToString());
@@ -158,6 +162,7 @@ public class AuthController(
     }
 
     [HttpPost("resend-verification-email")]
+    [EnableRateLimiting(RateLimitingServiceExtensions.AuthEmailSendPolicy)]
     public async Task<ActionResult<ResendVerificationEmailResponse>> ResendVerificationEmail(ResendVerificationEmailRequest request)
     {
         const string genericMessage = "If an account with that email exists and isn't yet verified, a new verification email has been sent.";
@@ -180,6 +185,7 @@ public class AuthController(
     }
 
     [HttpPost("forgot-password")]
+    [EnableRateLimiting(RateLimitingServiceExtensions.AuthEmailSendPolicy)]
     public async Task<ActionResult<ForgotPasswordResponse>> ForgotPassword(ForgotPasswordRequest request)
     {
         const string genericMessage = "If an account with that email exists, a password reset link has been sent.";
@@ -204,6 +210,7 @@ public class AuthController(
     }
 
     [HttpPost("reset-password")]
+    [EnableRateLimiting(RateLimitingServiceExtensions.AuthIpPolicy)]
     public async Task<ActionResult<ResetPasswordResponse>> ResetPassword(ResetPasswordRequest request)
     {
         var user = await userManager.FindByIdAsync(request.UserId.ToString());
@@ -287,6 +294,7 @@ public class AuthController(
     }
 
     [HttpGet("username-available")]
+    [EnableRateLimiting(RateLimitingServiceExtensions.UsernameProbePolicy)]
     public async Task<ActionResult<bool>> IsUsernameAvailable(string username)
     {
         if (string.IsNullOrWhiteSpace(username))
@@ -299,6 +307,7 @@ public class AuthController(
     }
 
     [HttpPost("login")]
+    [EnableRateLimiting(RateLimitingServiceExtensions.AuthIpPolicy)]
     public async Task<ActionResult<AuthResponse>> Login(LoginRequest request)
     {
         var user = await userManager.FindByEmailAsync(request.Email);
