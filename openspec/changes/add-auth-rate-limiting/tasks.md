@@ -1434,12 +1434,26 @@ docker exec -it psmpe-production-postgres-1 psql -U psmpe_user -d psmpe_portal \
   -c "UPDATE \"AspNetUsers\" SET \"LockoutEnd\" = NULL, \"AccessFailedCount\" = 0 WHERE \"Email\" = '<address>';"
 ```
 
-**Known risk, accepted rather than solved:** production has one Super Admin. Anyone who knows that
-address can keep it locked out indefinitely at a cost of 5 requests per 15 minutes — comfortably
-under the 20-per-5-minute per-IP limit, and lockout is per-account so rotating IPs is unnecessary.
-The account needed to *respond* to an incident is therefore the cheapest one to deny. Options, none
-of which this change implements: a second break-glass Super Admin, an unlock endpoint, or a shorter
-window for privileged roles. Decide before Task 11.
+**Break-glass Super Admin — resolved 2026-08-05.** Production previously had exactly one Super
+Admin, which made it the cheapest account on the system to deny: anyone knowing the address could
+hold it locked indefinitely at 5 requests per 15 minutes, comfortably under the per-IP limit, and
+lockout is per-account so rotating IPs isn't even needed. The account you need in order to *respond*
+to an incident was the one an attacker could most easily take away.
+
+A second Super Admin now exists. Its address is deliberately **not recorded here** — the protection
+depends on it not being publicly known, and this file is in git. Its initial password is on the
+droplet at `/root/psmpe-breakglass.txt` (root-only, `chmod 600`).
+
+Provisioning method, for whenever another is needed: Super Admin is not assignable through the API
+by design, so it comes only from seeding. `IdentitySeeder.SeedUserAsync` is **create-only** — it
+returns early if the email already exists and never updates an existing account — so pointing
+`SEED_ADMIN_EMAIL`/`SEED_ADMIN_PASSWORD` at a new address and recreating the backend container adds
+an account without disturbing any existing one. Restore `.env` afterwards; no second restart is
+needed, because seeding has already run and the restored values only matter at the next deploy.
+
+Still not implemented, and still worth considering: an admin unlock endpoint. Note it does not
+substitute for a second account — a locked admin cannot authenticate to call it, and an attacker
+sustaining the attack simply re-locks the account after each unlock.
 
 ### Emergency rollback
 
