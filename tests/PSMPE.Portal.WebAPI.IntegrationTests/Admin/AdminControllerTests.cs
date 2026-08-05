@@ -4,6 +4,8 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Configuration;
+using PSMPE.Portal.Application.Common.Interfaces;
 using PSMPE.Portal.Application.Common.Models;
 using PSMPE.Portal.Application.Members;
 using PSMPE.Portal.Application.Members.Dtos;
@@ -37,6 +39,8 @@ public class AdminControllerTests : IClassFixture<CustomWebApplicationFactory>, 
     private readonly IMemberService _memberService;
     private readonly IMemberUploadService _memberUploadService;
     private readonly IMemberCertificateService _memberCertificateService;
+    private readonly IEmailSender _emailSender;
+    private readonly IConfiguration _configuration;
 
     public AdminControllerTests(CustomWebApplicationFactory factory)
     {
@@ -47,6 +51,8 @@ public class AdminControllerTests : IClassFixture<CustomWebApplicationFactory>, 
         _memberService = _scope.ServiceProvider.GetRequiredService<IMemberService>();
         _memberUploadService = _scope.ServiceProvider.GetRequiredService<IMemberUploadService>();
         _memberCertificateService = _scope.ServiceProvider.GetRequiredService<IMemberCertificateService>();
+        _emailSender = _scope.ServiceProvider.GetRequiredService<IEmailSender>();
+        _configuration = _scope.ServiceProvider.GetRequiredService<IConfiguration>();
         _controller = CreateController(callerRoles: RoleNames.SuperAdmin);
     }
 
@@ -65,7 +71,7 @@ public class AdminControllerTests : IClassFixture<CustomWebApplicationFactory>, 
         var httpContext = new DefaultHttpContext { User = new ClaimsPrincipal(new ClaimsIdentity(claims, "TestAuth")) };
         return new AdminController(
             _userManager, _roleManager, NullLogger<AdminController>.Instance,
-            _memberService, _memberUploadService, _memberCertificateService)
+            _memberService, _memberUploadService, _memberCertificateService, _emailSender, _configuration)
         {
             ControllerContext = new ControllerContext { HttpContext = httpContext }
         };
@@ -617,5 +623,69 @@ public class AdminControllerTests : IClassFixture<CustomWebApplicationFactory>, 
         var ok = Assert.IsType<OkObjectResult>(result.Result);
         var permissions = Assert.IsAssignableFrom<IReadOnlyList<string>>(ok.Value);
         Assert.Equal(Permissions.All.OrderBy(p => p), permissions.OrderBy(p => p));
+    }
+
+    [Fact]
+    public async Task SendPasswordReset_ForAVerifiedAccount_Succeeds()
+    {
+        var user = await CreateUserAsync(RoleNames.Member);
+        user.EmailConfirmed = true;
+        await _userManager.UpdateAsync(user);
+
+        var result = await _controller.SendPasswordReset(user.Id);
+
+        Assert.IsType<NoContentResult>(result);
+    }
+
+    [Fact]
+    public async Task SendPasswordReset_ForAnUnverifiedAccount_IsRefused()
+    {
+        // Mirrors ForgotPassword: mailing a reset to an unproven address undermines the reason
+        // that rule exists. The admin has verify-email for this case.
+        var user = await CreateUserAsync(RoleNames.Member);
+
+        var result = await _controller.SendPasswordReset(user.Id);
+
+        var badRequest = Assert.IsType<BadRequestObjectResult>(result);
+        Assert.Equal(
+            "EMAIL_NOT_CONFIRMED",
+            badRequest.Value?.GetType().GetProperty("code")?.GetValue(badRequest.Value) as string);
+    }
+
+    [Fact]
+    public async Task SendPasswordReset_TargetingASuperAdmin_IsRefused()
+    {
+        // Otherwise an Admin could aim a reset at the Super Admin account. Refused as NotFound
+        // rather than Forbidden, because IsHiddenFromCallerAsync runs first and deliberately hides
+        // Super Admin accounts from every other caller - a 403 would confirm the account exists.
+        var superAdmin = await CreateUserAsync(RoleNames.SuperAdmin);
+        superAdmin.EmailConfirmed = true;
+        await _userManager.UpdateAsync(superAdmin);
+
+        var result = await _controller.SendPasswordReset(superAdmin.Id);
+
+        Assert.IsType<NotFoundResult>(result);
+    }
+
+    [Fact]
+    public async Task SendPasswordReset_IgnoresThePerAddressEmailThrottle()
+    {
+        // Counting administrator sends against the member's own 3-per-hour allowance would let a
+        // member's earlier attempts block the person trying to help them - the worse failure. This
+        // pins a deliberate bypass that is otherwise invisible and easy to "fix" by mistake.
+        var user = await CreateUserAsync(RoleNames.Member);
+        user.EmailConfirmed = true;
+        await _userManager.UpdateAsync(user);
+
+        var throttle = _scope.ServiceProvider.GetRequiredService<IEmailSendThrottle>();
+        for (var i = 0; i < 5; i++)
+        {
+            throttle.TryRecordSend(user.Email!);
+        }
+        Assert.False(throttle.TryRecordSend(user.Email!), "the address's own allowance should be spent");
+
+        var result = await _controller.SendPasswordReset(user.Id);
+
+        Assert.IsType<NoContentResult>(result);
     }
 }
