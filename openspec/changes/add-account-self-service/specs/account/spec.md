@@ -103,8 +103,9 @@ reset link SHALL be the same one the self-service forgot-password flow issues.
 
 #### Scenario: A Super Admin account cannot be targeted
 
-- **WHEN** an administrator triggers a reset against a Super Admin account
-- **THEN** the request is refused
+- **WHEN** an administrator triggers a reset against a Super Admin account that is not their own
+- **THEN** the request is refused as not found, rather than as forbidden, so the response does not
+  confirm that the account exists
 
 #### Scenario: Administrator sends are not blocked by the per-address email throttle
 

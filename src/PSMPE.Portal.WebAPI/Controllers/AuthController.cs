@@ -26,19 +26,13 @@ public class AuthController(
     /// applies under the "Testing" environment CustomWebApplicationFactory uses.</summary>
     private bool ShowDevVerificationLink => !env.IsProduction();
 
-    private string BuildVerificationLink(Guid userId, string token)
-    {
-        var frontendBaseUrl = configuration["Frontend:BaseUrl"] ?? "http://localhost:5173";
-        var encodedToken = Uri.EscapeDataString(token);
-        return $"{frontendBaseUrl}/verify-email?userId={userId}&token={encodedToken}";
-    }
+    // Delegates to AuthLinks so AdminController's reset email cannot drift from this one - both
+    // must keep matching the frontend's routes.
+    private string BuildVerificationLink(Guid userId, string token) =>
+        AuthLinks.VerifyEmail(configuration, userId, token);
 
-    private string BuildResetPasswordLink(Guid userId, string token)
-    {
-        var frontendBaseUrl = configuration["Frontend:BaseUrl"] ?? "http://localhost:5173";
-        var encodedToken = Uri.EscapeDataString(token);
-        return $"{frontendBaseUrl}/reset-password?userId={userId}&token={encodedToken}";
-    }
+    private string BuildResetPasswordLink(Guid userId, string token) =>
+        AuthLinks.ResetPassword(configuration, userId, token);
 
     private static readonly HashSet<string> PasswordPolicyErrorCodes =
     [
