@@ -101,10 +101,17 @@ app.UseMiddleware<ExceptionHandlingMiddleware>();
 
 app.UseCors("Frontend");
 
+// Ahead of authentication on purpose. AuthorizationMiddleware short-circuits unauthenticated
+// requests with a 401 before later middleware runs, so a limiter placed after it never sees
+// them - leaving the entire [Authorize] surface exempt from the global ceiling for exactly the
+// callers it most needs to bound. Measured before this was moved: 340 unauthenticated requests
+// to /api/admin/users returned 340 x 401 and zero 429s.
+// Named policies are unaffected by the position: they resolve from endpoint metadata, which
+// WebApplication's auto-inserted UseRouting has already populated by this point.
+app.UseRateLimiter();
+
 app.UseAuthentication();
 app.UseAuthorization();
-
-app.UseRateLimiter();
 
 app.MapControllers();
 

@@ -56,6 +56,12 @@ export const LoginPage = () => {
           setNeedsVerification(true)
         } else if (err.response?.status === 401) {
           setError('Invalid email or password.')
+        } else if (err.response?.status === 429) {
+          // Must beat the generic arm below, which would blame our servers and invite an
+          // immediate retry - the one action guaranteed to fail while the window is full.
+          // Deliberately vague about timing: the Retry-After header reports the whole window
+          // rather than the time remaining in it, so any countdown we rendered would overstate.
+          setError('Too many attempts from your connection. Please wait a few minutes and try again.')
         } else if (err.response) {
           // Backend responded but something failed server-side (e.g. it can't reach the
           // database) - don't tell the user their credentials are wrong when they aren't.

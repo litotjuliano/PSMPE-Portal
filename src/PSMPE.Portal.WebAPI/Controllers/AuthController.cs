@@ -246,6 +246,15 @@ public class AuthController(
                 result.Errors.ToDictionary(e => e.Code, e => new[] { e.Description })));
         }
 
+        // Clear any lockout. Without this the two mechanisms combine into a dead end for the
+        // members most likely to hit it: someone who forgot their password, failed five times,
+        // then reset it correctly would still be refused with ACCOUNT_LOCKED and would
+        // reasonably conclude the reset failed - burning their 3-per-hour reset email allowance
+        // on retries that cannot help. Holding the emailed token already proves inbox control,
+        // which is a stronger claim than the failed password attempts disproved.
+        await userManager.ResetAccessFailedCountAsync(user);
+        await userManager.SetLockoutEndDateAsync(user, null);
+
         // No JWT issued here - the user logs in fresh at /login rather than being silently
         // authenticated by whoever holds the link (see ForgotPasswordPage/ResetPasswordPage).
         return Ok(new ResetPasswordResponse("Your password has been reset. You can now sign in."));

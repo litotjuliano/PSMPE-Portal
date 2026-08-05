@@ -22,15 +22,6 @@ apiClient.interceptors.request.use((config) => {
   return config
 })
 
-export type RateLimitListener = (retryAfterSeconds: number) => void
-
-let rateLimitListener: RateLimitListener | null = null
-
-/** Lets the UI surface a wait time without this module importing anything from the UI layer. */
-export const onRateLimited = (listener: RateLimitListener | null) => {
-  rateLimitListener = listener
-}
-
 // TODO: implement refresh-token rotation once the backend issues refresh tokens;
 // for now a 401 simply clears the session and sends the user back to /login.
 apiClient.interceptors.response.use(
@@ -42,14 +33,11 @@ apiClient.interceptors.response.use(
         window.location.assign('/login')
       }
     }
-    // Deliberately a separate branch, not an `else if` chained onto the 401 above: being
-    // throttled is not being signed out. Clearing the session here would turn a brief wait
-    // into a forced re-login, and would do it precisely when the server is already under load.
-    if (error.response?.status === 429) {
-      const header = error.response.headers?.['retry-after']
-      const retryAfterSeconds = Number.parseInt(header ?? '', 10)
-      rateLimitListener?.(Number.isFinite(retryAfterSeconds) ? retryAfterSeconds : 60)
-    }
+    // A 429 deliberately falls straight through to the caller. Being throttled is not being
+    // signed out, so it must never take the branch above: clearing the session would turn a
+    // short wait into a forced re-login, precisely when the server is already shedding load.
+    // The user-facing message belongs in the pages, where it can be specific about what the
+    // caller was doing - see LoginPage and ResetPasswordPage.
     return Promise.reject(error)
   },
 )

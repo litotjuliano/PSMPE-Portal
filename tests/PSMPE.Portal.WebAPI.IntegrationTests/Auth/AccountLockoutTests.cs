@@ -134,4 +134,33 @@ public class AccountLockoutTests : IClassFixture<CustomWebApplicationFactory>, I
             Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
         }
     }
+
+    [Fact]
+    public async Task ResetPassword_ClearsTheLockout_SoTheMemberCanActuallySignIn()
+    {
+        // The path a real member takes: forget the password, fail five times, then reset it.
+        // Without lockout being cleared here the reset appears to work and login still refuses,
+        // which reads as "the reset didn't take" and sends them back for another reset email -
+        // straight into the 3-per-hour cap on those.
+        var email = await VerifiedAccountAsync();
+        for (var i = 0; i < 5; i++)
+        {
+            await LoginAsync(email, "WrongPassword1!");
+        }
+        Assert.Equal(HttpStatusCode.Forbidden, (await LoginAsync(email, "WrongPassword1!")).StatusCode);
+
+        var forgot = await SendAsync(HttpMethod.Post, "/api/auth/forgot-password",
+            new ForgotPasswordRequest(email), UniqueIp());
+        var forgotBody = await forgot.Content.ReadFromJsonAsync<ForgotPasswordResponse>();
+
+        var query = QueryHelpers.ParseQuery(new Uri(forgotBody!.DevResetLink!).Query);
+        var reset = await SendAsync(HttpMethod.Post, "/api/auth/reset-password",
+            new ResetPasswordRequest(Guid.Parse(query["userId"]!), query["token"]!, "NewPassword123!"),
+            UniqueIp());
+        Assert.Equal(HttpStatusCode.OK, reset.StatusCode);
+
+        var login = await LoginAsync(email, "NewPassword123!");
+
+        Assert.Equal(HttpStatusCode.OK, login.StatusCode);
+    }
 }

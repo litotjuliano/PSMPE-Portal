@@ -17,11 +17,11 @@ namespace PSMPE.Portal.WebAPI.Extensions;
 ///
 /// This is deliberately only half the defence. A limiter partitioned on IP cannot see accounts,
 /// and members sharing an office IP would be throttled collectively if it tried, so per-account
-/// protection is meant to live elsewhere - Identity lockout and a per-address email send
-/// throttle. Neither exists yet: they are Tasks 3 and 4 of
-/// openspec/changes/add-auth-rate-limiting/tasks.md. Until they land, the gap is real and worth
-/// knowing about: forgot-password and resend-verification-email are capped per IP only, so an
-/// attacker with a handful of proxies can still flood one member's inbox indefinitely.
+/// protection lives elsewhere: Identity lockout (see AuthController.Login and the options.Lockout
+/// block in Infrastructure's DependencyInjection) and a per-address email send throttle (see
+/// MemoryCacheEmailSendThrottle). Both are required for this to be meaningful - on their own the
+/// limits here are per IP, and an attacker with a handful of proxies gets a fresh bucket per
+/// address.
 /// </summary>
 public static class RateLimitingServiceExtensions
 {
@@ -94,9 +94,13 @@ public static class RateLimitingServiceExtensions
             {
                 if (context.Lease.TryGetMetadata(MetadataName.RetryAfter, out var retryAfter))
                 {
-                    // Round up, never down. Truncating a rejection in the last fraction of a
-                    // window yields "Retry-After: 0", which tells a compliant client to retry
-                    // straight into another 429 and would render as "try again in 0 seconds".
+                    // Round up, never down, and never below 1 - a "Retry-After: 0" would tell a
+                    // compliant client to retry straight into another 429.
+                    // Note this OVER-states the wait: FixedWindowRateLimiter reports the whole
+                    // window here, not the time left in it, so a rejection 4 seconds into a
+                    // 5-minute window still advertises 5 minutes. That is the safe direction for
+                    // a header, but it is why the UI says "a few minutes" rather than counting
+                    // down - see LoginPage and ResetPasswordPage.
                     var seconds = Math.Max(1, (int)Math.Ceiling(retryAfter.TotalSeconds));
                     context.HttpContext.Response.Headers.RetryAfter =
                         seconds.ToString(NumberFormatInfo.InvariantInfo);
