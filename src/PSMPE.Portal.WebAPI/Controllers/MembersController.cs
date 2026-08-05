@@ -112,10 +112,19 @@ public class MembersController(
         // Administrative accounts (Super Admin, Admin, Manager, Accounts) don't have membership
         // profiles - only block first-time self-registration (no existing row yet), so this never
         // touches a genuine member's later saves.
+        //
+        // Carries a message and code rather than a bare Forbid(): Forbid() writes a zero-byte body,
+        // so the client had nothing to show and the user saw a silent failure. Note this blocks
+        // only the membership *data*; uploads are keyed by UserId, not MemberId, so an
+        // administrator can still set their account photo via me/photo.
         if (await memberService.GetByUserIdAsync(userId.Value, cancellationToken) is null
             && await IsSystemAccountAsync(userId.Value))
         {
-            return Forbid();
+            return StatusCode(403, new
+            {
+                message = "Administrative accounts don't have a membership profile. Your account photo can still be updated.",
+                code = "ADMIN_ACCOUNT_NO_PROFILE",
+            });
         }
 
         var result = await memberService.UpsertMyProfileAsync(userId.Value, request, cancellationToken);

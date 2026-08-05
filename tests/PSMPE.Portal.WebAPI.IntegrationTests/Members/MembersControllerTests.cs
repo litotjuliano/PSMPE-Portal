@@ -962,7 +962,15 @@ public class MembersControllerTests : IClassFixture<CustomWebApplicationFactory>
 
         var result = await controller.UpdateMyProfile(request, CancellationToken.None);
 
-        Assert.IsType<ForbidResult>(result.Result);
+        // Asserts the status code rather than ForbidResult: the refusal now carries a message and
+        // code so the client can explain it, where Forbid() wrote a zero-byte body and left the
+        // user staring at a silent failure. The behaviour under test - refused, and no profile
+        // created - is unchanged.
+        var forbidden = Assert.IsType<ObjectResult>(result.Result);
+        Assert.Equal(StatusCodes.Status403Forbidden, forbidden.StatusCode);
+        Assert.Equal(
+            "ADMIN_ACCOUNT_NO_PROFILE",
+            forbidden.Value?.GetType().GetProperty("code")?.GetValue(forbidden.Value) as string);
         Assert.Null(await _memberService.GetByUserIdAsync(adminUser.Id));
     }
 
