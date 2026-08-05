@@ -102,4 +102,51 @@ public class MembersControllerAuthTests : IClassFixture<CustomWebApplicationFact
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
+
+    [Fact]
+    public async Task UpdateMyProfile_AsAdministrativeAccount_ExplainsWhyRatherThanReturningAnEmptyBody()
+    {
+        // Administrative accounts have no Member row by design, so this is a deliberate refusal.
+        // It previously used Forbid(), which writes a ZERO-BYTE body - the frontend had nothing to
+        // display and the user saw a silent failure on /profile. Observed live on staging as
+        // repeated 403s with 0 bytes. The code is what lets the client explain it instead.
+        var (_, adminToken) = await _client.CreatePrivilegedUserAsync(_userManager, RoleNames.Admin);
+        var body = new
+        {
+            firstName = "Admin", lastName = "Account",
+            chapter = Chapters.Ncr, memberType = MemberTypes.Regular,
+        };
+
+        var response = await _client.SendAsync(Request(HttpMethod.Put, "/api/members/me", adminToken, body));
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        var payload = await response.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>();
+        Assert.Equal("ADMIN_ACCOUNT_NO_PROFILE", payload.GetProperty("code").GetString());
+        Assert.False(string.IsNullOrWhiteSpace(payload.GetProperty("message").GetString()));
+    }
+
+    [Fact]
+    public async Task UploadMyPhoto_AsAdministrativeAccount_IsAllowed()
+    {
+        // The counterpart to the refusal above, and the reason it must stay narrow: uploads are
+        // keyed by UserId rather than MemberId, so an administrator can set an account photo even
+        // with no membership profile. If this ever starts failing, /profile has nothing to offer
+        // an administrative account at all.
+        var (_, adminToken) = await _client.CreatePrivilegedUserAsync(_userManager, RoleNames.Admin);
+
+        var request = new HttpRequestMessage(HttpMethod.Post, "/api/members/me/photo");
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", adminToken);
+        var content = new MultipartFormDataContent();
+        var file = new ByteArrayContent(Convert.FromBase64String(
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="));
+        file.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("image/png");
+        content.Add(file, "file", "photo.png");
+        request.Content = content;
+
+        var response = await _client.SendAsync(request);
+
+        Assert.True(
+            response.StatusCode is HttpStatusCode.NoContent or HttpStatusCode.OK,
+            $"expected the upload to succeed, got {(int)response.StatusCode} {response.StatusCode}");
+    }
 }

@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react'
 import { memberApi } from '../api/endpoints/memberApi'
 import { useAuth } from '../auth/useAuth'
+import { Roles } from '../types/auth'
 import { MemberTypes } from '../types/member'
 import type { Member } from '../types/member'
+import { AdminAccountPhotoCard } from './AdminAccountPhotoCard'
 import { describeError } from '../utils/apiError'
 import {
   MembershipApplicationWizardCard,
@@ -348,6 +350,14 @@ export function MyProfilePage() {
 
   const isDraft = existing === null || existing.submittedAt === null
 
+  // Mirrors MembersController.IsSystemAccountAsync (any role other than Member). Such accounts
+  // have no Member row by design, so PUT /api/members/me returns 403 ADMIN_ACCOUNT_NO_PROFILE -
+  // showing them the wizard offered a save that could never succeed. The `existing === null`
+  // half matters: it keeps a genuine member who was later granted a staff role on their own
+  // profile rather than swapping it for the admin view.
+  const isAdministrativeAccount = (user?.roles ?? []).some((role) => role !== Roles.Member)
+  const hasNoMembershipProfile = existing === null
+
   return (
     <>
       <PageMeta title="My Profile" />
@@ -355,6 +365,8 @@ export function MyProfilePage() {
         <PageBreadcrumb title="My Profile" />
         {loading ? (
           <p className="text-sm text-default-500">Loading…</p>
+        ) : isAdministrativeAccount && hasNoMembershipProfile ? (
+          <AdminAccountPhotoCard />
         ) : isDraft ? (
           <MembershipApplicationWizardCard
             step={wizardStep}
