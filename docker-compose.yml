@@ -72,8 +72,13 @@ services:
       Lockout__MaxFailedAttempts: ${Lockout__MaxFailedAttempts:-5}
       Lockout__MinutesLockedOut: ${Lockout__MinutesLockedOut:-15}
       ForwardedHeaders__KnownNetworks: ${ForwardedHeaders__KnownNetworks:-172.16.0.0/12}
+    # Bound to loopback so nginx is the only way in. Published on 0.0.0.0 this was directly
+    # reachable at http://<droplet-ip>:5000, which skips nginx entirely - and with it the
+    # X-Forwarded-For header every rate limit partition is keyed on.
+    # nginx proxies to 127.0.0.1 explicitly (not "localhost", which resolves to ::1 first on
+    # this host and would fail against an IPv4-only binding).
     ports:
-      - "5000:8080"
+      - "127.0.0.1:5000:8080"
     volumes:
       - uploads_data:/app/wwwroot/uploads
 
@@ -85,8 +90,9 @@ services:
     restart: unless-stopped
     depends_on:
       - backend
+    # Loopback only, same reasoning as the backend above - nginx is the sole ingress.
     ports:
-      - "5173:80"
+      - "127.0.0.1:5173:80"
 
 volumes:
   pgdata:
