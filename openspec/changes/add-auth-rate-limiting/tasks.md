@@ -1400,6 +1400,63 @@ git commit -m "Document rate limiting and lockout in the auth contract"
 
 ---
 
+## Operational runbook
+
+Written down because both of these are needed under pressure, when nobody wants to be improvising.
+
+### Deploy ordering is not optional
+
+**Task 8 (nginx `X-Forwarded-For`) must reach an environment before this code does.** Verified on
+2026-08-05: the live vhost still sets only `Host $host` on **both** staging and production.
+
+If this merges to `main` first, `ForwardedHeaders` finds no header, every request resolves to the
+Docker bridge gateway, and **every partition key collapses to one string**. The published limits
+then apply to all members combined, not per member: 20 logins per 5 minutes site-wide, 30 username
+probes per minute, 300 requests per minute. The 21st sign-in attempt across the whole portal in any
+5-minute window gets a 429. That is an effective sign-in outage, not a degradation.
+
+`/health` is exempt (`Program.cs`), so this does *not* produce a `restart: unless-stopped` loop —
+but the site is still unusable. Confirm with step 9.2 before trusting any environment.
+
+### Unlocking an account
+
+There is deliberately **no admin unlock endpoint**. Recovery paths, in order of preference:
+
+1. **Self-service password reset now clears the lockout** (`AuthController.ResetPassword`). This is
+   the normal path for a locked-out member: possession of the emailed token proves inbox control.
+   Note the 3-per-address-per-hour cap on reset emails still applies.
+2. **Wait it out** — `Lockout__MinutesLockedOut`, default 15 minutes.
+3. **Direct database update**, the only option if the locked account cannot receive email:
+
+```bash
+ssh 139.59.224.32
+docker exec -it psmpe-production-postgres-1 psql -U psmpe_user -d psmpe_portal \
+  -c "UPDATE \"AspNetUsers\" SET \"LockoutEnd\" = NULL, \"AccessFailedCount\" = 0 WHERE \"Email\" = '<address>';"
+```
+
+**Known risk, accepted rather than solved:** production has one Super Admin. Anyone who knows that
+address can keep it locked out indefinitely at a cost of 5 requests per 15 minutes — comfortably
+under the 20-per-5-minute per-IP limit, and lockout is per-account so rotating IPs is unnecessary.
+The account needed to *respond* to an incident is therefore the cheapest one to deny. Options, none
+of which this change implements: a second break-glass Super Admin, an unlock endpoint, or a shorter
+window for privileged roles. Decide before Task 11.
+
+### Emergency rollback
+
+`RateLimit__Enabled=false` in the environment's `.env`, then `docker compose up -d backend`.
+Per-policy overrides (`RateLimit__AuthIp__PermitLimit` etc.) let you loosen one limit without
+disabling everything, which is usually the better move.
+
+**The value must be exactly `true` or `false`.** Anything else is rejected at startup by design —
+which under `restart: unless-stopped` means a crash loop rather than a silent misconfiguration. So
+after editing `.env`, always:
+
+```bash
+docker compose logs backend --tail=50
+```
+
+Do not walk away from a rollback without reading that output.
+
 ## Spec scenarios verified manually, not by test
 
 Two scenarios in `specs/auth/spec.md` have no automated coverage. Both are deliberate, and both
