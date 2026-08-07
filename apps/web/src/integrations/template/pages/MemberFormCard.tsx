@@ -114,9 +114,8 @@ function DocumentCompletenessRow({
   )
 }
 
-/** Plain label/value pair used in view mode - falls back to '-' when empty, same convention
- *  PersonalInformationSection/AdditionalInformationSection already use for the member's own
- *  read-only views. */
+/** Plain label/value pair used in view mode - falls back to '-' when empty, same convention the
+ *  profile-sections components already use for the member's own read-only views. */
 function ViewField({ label, value, colSpan }: { label: string; value: string | number | null | undefined; colSpan?: boolean }) {
   return (
     <div className={colSpan ? 'md:col-span-2' : undefined}>
