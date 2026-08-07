@@ -76,7 +76,9 @@ export const FilePreviewModal = ({ isOpen, title, fetchFile, onClose }: FilePrev
       <div className="relative card w-full max-w-3xl max-h-[90vh] flex flex-col">
         <div className="card-header flex items-center justify-between">
           <h6 className="card-title">{title}</h6>
-          <button type="button" onClick={handleClose} className="btn size-9 rounded-full btn-sm hover:bg-default-150">
+          {/* White on the navy card-header fill - the default text colour and the light-grey hover
+              this used to have are both invisible there. */}
+          <button type="button" onClick={handleClose} className="btn size-9 rounded-full btn-sm text-white hover:bg-white/20">
             <TbX className="text-xl" />
           </button>
         </div>

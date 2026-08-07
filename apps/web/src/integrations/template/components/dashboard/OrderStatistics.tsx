@@ -9,7 +9,7 @@ const OrderStatistics = () => {
       <div className="card">
         <div className="card-header">
           <h6 className="card-title">Order Statistics</h6>
-          <Link to="#" className="btn btn-sm border-0 text-primary/90 hover:text-primary">
+          <Link to="#" className="btn btn-sm border-0 text-white/90 hover:text-white">
             View All
             <LuMoveRight className="ms-1 size-4" />
           </Link>

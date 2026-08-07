@@ -183,7 +183,7 @@ export const MemberFormCard = ({
             </button>
           )}
           {!isNew && !editing && (
-            <StandardButton size="sm" icon={LuSquarePen} onClick={() => setEditing(true)}>
+            <StandardButton size="sm" variant="on-primary" icon={LuSquarePen} onClick={() => setEditing(true)}>
               Edit
             </StandardButton>
           )}
