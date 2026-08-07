@@ -123,7 +123,7 @@ const ProductOrders = () => {
               </div>
             </div>
 
-            <button className="btn btn-sm bg-primary text-white">
+            <button className="btn btn-sm bg-white/15 text-white hover:bg-white/25">
               <LuDownload className="size-3.5 me-1" />
               Export
             </button>

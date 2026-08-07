@@ -12,7 +12,10 @@ public class MemberConfiguration : IEntityTypeConfiguration<Member>
         builder.Property(m => m.LastName).IsRequired().HasMaxLength(128);
         builder.Property(m => m.MiddleName).HasMaxLength(128);
         builder.Property(m => m.Suffix).HasMaxLength(32);
-        builder.Property(m => m.MembershipNo).IsRequired().HasMaxLength(32);
+        // Not IsRequired: assigned by an admin at approval, null before that. The unique index
+        // below still applies - Postgres treats NULLs as distinct, so applicants awaiting a number
+        // don't conflict.
+        builder.Property(m => m.MembershipNo).HasMaxLength(32);
         builder.Property(m => m.Chapter).IsRequired().HasMaxLength(64);
         builder.Property(m => m.MemberType).IsRequired().HasMaxLength(64);
         builder.Property(m => m.PrcLicenseNo).HasMaxLength(64);

@@ -53,3 +53,6 @@ TestResults/
 
 # ===== Local AI assistant session state (not project content) =====
 .claude/
+
+# Visual brainstorming companion scratch files
+.superpowers/

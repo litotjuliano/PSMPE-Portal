@@ -222,7 +222,7 @@ export const ContactInformationSection = ({ member, onUpdated }: ContactInformat
         </p>
       )}
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+      <div className="grid grid-cols-1 md:grid-cols-2 2xl:grid-cols-3 min-[1800px]:grid-cols-4 gap-4 text-sm">
         <div>
           <span className="block font-medium text-default-900 text-sm mb-2">House Phone</span>
           {editing ? (
@@ -322,7 +322,7 @@ export const ContactInformationSection = ({ member, onUpdated }: ContactInformat
 
       <div className="border-t border-default-200 pt-4">
         <h6 className="font-semibold text-default-800 mb-3">Residence Address</h6>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+        <div className="grid grid-cols-1 md:grid-cols-2 2xl:grid-cols-3 min-[1800px]:grid-cols-4 gap-4 text-sm">
           <div>
             <span className="block font-medium text-default-900 text-sm mb-2">House No.</span>
             {editing ? (
@@ -394,7 +394,7 @@ export const ContactInformationSection = ({ member, onUpdated }: ContactInformat
           )}
         </div>
         {editing && !form.mailingSameAsResidence ? (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+          <div className="grid grid-cols-1 md:grid-cols-2 2xl:grid-cols-3 min-[1800px]:grid-cols-4 gap-4 text-sm">
             <div>
               <span className="block font-medium text-default-900 text-sm mb-2">House No.</span>
               <input
@@ -445,7 +445,7 @@ export const ContactInformationSection = ({ member, onUpdated }: ContactInformat
             </div>
           </div>
         ) : !editing ? (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+          <div className="grid grid-cols-1 md:grid-cols-2 2xl:grid-cols-3 min-[1800px]:grid-cols-4 gap-4 text-sm">
             <div>
               <span className="block font-medium text-default-900 text-sm mb-2">House No.</span>
               <span className="font-semibold text-default-800">{member.mailingHouseNo || '-'}</span>

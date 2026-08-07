@@ -114,9 +114,8 @@ function DocumentCompletenessRow({
   )
 }
 
-/** Plain label/value pair used in view mode - falls back to '-' when empty, same convention
- *  PersonalInformationSection/AdditionalInformationSection already use for the member's own
- *  read-only views. */
+/** Plain label/value pair used in view mode - falls back to '-' when empty, same convention the
+ *  profile-sections components already use for the member's own read-only views. */
 function ViewField({ label, value, colSpan }: { label: string; value: string | number | null | undefined; colSpan?: boolean }) {
   return (
     <div className={colSpan ? 'md:col-span-2' : undefined}>
@@ -183,7 +182,7 @@ export const MemberFormCard = ({
             </button>
           )}
           {!isNew && !editing && (
-            <StandardButton size="sm" icon={LuSquarePen} onClick={() => setEditing(true)}>
+            <StandardButton size="sm" variant="on-primary" icon={LuSquarePen} onClick={() => setEditing(true)}>
               Edit
             </StandardButton>
           )}
@@ -511,17 +510,21 @@ export const MemberFormCard = ({
             <input className="form-input" value={state.instagramUrl} onChange={(e) => onChange('instagramUrl', e.target.value)} />
           </div>
 
-          {isNew && (
-            <div>
-              <label className="block font-medium text-default-900 text-sm mb-2">Membership No.</label>
-              <input
-                className="form-input"
-                required
-                value={state.membershipNo}
-                onChange={(e) => onChange('membershipNo', e.target.value)}
-              />
-            </div>
-          )}
+          {/* Editable after create too - this is the correction path for a control number
+              mistyped at approval. Not required: PSMPE assigns it, and an admin creating a profile
+              may not have it yet. Leaving it blank on an existing member keeps the stored value. */}
+          <div>
+            <label className="block font-medium text-default-900 text-sm mb-2">Membership ID</label>
+            <input
+              className="form-input"
+              maxLength={32}
+              value={state.membershipNo}
+              onChange={(e) => onChange('membershipNo', e.target.value)}
+            />
+            <p className="text-xs text-default-500 mt-1">
+              {isNew ? 'Optional - assigned at approval if left blank.' : "PSMPE's membership control number."}
+            </p>
+          </div>
           <div>
             <label className="block font-medium text-default-900 text-sm mb-2">RMP License No.</label>
             <input className="form-input" value={state.prcLicenseNo} onChange={(e) => onChange('prcLicenseNo', e.target.value)} />

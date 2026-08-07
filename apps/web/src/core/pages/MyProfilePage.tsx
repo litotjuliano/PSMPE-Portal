@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { memberApi } from '../api/endpoints/memberApi'
+import { uploadApi } from '../api/endpoints/uploadApi'
 import { useAuth } from '../auth/useAuth'
 import { Roles } from '../types/auth'
 import { MemberTypes } from '../types/member'
@@ -188,6 +189,43 @@ export function MyProfilePage() {
   // can't fire overlapping saveDraft calls.
   const [navigating, setNavigating] = useState(false)
   const [loading, setLoading] = useState(true)
+
+  // The photo lives here rather than in each consumer: the summary card displays it and the
+  // Personal Information tab replaces it, and when they each owned a copy the page fetched the
+  // same blob twice and showed two avatars that could disagree after an upload.
+  const [photoUrl, setPhotoUrl] = useState<string | null>(null)
+  // Held in a ref so cleanup revokes the URL actually on screen, not a stale capture.
+  const photoObjectUrlRef = useRef<string | null>(null)
+
+  const showPhoto = useCallback((next: string | null) => {
+    if (photoObjectUrlRef.current) URL.revokeObjectURL(photoObjectUrlRef.current)
+    photoObjectUrlRef.current = next
+    setPhotoUrl(next)
+  }, [])
+
+  useEffect(() => {
+    let cancelled = false
+    uploadApi
+      .fetchMyPhotoUrl()
+      .then((result) => {
+        if (cancelled) {
+          if (result) URL.revokeObjectURL(result.url)
+          return
+        }
+        showPhoto(result?.url ?? null)
+      })
+      .catch(() => {
+        // fetchMyPhotoUrl maps 404 to null, so a throw here is a real fault - but a missing avatar
+        // must never block the rest of the profile from rendering.
+      })
+    return () => {
+      cancelled = true
+      if (photoObjectUrlRef.current) {
+        URL.revokeObjectURL(photoObjectUrlRef.current)
+        photoObjectUrlRef.current = null
+      }
+    }
+  }, [showPhoto])
 
   useEffect(() => {
     memberApi
@@ -387,11 +425,18 @@ export function MyProfilePage() {
                 navigating={navigating}
               />
             ) : (
-              <MyProfileTabsCard existing={existing as Member} onUpdated={setExisting} />
+              <MyProfileTabsCard
+                existing={existing as Member}
+                onUpdated={setExisting}
+                photoUrl={photoUrl}
+                onPhotoChanged={showPhoto}
+              />
             )}
-            {/* Members get the same self-service account controls - name, photo, password are on
-                ApplicationUser, which every role has, and nothing about them is membership data. */}
-            <AccountSection />
+            {/* No standalone AccountSection here any more for members - Display Name and Change
+                Password now live on the Account & Security tab inside MyProfileTabsCard, and photo
+                comes from ProfileRail. This second rendering was fully redundant once both moved
+                in; AccountSection is still used as-is for administrative accounts above, which
+                have no Member row and so no tabs to hold this content. */}
           </div>
         )}
       </main>

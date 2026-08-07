@@ -69,7 +69,7 @@ const AppMenu = () => {
   const items = filterByRole(menuItemsData, user?.roles ?? [])
 
   return (
-    <ul className="side-nav p-3 hs-accordion-group">
+    <ul className="side-nav py-3 hs-accordion-group">
       {items.map((item: MenuItemType) =>
         item.isTitle ? (
           <li className="menu-title" key={item.key}>

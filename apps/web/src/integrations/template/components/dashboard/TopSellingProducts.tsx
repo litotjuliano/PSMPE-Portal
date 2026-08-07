@@ -31,13 +31,13 @@ const TopSellingProducts = () => {
         <div className="hs-dropdown relative inline-flex">
           <button
             type="button"
-            className="hs-dropdown-toggle bt size-7.5 text-sm font-semibold rounded-lg hover:bg-default-150"
+            className="hs-dropdown-toggle bt size-7.5 text-sm font-semibold rounded-lg text-white hover:bg-white/20"
             aria-haspopup="menu"
             aria-expanded="false"
             aria-label="Dropdown"
             hs-dropdown-placement="bottom-end"
           >
-            <LuEllipsisVertical className="size-4 text-default-500" />
+            <LuEllipsisVertical className="size-4" />
           </button>
 
           <div className="hs-dropdown-menu" role="menu">

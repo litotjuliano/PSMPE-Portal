@@ -3,7 +3,8 @@ import type { Member } from '../../../core/types/member'
 
 interface MembershipApprovalsTableProps {
   members: Member[]
-  onApprove: (id: string) => void
+  /** Passes the whole member so the approval dialog can name who it's numbering. */
+  onApprove: (member: Member) => void
   page: number
   pageSize: number
   totalCount: number
@@ -47,7 +48,7 @@ export const MembershipApprovalsTable = ({
                 <tbody className="divide-y divide-default-200">
                   {members.map((member) => (
                     <tr key={member.id} className="text-default-800 font-normal text-sm whitespace-nowrap">
-                      <td className="py-3 px-3.5">{member.membershipNo}</td>
+                      <td className="py-3 px-3.5 text-default-500">{member.membershipNo ?? 'Not yet assigned'}</td>
                       <td className="flex py-3 px-3.5 items-center gap-3">
                         <div className="w-9 h-9 flex items-center justify-center rounded-full bg-primary/10 text-primary font-semibold text-xs">
                           {initialsOf(member.firstName, member.lastName)}
@@ -60,7 +61,7 @@ export const MembershipApprovalsTable = ({
                       <td className="py-3 px-3.5">{new Date(member.createdAt).toLocaleDateString()}</td>
                       <td className="py-3 px-3.5">
                         <div className="flex items-center gap-1.5">
-                          <button onClick={() => onApprove(member.id)} className="btn btn-sm bg-success text-white">
+                          <button onClick={() => onApprove(member)} className="btn btn-sm bg-success text-white">
                             Approve
                           </button>
                           <Link to={`/members/${member.id}`} className="btn btn-sm border border-default-200">

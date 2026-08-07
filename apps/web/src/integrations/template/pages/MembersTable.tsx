@@ -5,6 +5,7 @@ import type { GetMembersParams } from '../../../core/api/endpoints/memberApi'
 import type { Member } from '../../../core/types/member'
 import { MembershipStatus } from '../../../core/types/member'
 import { ConfirmationModal } from '../components/shared/ConfirmationModal'
+import { StandardButton } from '../components/shared/StandardButton'
 
 type SortableColumn = NonNullable<GetMembersParams['sortBy']>
 
@@ -80,10 +81,9 @@ export const MembersTable = ({
     <div className="card">
       <div className="card-header flex justify-between items-center">
         <h6 className="card-title">Members</h6>
-        <Link to="/members/new" className="btn btn-sm bg-primary text-white">
-          <LuPlus className="size-4 me-1" />
+        <StandardButton to="/members/new" size="sm" variant="on-primary" icon={LuPlus}>
           New member
-        </Link>
+        </StandardButton>
       </div>
 
       <div className="flex flex-col">
@@ -118,7 +118,9 @@ export const MembersTable = ({
                           {member.firstName} {member.lastName}
                         </span>
                       </td>
-                      <td className="py-3 px-3.5">{member.membershipNo}</td>
+                      <td className="py-3 px-3.5">
+                        {member.membershipNo ?? <span className="text-default-500">Not yet assigned</span>}
+                      </td>
                       <td className="py-3 px-3.5">{member.chapter}</td>
                       <td className="py-3 px-3.5">
                         <span className={`inline-flex items-center py-0.5 px-2.5 rounded text-xs font-medium ${statusClasses[member.status]}`}>

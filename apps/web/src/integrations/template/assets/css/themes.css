@@ -10,6 +10,10 @@
   /* PSMPE "Waterworks Professional" palette - see openspecs for the approved mockup. */
   --color-primary-50: #EFF5FB;
   --color-primary-100: #DCE8F5;
+  /* Not in the approved palette - extrapolated between primary-100 and primary-500 for idle label
+     text on the navy sidenav, where primary-100 reads too bright. ~10:1 on primary-900. Same
+     precedent as steel-950 below. */
+  --color-primary-200: #C3D3E8;
   --color-primary-500: #2E6FB8;
   --color-primary-600: #1B5CA6;
   --color-primary: #0E4C92;
@@ -63,6 +67,16 @@
   --color-default-900: var(--color-steel-900);
   --color-default-950: var(--color-steel-950);
 
+  /* Type scale shifted up one step so 'text-sm' - the body default set in _reboot.css and used 334
+     times across the app - lands at 16px. Overriding the scale rather than editing call sites is
+     what makes this apply to code not yet written. Line heights need no changes: Tailwind defines
+     them as unitless ratios via calc(), so they track the new sizes. 2xl and up are unused. */
+  --text-xs: 0.875rem; /* 12px -> 14px */
+  --text-sm: 1rem; /* 14px -> 16px (body default) */
+  --text-base: 1.125rem; /* 16px -> 18px */
+  --text-lg: 1.25rem; /* 18px -> 20px */
+  --text-xl: 1.375rem; /* 20px -> 22px */
+
   --text-base--line-height: 1.1;
   --text-xl--line-height: 1.1;
   --text-2xl--line-height: 1.1;
@@ -76,10 +90,10 @@
 
   --spacing-topbar-height: 70px;
 
-  --sidenav-link-padding-x: 12px;
-  --sidenav-link-padding-y: 8px;
-  --sidenav-item-icon-size: 18px;
-  --sidenav-item-font-size: 14px;
+  --sidenav-link-padding-x: 16px; /* icon inset once the active bar goes full-bleed */
+  --sidenav-link-padding-y: 12px; /* ~44px rows, per the approved mockup */
+  --sidenav-item-icon-size: 20px;
+  --sidenav-item-font-size: 15px;
 
   --topbar-background: var(--color-white);
 }
@@ -125,13 +139,14 @@ html[data-sidenav-color='light'] {
   --sidenav-item-hover-bg: theme(backgroundColor.primary/10%);
 }
 
-/* Dark Menu (Dark Mode) */
+/* Dark Menu (Dark Mode) - PSMPE navy. Hover is deliberately a white wash rather than a second blue,
+   so it can't be mistaken for the active item the way the light block's tokens can. */
 html[data-sidenav-color='dark'],
 html[data-theme='dark'][data-sidenav-color='light'] {
-  --sidenav-background: var(--color-steel-900);
-  --sidenav-item-color: var(--color-steel-400);
-  --sidenav-item-active-color: var(--color-steel-50);
-  --sidenav-item-active-bg: var(--color-steel-800);
-  --sidenav-item-hover-color: var(--color-steel-300);
-  --sidenav-item-hover-bg: var(--color-steel-800);
+  --sidenav-background: var(--color-primary-900);
+  --sidenav-item-color: var(--color-primary-200);
+  --sidenav-item-active-color: var(--color-white);
+  --sidenav-item-active-bg: var(--color-primary-600);
+  --sidenav-item-hover-color: var(--color-white);
+  --sidenav-item-hover-bg: rgb(255 255 255 / 8%);
 }

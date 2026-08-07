@@ -91,10 +91,9 @@ export const AdminUsersTable = ({
     <div className="card">
       <div className="card-header flex justify-between items-center">
         <h6 className="card-title">Users</h6>
-        <Link to="/admin/users/new" className="btn btn-sm bg-primary text-white">
-          <LuPlus className="size-4 me-1" />
+        <StandardButton to="/admin/users/new" size="sm" variant="on-primary" icon={LuPlus}>
           New user
-        </Link>
+        </StandardButton>
       </div>
 
       <div className="flex flex-col">

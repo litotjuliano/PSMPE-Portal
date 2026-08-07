@@ -19,10 +19,11 @@ Sidenav Menu
 
   .menu-item {
     .menu-link {
-      @apply relative w-full flex items-center gap-x-3 rounded px-4 py-2 font-medium text-default-600 transition-all whitespace-nowrap bg-transparent;
+      @apply relative w-full flex items-center gap-x-3 px-4 py-2 font-medium text-default-600 transition-all whitespace-nowrap bg-transparent;
       color: var(--sidenav-item-color);
       font-size: var(--sidenav-item-font-size);
-      line-height: var(--sidenav-item-font-size);
+      /* Not the font size - that's a ratio of 1.0, which clips descenders at this size. */
+      line-height: 1.4;
       padding: var(--sidenav-link-padding-y) var(--sidenav-link-padding-x);
 
       > .menu-icon {
@@ -66,6 +67,10 @@ Sidenav Menu
 
   > .menu-item {
     > .menu-link {
+      /* Full-bleed from the sidebar's leading edge, rounded on the trailing end only. Logical
+         properties, not border-radius - a physical radius lands on the wrong side under RTL. */
+      @apply rounded-s-none rounded-e-md;
+
       &:is(.open, .active, :active, :focus) {
         background-color: var(--sidenav-item-active-bg);
       }
@@ -76,6 +81,7 @@ Sidenav Menu
     }
 
     &.active > .menu-link {
+      @apply font-semibold;
       background-color: var(--sidenav-item-active-bg);
       color: var(--sidenav-item-active-color);
     }
@@ -83,7 +89,8 @@ Sidenav Menu
 
   /* Sub Level Menu */
   .sub-menu {
-    @apply ps-7.5 w-full overflow-hidden transition-all duration-300;
+    /* Tracks --sidenav-link-padding-x so the bullet stays under the parent's icon. */
+    @apply ps-9 w-full overflow-hidden transition-all duration-300;
 
     .menu-item  {
       @apply mt-1
@@ -423,4 +430,11 @@ html[data-sidenav-color='dark'] {
       }
     }
   }
+}
+
+/* The navy rail deepens toward the bottom, per the approved mockup. Applied as background-image
+   rather than through --sidenav-background, because that token is also read as a flat fill by the
+   sm-mode flyout and the md-mode logo box, neither of which should carry the gradient. */
+html[data-sidenav-color='dark'] .app-menu {
+  background-image: linear-gradient(180deg, var(--color-primary-800) 0%, var(--color-primary-900) 55%);
 }

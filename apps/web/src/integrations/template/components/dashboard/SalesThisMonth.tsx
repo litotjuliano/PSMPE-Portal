@@ -12,13 +12,13 @@ const SalesThisMonth = () => {
         <div className="hs-dropdown relative inline-flex">
           <button
             type="button"
-            className="hs-dropdown-toggle btn  size-7.5 text-sm font-semibold rounded-lg hover:bg-default-150"
+            className="hs-dropdown-toggle btn size-7.5 text-sm font-semibold rounded-lg text-white hover:bg-white/20"
             aria-haspopup="menu"
             aria-expanded="false"
             aria-label="Dropdown"
             hs-dropdown-placement="bottom-end"
           >
-            <LuEllipsisVertical className="iconify size-4 text-default-500" />
+            <LuEllipsisVertical className="iconify size-4" />
           </button>
 
           <div className="hs-dropdown-menu" role="menu">
