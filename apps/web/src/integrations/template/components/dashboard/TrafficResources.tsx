@@ -9,7 +9,7 @@ const TrafficResources = () => {
       <div className="card mb-5 ">
         <div className="card-header">
           <h6 className="card-title">Traffic Resources</h6>
-          <Link to="#" className="btn btn-sm border-0 text-primary/90 hover:text-primary">
+          <Link to="#" className="btn btn-sm border-0 text-white/90 hover:text-white">
             View Status
             <LuMoveRight className="ms-1 size-4" />
           </Link>
