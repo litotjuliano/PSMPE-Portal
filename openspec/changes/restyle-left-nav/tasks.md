@@ -21,7 +21,7 @@ plus a browser pass.
 **Files:**
 - Modify: `apps/web/src/integrations/template/assets/css/themes.css`
 
-- [ ] **1.1 Add the extrapolated palette shade**
+- [x] **1.1 Add the extrapolated palette shade**
 
 In the `@theme` block, directly after `--color-primary-100` (line 12), add:
 
@@ -32,7 +32,7 @@ In the `@theme` block, directly after `--color-primary-100` (line 12), add:
   --color-primary-200: #C3D3E8;
 ```
 
-- [ ] **1.2 Bump the geometry tokens**
+- [x] **1.2 Bump the geometry tokens**
 
 Replace lines 79-82:
 
@@ -43,7 +43,7 @@ Replace lines 79-82:
   --sidenav-item-font-size: 15px;
 ```
 
-- [ ] **1.3 Retune the Dark Menu block**
+- [x] **1.3 Retune the Dark Menu block**
 
 Replace the block at lines 128-137. Keep **both** selectors exactly as they are — the second is what
 turns the sidebar dark when the whole app is in dark mode, and dropping it leaves a white rail there:
@@ -73,7 +73,7 @@ specificity, and this one comes later, so it wins when `data-sidenav-color='dark
 **Files:**
 - Modify: `apps/web/src/integrations/template/assets/css/structure/_sidenav.css`
 
-- [ ] **2.1 Fix the link line-height and drop the shared radius**
+- [x] **2.1 Fix the link line-height and drop the shared radius**
 
 In the `.menu-link` rule (lines 21-26), remove `rounded` from the `@apply` list — the radius now
 differs between top-level items and sub-menu items, so it no longer belongs on the shared rule — and
@@ -83,7 +83,7 @@ change the line-height, which is currently a ratio of 1.0 and will clip descende
       line-height: 1.4;
 ```
 
-- [ ] **2.2 Make the top-level bar full-bleed**
+- [x] **2.2 Make the top-level bar full-bleed**
 
 In the `> .menu-item > .menu-link` block (lines 67-76), add as the first declaration:
 
@@ -94,7 +94,7 @@ In the `> .menu-item > .menu-link` block (lines 67-76), add as the first declara
 Logical properties, not `border-radius` — the file uses `ms`/`me`/`ps`/`pe` throughout and a
 physical radius would put the rounded end on the wrong side under `dir="rtl"`.
 
-- [ ] **2.3 Weight the active label**
+- [x] **2.3 Weight the active label**
 
 In the `&.active > .menu-link` rule (lines 78-81), add:
 
@@ -102,13 +102,13 @@ In the `&.active > .menu-link` rule (lines 78-81), add:
       @apply font-semibold;
 ```
 
-- [ ] **2.4 Re-align the sub-menu indent**
+- [x] **2.4 Re-align the sub-menu indent**
 
 `.sub-menu` uses `ps-7.5` (line 86), tuned against the old 12px link padding. Change it to `ps-9` so
 the bullet still sits under the parent's icon. No menu item currently has children — this is purely
 keeping the CSS coherent for when one does.
 
-- [ ] **2.5 Add the navy gradient**
+- [x] **2.5 Add the navy gradient**
 
 `.app-menu` uses `bg-(--sidenav-background)`, which compiles to `background-color` and cannot hold a
 gradient. Add it as a separate `background-image` so the token stays a flat colour for the places
@@ -132,7 +132,7 @@ If it reads muddy in the browser, delete this rule — flat `primary-900` is a f
 **Files:**
 - Modify: `apps/web/src/integrations/template/components/layout/SideNav/AppMenu.tsx:72`
 
-- [ ] **3.1 Change `p-3` to `py-3`**
+- [x] **3.1 Change `p-3` to `py-3`**
 
 ```tsx
     <ul className="side-nav py-3 hs-accordion-group">
@@ -148,11 +148,11 @@ padding stays. `.menu-title` already uses `px-4`, which now matches the new 16px
 **Files:**
 - Modify: `apps/web/src/integrations/template/context/useLayoutContext.tsx:32,49`
 
-- [ ] **4.1 Flip the default**
+- [x] **4.1 Flip the default**
 
 Line 32, in `INIT_STATE`: `color: 'light'` → `color: 'dark'`.
 
-- [ ] **4.2 Bump the localStorage key**
+- [x] **4.2 Bump the localStorage key**
 
 Line 49: `'__PSMPE_LAYOUT_CONFIG__'` → `'__PSMPE_LAYOUT_CONFIG_V2__'`.
 
@@ -164,7 +164,7 @@ which is acceptable; they are cosmetic preferences, not user data.
 
 ## 5. Verify
 
-- [ ] **5.1 Lint and build**
+- [x] **5.1 Lint and build**
 
 ```bash
 cd apps/web && npm run lint && npm run build
@@ -198,7 +198,13 @@ Signed in as an Admin, so all three sections render:
 7. **Mobile** — under 768px the offcanvas drawer slides in navy with a working backdrop.
 8. **RTL** — Direction → RTL: the bar is full-bleed on the *right*, rounded on the left.
 
-- [ ] **5.3 Commit**
+**Left unchecked deliberately**: items 1–3 above were confirmed at the time (the default-navy
+sidebar and the fixed hover/active distinction have been in continuous view across every session
+since, with no visual regression reported). Items 4–8 (all seven sidenav sizes, Light mode, Dark
+app theme, mobile offcanvas, RTL) were never explicitly re-walked point by point — worth a real
+pass before treating this as fully closed, rather than assuming it from "nothing broke since."
+
+- [x] **5.3 Commit**
 
 ```bash
 git add apps/web/src/integrations/template/assets/css/themes.css \

@@ -35,34 +35,48 @@ see Open questions/TODO for what's deferred.
     not by a second endpoint.
 - `POST /api/members` — admin creates a member profile for an existing user
   - Auth: `members:manage` permission
-  - Request: `{ userId, membershipNo, firstName, middleName, lastName, suffix, birthdate, gender, civilStatus, educationLevel, schoolName, courseYearGraduated, specifiedProfession, mobileNumber, houseNo, street, barangay, cityMunicipality, province, zipCode, mailingHouseNo, mailingStreet, mailingBarangay, mailingCityMunicipality, mailingProvince, mailingZipCode, prcLicenseNo, prcRegistrationDate, prcValidUntilDate, ptrNumber, tin, chapter, company, memberType, renewalDueDate, nationalDuesReferenceNo }`
+  - Request: `{ userId, membershipNo?, firstName, middleName, lastName, suffix, birthdate, gender, civilStatus, educationLevel, schoolName, courseYearGraduated, specifiedProfession, mobileNumber, houseNo, street, barangay, cityMunicipality, province, zipCode, mailingHouseNo, mailingStreet, mailingBarangay, mailingCityMunicipality, mailingProvince, mailingZipCode, prcLicenseNo, prcRegistrationDate, prcValidUntilDate, ptrNumber, tin, chapter, company, memberType, renewalDueDate, nationalDuesReferenceNo }`
     (see "Membership Application Form fields" below for what each new field maps to on the paper
     form, and the "RMP" naming note)
+  - `membershipNo` is optional — PSMPE assigns its own control number, and an admin creating a
+    profile out of band may not have it yet (see "Membership number lifecycle" below). `409` if a
+    non-blank value collides with an existing member's.
   - Does **not** create a login account — that's `POST /api/auth/register`'s job. `400` if
-    `userId` doesn't exist; `409` if that user already has a profile or `membershipNo` collides.
+    `userId` doesn't exist; `409` if that user already has a profile.
   - Always starts as `Status: Pending`, `ApprovedAt: null`, `SubmittedAt: now` — admin-entered
     profiles skip the draft phase entirely, since they're complete the moment they're created.
-- `PUT /api/members/{id}` — admin edit, including `Status` and `MemberType`
+- `PUT /api/members/{id}` — admin edit, including `Status`, `MemberType`, and `MembershipNo`
   - Auth: `members:manage` permission
+  - `MembershipNo` in this request is the correction path for a control number mistyped at
+    approval — blank/omitted leaves the stored value untouched (never clears an assigned number);
+    a non-blank value is validated for length and uniqueness the same as at approval.
 - `PUT /api/members/me` — self-service edit/autosave of the caller's own profile
   - Auth: authenticated (any role)
   - Request: same shape as create, minus `userId`/`membershipNo`/`Status` — those are
     business-controlled, not self-service (`MemberType` *is* self-service — it's chosen at
     registration, not a business decision like `Status`)
-  - **Upserts**: creates the profile (with a server-generated `MembershipNo`, `Status: Pending`,
-    `SubmittedAt: null`) if the caller doesn't have one yet. This is the wizard's per-step autosave
-    mechanism — every "Save & Continue" click calls this with whatever's been filled in so far, so
-    closing the browser mid-wizard and returning later resumes with everything intact. Does *not*
-    set `SubmittedAt` — that's a separate, explicit action (below).
+  - **Upserts**: creates the profile (`MembershipNo: null`, `Status: Pending`, `SubmittedAt: null`)
+    if the caller doesn't have one yet — see "Membership number lifecycle" below for why this no
+    longer generates a number. This is the wizard's per-step autosave mechanism — every "Save &
+    Continue" click calls this with whatever's been filled in so far, so closing the browser
+    mid-wizard and returning later resumes with everything intact. Does *not* set `SubmittedAt` —
+    that's a separate, explicit action (below).
 - `POST /api/members/me/submit` — self-service: finalizes the draft into a submitted application
   - Auth: authenticated (any role)
   - `404` if the caller has no draft at all (hasn't saved anything yet); `400` if
     `FirstName`/`LastName`/`Chapter`/`MemberType` are still empty (lists what's missing);
     otherwise sets `SubmittedAt` to now if not already set (idempotent).
   - This is what makes the application visible to admins at all — see Draft/Approval/Status below.
-- `POST /api/members/{id}/approve` — admin marks an application as reviewed
+- `POST /api/members/{id}/approve` — admin marks an application as reviewed, assigning PSMPE's
+  membership control number in the same step
   - Auth: `members:manage` permission
-  - Sets `ApprovedAt` to now if not already set; idempotent (approving twice is a no-op success).
+  - Request: `{ membershipNo }` — **required**. `400` if blank/whitespace-only or over 32
+    characters; `409` if another member already holds it. Neither approves the application — the
+    caller must resolve the number and retry.
+  - Sets `ApprovedAt` to now and `MembershipNo` to the trimmed request value, if not already
+    approved; idempotent (approving an already-approved application is a no-op success and
+    **does not** re-assign `MembershipNo` — a repeat call, e.g. from the receipt/email retry path,
+    must never silently renumber a live member).
   - Does **not** change `Status` — approval and payment are independent gates, see below.
 - `DELETE /api/members/{id}` — admin removes just the member profile
   - Auth: `members:manage` permission
@@ -99,6 +113,27 @@ queue and the notification bell filter on `pendingApprovalOnly=true` (`ApprovedA
 review" list. And because `GetAllAsync` unconditionally excludes drafts, an in-progress
 application never shows up there either, regardless of which filters are passed.
 
+## Membership number lifecycle
+
+`MembershipNo` is **admin-assigned, not system-generated** — PSMPE issues its own control numbers,
+and the portal never invents one. It is `null` from first wizard autosave through submission and
+stays `null` until an admin supplies it at approval (`POST /api/members/{id}/approve`); the field
+is `HasMaxLength(32)` but nullable despite carrying a unique index, since Postgres treats every
+`NULL` as distinct — unapproved applicants never collide with each other while awaiting a number.
+
+The admin UI collects it via a dedicated dialog (`ApproveMembershipModal`) at the moment of
+approval, on both the Membership Approvals list and the member detail page, rather than as a form
+field filled in ahead of time. If a number is mistyped, `PUT /api/members/{id}` is the only
+correction path — re-approving is idempotent and deliberately will not overwrite it (see above), so
+a wrong number is otherwise stuck. Every display site (`/members`, Membership Approvals, PRC
+Verifications, the member's own profile) falls back to "Not yet assigned" rather than a blank cell.
+
+This replaced a `GenerateMembershipNoAsync` scheme that computed max-existing-plus-one and assigned
+it at first wizard autosave — before the applicant had even submitted. Members saw a number the
+society had never issued from the moment they started the form, every abandoned draft permanently
+consumed one, and the generator materialized the entire `MembershipNo` column client-side on every
+registration (`O(n)`, check-then-insert with no lock or retry). Deleted outright rather than fixed.
+
 ## Grace period
 
 `MemberDto.IsInGracePeriod` is computed (not stored): `true` when `Status == Active`,
@@ -118,8 +153,12 @@ Sign-up and the membership application are two separate, decoupled flows:
 - **`MyProfilePage`** (`/profile`, authenticated) hosts the actual 4-step application wizard from
   the product spec (Personal Info → Contact Info → Additional Info → Payment Details), via
   `MembershipApplicationWizardCard`, whenever the caller has no Member profile yet or has one with
-  `submittedAt: null` (still a draft) — once `submittedAt` is set, this page instead shows the
-  ordinary flat "My Profile" edit form (`MyProfileCard`) as before.
+  `submittedAt: null` (still a draft) — once `submittedAt` is set, this page instead shows
+  `MyProfileTabsCard`, five independently-editable tabs grouped by concern (Personal /
+  Professional & Licensing / Contact / Account & Security / Documents & Certificates) rather than
+  the wizard's own step grouping. Account & Security is also where the caller's Display Name and
+  password live — the same self-service settings any account has, not membership data, surfaced
+  here rather than on a separate page.
   - **Autosave/resume**: every "Save & Continue" click calls `PUT /api/members/me` with whatever's
     been filled in so far, then advances the step — so leaving mid-wizard and coming back later
     resumes with that data intact. Resume position is derived, not stored (see
@@ -264,10 +303,11 @@ production both hit this).
 ## Membership Approvals + notifications
 
 `MembershipApprovalsPage` (`/membership-approvals`, Admin/Super Admin) lists members with
-`pendingApprovalOnly=true` and lets an admin Approve inline, or click through to `/members/{id}`
-(`MemberFormCard` also has an inline Approve button there, since that's where a notification click
-lands - that page also opens read-only, "Approval"-titled, per the same review-not-edit reasoning
-as the applicant-facing flow below). The topbar notification bell and the dedicated
+`pendingApprovalOnly=true` and lets an admin Approve inline via `ApproveMembershipModal` (which
+collects the required Membership ID, see "Membership number lifecycle" above), or click through to
+`/members/{id}` (`MemberFormCard` opens the same dialog there, since that's where a notification
+click lands - that page also opens read-only, "Approval"-titled, per the same review-not-edit
+reasoning as the applicant-facing flow below). The topbar notification bell and the dedicated
 `NotificationsPage` (`/notifications`) both derive their content from the same
 `pendingApprovalOnly=true` query — no separate notifications entity, no read/unread tracking (an
 item simply stops matching the filter once approved). This admin-facing side is pull-based
@@ -309,14 +349,6 @@ repeat call doesn't regenerate/resend):
 - **Payments/Dues domain doesn't exist yet**: `Status` transitions to `Active` are entirely manual
   (an admin edits the record once dues are confirmed paid out of band). Once a Payments domain
   exists, it should be the thing that flips `Status`, not manual admin edits.
-- **`MembershipNo` auto-generation is not perfectly race-safe under concurrency**:
-  `GenerateMembershipNoAsync` generates a sequential zero-padded number one past the *highest*
-  existing `MembershipNo` (not a row count - a row-count-based scheme deterministically collides,
-  on every subsequent attempt, as soon as any Member row is ever deleted and leaves a gap below the
-  count). The unique index still guarantees no duplicate is ever persisted, but a genuine
-  concurrent collision (two first-time registrations landing in the same instant) would surface as
-  a `SaveChanges` failure rather than a graceful retry — acceptable at current scale, revisit if
-  registration volume grows.
 - No audit log for profile/status changes yet (same gap noted for role changes in `roles.md`).
 - **Semi-automated, AI/OCR-assisted PRC License verification is a deferred future feature** - a
   full OpenSpec proposal already exists at `openspec/changes/add-prc-ai-verification/` (admin-
