@@ -15,6 +15,31 @@
     @apply font-semibold;
   }
 
+  /* Tailwind's preflight sets headings to font-size: inherit, so a heading with no size utility
+     renders at the body size - which is why section titles used to be exactly as large as the
+     field labels beneath them. These are base-layer rules, so the 66 headings that already carry
+     an explicit text-* class still win; only the 26 sizeless ones move. */
+  h1 {
+    @apply text-3xl;
+  }
+
+  h2 {
+    @apply text-2xl;
+  }
+
+  h3 {
+    @apply text-xl;
+  }
+
+  h4 {
+    @apply text-lg;
+  }
+
+  h5,
+  h6 {
+    @apply text-base;
+  }
+
   body {
     overflow-x: hidden;
     -webkit-tap-highlight-color: transparent;

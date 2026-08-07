@@ -67,6 +67,16 @@
   --color-default-900: var(--color-steel-900);
   --color-default-950: var(--color-steel-950);
 
+  /* Type scale shifted up one step so 'text-sm' - the body default set in _reboot.css and used 334
+     times across the app - lands at 16px. Overriding the scale rather than editing call sites is
+     what makes this apply to code not yet written. Line heights need no changes: Tailwind defines
+     them as unitless ratios via calc(), so they track the new sizes. 2xl and up are unused. */
+  --text-xs: 0.875rem; /* 12px -> 14px */
+  --text-sm: 1rem; /* 14px -> 16px (body default) */
+  --text-base: 1.125rem; /* 16px -> 18px */
+  --text-lg: 1.25rem; /* 18px -> 20px */
+  --text-xl: 1.375rem; /* 20px -> 22px */
+
   --text-base--line-height: 1.1;
   --text-xl--line-height: 1.1;
   --text-2xl--line-height: 1.1;
