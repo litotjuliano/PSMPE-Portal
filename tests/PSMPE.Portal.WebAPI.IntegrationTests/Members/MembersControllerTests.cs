@@ -283,7 +283,8 @@ public class MembersControllerTests : IClassFixture<CustomWebApplicationFactory>
         var updateResult = await controller.UpdateMyProfile(request, CancellationToken.None);
         var updated = Assert.IsType<MemberDto>(Assert.IsType<OkObjectResult>(updateResult.Result).Value);
         Assert.Equal(MembershipStatus.Pending, updated.Status);
-        Assert.False(string.IsNullOrWhiteSpace(updated.MembershipNo));
+        // The portal no longer invents a number - PSMPE assigns its own control number at approval.
+        Assert.Null(updated.MembershipNo);
 
         var getResult = await controller.GetMyProfile(CancellationToken.None);
         var fetched = Assert.IsType<MemberDto>(Assert.IsType<OkObjectResult>(getResult.Result).Value);
@@ -394,19 +395,81 @@ public class MembersControllerTests : IClassFixture<CustomWebApplicationFactory>
         var createdDto = Assert.IsType<MemberDto>(Assert.IsType<OkObjectResult>(created.Result).Value);
         Assert.Null(createdDto.ApprovedAt);
 
-        var firstApprove = await controller.Approve(createdDto.Id, CancellationToken.None);
+        var firstApprove = await controller.Approve(createdDto.Id, new ApproveMemberRequest("A-0001"), CancellationToken.None);
         Assert.IsType<NoContentResult>(firstApprove);
 
         var afterFirst = await controller.GetById(createdDto.Id, CancellationToken.None);
         var afterFirstDto = Assert.IsType<MemberDto>(Assert.IsType<OkObjectResult>(afterFirst.Result).Value);
         Assert.NotNull(afterFirstDto.ApprovedAt);
 
-        var secondApprove = await controller.Approve(createdDto.Id, CancellationToken.None);
+        var secondApprove = await controller.Approve(createdDto.Id, new ApproveMemberRequest("A-0002"), CancellationToken.None);
         Assert.IsType<NoContentResult>(secondApprove);
 
         var afterSecond = await controller.GetById(createdDto.Id, CancellationToken.None);
         var afterSecondDto = Assert.IsType<MemberDto>(Assert.IsType<OkObjectResult>(afterSecond.Result).Value);
         Assert.Equal(afterFirstDto.ApprovedAt, afterSecondDto.ApprovedAt);
+        // The second call passed a different number on purpose: a repeat approval must not
+        // renumber a live member.
+        Assert.Equal("A-0001", afterSecondDto.MembershipNo);
+    }
+
+    [Fact]
+    public async Task Approve_AssignsTheMembershipNoFromTheRequest()
+    {
+        var user = await CreateUserAsync();
+        var controller = CreateController();
+        var created = await controller.Create(BuildCreateRequest(user.Id), CancellationToken.None);
+        var createdDto = Assert.IsType<MemberDto>(Assert.IsType<OkObjectResult>(created.Result).Value);
+
+        // Padded so the trim is exercised - admins paste these out of spreadsheets.
+        var result = await controller.Approve(createdDto.Id, new ApproveMemberRequest("  PSMPE-2026-000123  "), CancellationToken.None);
+        Assert.IsType<NoContentResult>(result);
+
+        var fetched = await controller.GetById(createdDto.Id, CancellationToken.None);
+        var dto = Assert.IsType<MemberDto>(Assert.IsType<OkObjectResult>(fetched.Result).Value);
+        Assert.Equal("PSMPE-2026-000123", dto.MembershipNo);
+        Assert.NotNull(dto.ApprovedAt);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    public async Task Approve_WithoutAMembershipNo_IsRejectedAndDoesNotApprove(string membershipNo)
+    {
+        var user = await CreateUserAsync();
+        var controller = CreateController();
+        var created = await controller.Create(BuildCreateRequest(user.Id), CancellationToken.None);
+        var createdDto = Assert.IsType<MemberDto>(Assert.IsType<OkObjectResult>(created.Result).Value);
+
+        var result = await controller.Approve(createdDto.Id, new ApproveMemberRequest(membershipNo), CancellationToken.None);
+
+        Assert.IsType<BadRequestObjectResult>(result);
+        var fetched = await controller.GetById(createdDto.Id, CancellationToken.None);
+        var dto = Assert.IsType<MemberDto>(Assert.IsType<OkObjectResult>(fetched.Result).Value);
+        Assert.Null(dto.ApprovedAt);
+    }
+
+    [Fact]
+    public async Task Approve_WithAMembershipNoAnotherMemberHolds_ReturnsConflict()
+    {
+        var controller = CreateController();
+
+        var firstUser = await CreateUserAsync();
+        var firstCreated = await controller.Create(BuildCreateRequest(firstUser.Id), CancellationToken.None);
+        var firstDto = Assert.IsType<MemberDto>(Assert.IsType<OkObjectResult>(firstCreated.Result).Value);
+        Assert.IsType<NoContentResult>(
+            await controller.Approve(firstDto.Id, new ApproveMemberRequest("DUPLICATE-1"), CancellationToken.None));
+
+        var secondUser = await CreateUserAsync();
+        var secondCreated = await controller.Create(BuildCreateRequest(secondUser.Id), CancellationToken.None);
+        var secondDto = Assert.IsType<MemberDto>(Assert.IsType<OkObjectResult>(secondCreated.Result).Value);
+
+        var result = await controller.Approve(secondDto.Id, new ApproveMemberRequest("DUPLICATE-1"), CancellationToken.None);
+
+        Assert.IsType<ConflictObjectResult>(result);
+        var fetched = await controller.GetById(secondDto.Id, CancellationToken.None);
+        var dto = Assert.IsType<MemberDto>(Assert.IsType<OkObjectResult>(fetched.Result).Value);
+        Assert.Null(dto.ApprovedAt);
     }
 
     [Fact]
@@ -420,7 +483,7 @@ public class MembersControllerTests : IClassFixture<CustomWebApplicationFactory>
         var beforeApprove = await CreateController(user.Id).GetMyReceipt(CancellationToken.None);
         Assert.IsType<NotFoundResult>(beforeApprove);
 
-        var approveResult = await adminController.Approve(createdDto.Id, CancellationToken.None);
+        var approveResult = await adminController.Approve(createdDto.Id, new ApproveMemberRequest("A-0003"), CancellationToken.None);
         Assert.IsType<NoContentResult>(approveResult);
 
         var afterApprove = await CreateController(user.Id).GetMyReceipt(CancellationToken.None);
@@ -436,8 +499,8 @@ public class MembersControllerTests : IClassFixture<CustomWebApplicationFactory>
         var created = await adminController.Create(BuildCreateRequest(user.Id), CancellationToken.None);
         var createdDto = Assert.IsType<MemberDto>(Assert.IsType<OkObjectResult>(created.Result).Value);
 
-        Assert.IsType<NoContentResult>(await adminController.Approve(createdDto.Id, CancellationToken.None));
-        Assert.IsType<NoContentResult>(await adminController.Approve(createdDto.Id, CancellationToken.None));
+        Assert.IsType<NoContentResult>(await adminController.Approve(createdDto.Id, new ApproveMemberRequest(Guid.NewGuid().ToString("N")[..8]), CancellationToken.None));
+        Assert.IsType<NoContentResult>(await adminController.Approve(createdDto.Id, new ApproveMemberRequest(Guid.NewGuid().ToString("N")[..8]), CancellationToken.None));
 
         var afterSecondApprove = await CreateController(user.Id).GetMyReceipt(CancellationToken.None);
         Assert.IsType<FileStreamResult>(afterSecondApprove);
@@ -448,7 +511,7 @@ public class MembersControllerTests : IClassFixture<CustomWebApplicationFactory>
     {
         var controller = CreateController();
 
-        var result = await controller.Approve(Guid.NewGuid(), CancellationToken.None);
+        var result = await controller.Approve(Guid.NewGuid(), new ApproveMemberRequest("A-0006"), CancellationToken.None);
 
         Assert.IsType<NotFoundObjectResult>(result);
     }
@@ -499,7 +562,7 @@ public class MembersControllerTests : IClassFixture<CustomWebApplicationFactory>
         var unapprovedDto = Assert.IsType<MemberDto>(Assert.IsType<OkObjectResult>(unapprovedCreated.Result).Value);
         var approvedCreated = await controller.Create(BuildCreateRequest(approvedUser.Id), CancellationToken.None);
         var approvedDto = Assert.IsType<MemberDto>(Assert.IsType<OkObjectResult>(approvedCreated.Result).Value);
-        await controller.Approve(approvedDto.Id, CancellationToken.None);
+        await controller.Approve(approvedDto.Id, new ApproveMemberRequest("A-0007"), CancellationToken.None);
 
         var result = await controller.GetAll(page: 1, pageSize: 1000, pendingApprovalOnly: true, cancellationToken: CancellationToken.None);
 

@@ -18,7 +18,8 @@ export interface GetMembersParams {
 
 export interface CreateMemberRequest {
   userId: string
-  membershipNo: string
+  /** Optional - an admin creating a profile may not have PSMPE's control number yet. Mandatory at approval. */
+  membershipNo: string | null
   firstName: string
   middleName: string | null
   lastName: string
@@ -70,6 +71,9 @@ export interface CreateMemberRequest {
 /** No prcIdVerified field - verification is only ever set via memberApi's approve/rejectPrcVerification
  *  calls, so every decision goes through the audit trail rather than a raw toggle. */
 export interface UpdateMemberRequest {
+  /** Correction path for a control number mistyped at approval. Blank/omitted leaves the stored
+   *  value alone - it is not a way to clear an approved member's number. */
+  membershipNo?: string | null
   firstName: string
   middleName: string | null
   lastName: string
@@ -210,7 +214,10 @@ export const memberApi = {
 
   deleteMember: (id: string) => apiClient.delete(`/api/members/${id}`).then((res) => res.data),
 
-  approveMember: (id: string) => apiClient.post(`/api/members/${id}/approve`).then((res) => res.data),
+  /** PSMPE's own control number, keyed in by the admin - the portal never generates one, so
+   *  approval is impossible without it. 400 if blank, 409 if already in use. */
+  approveMember: (id: string, membershipNo: string) =>
+    apiClient.post(`/api/members/${id}/approve`, { membershipNo }).then((res) => res.data),
 
   submitMyProfile: () => apiClient.post('/api/members/me/submit').then((res) => res.data),
 

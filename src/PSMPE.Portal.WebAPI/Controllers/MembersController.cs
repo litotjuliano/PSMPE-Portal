@@ -78,9 +78,12 @@ public class MembersController(
             return Conflict(new { message = "This user already has a Member profile." });
         }
 
-        if (await memberService.MembershipNoExistsAsync(request.MembershipNo, cancellationToken))
+        // Optional at create - PSMPE assigns its own control number and an admin may not have it
+        // yet. It's mandatory at approval instead.
+        if (!string.IsNullOrWhiteSpace(request.MembershipNo)
+            && await memberService.MembershipNoExistsAsync(request.MembershipNo.Trim(), cancellationToken: cancellationToken))
         {
-            return Conflict(new { message = $"Membership No. '{request.MembershipNo}' is already in use." });
+            return Conflict(new { message = $"Membership ID '{request.MembershipNo.Trim()}' is already in use." });
         }
 
         var result = await memberService.CreateAsync(request, cancellationToken);
@@ -159,7 +162,7 @@ public class MembersController(
 
     [HttpPost("{id:guid}/approve")]
     [RequirePermission(Permissions.Members.Manage)]
-    public async Task<IActionResult> Approve(Guid id, CancellationToken cancellationToken)
+    public async Task<IActionResult> Approve(Guid id, ApproveMemberRequest request, CancellationToken cancellationToken)
     {
         if (await IsHiddenMemberAsync(id, cancellationToken))
         {
@@ -171,7 +174,7 @@ public class MembersController(
         // an already-approved member), which would otherwise regenerate/resend on every repeat call.
         var wasAlreadyApproved = (await memberService.GetByIdAsync(id, cancellationToken))?.ApprovedAt is not null;
 
-        var result = await memberService.ApproveAsync(id, cancellationToken);
+        var result = await memberService.ApproveAsync(id, request.MembershipNo, cancellationToken);
         if (result.Succeeded && !wasAlreadyApproved)
         {
             var approvedMember = await memberService.GetByIdAsync(id, cancellationToken);
@@ -203,7 +206,7 @@ public class MembersController(
         var htmlBody =
             $"<p>Hi {member.FirstName},</p>" +
             "<p>Congratulations - your PSMPE membership application has been approved.</p>" +
-            $"<p>Your Membership No. is <strong>{member.MembershipNo}</strong>. Your official receipt is attached, " +
+            $"<p>Your Membership No. is <strong>{member.MembershipNo ?? "-"}</strong>. Your official receipt is attached, " +
             "and is also always available for download from your Dashboard.</p>";
 
         await emailSender.SendEmailAsync(
@@ -504,6 +507,7 @@ public class MembersController(
         {
             ResultErrorType.NotFound => NotFound(new { message = result.Error }),
             ResultErrorType.Forbidden => Forbid(),
+            ResultErrorType.Conflict => Conflict(new { message = result.Error }),
             _ => BadRequest(new { message = result.Error })
         };
     }
@@ -519,6 +523,7 @@ public class MembersController(
         {
             ResultErrorType.NotFound => NotFound(new { message = result.Error }),
             ResultErrorType.Forbidden => Forbid(),
+            ResultErrorType.Conflict => Conflict(new { message = result.Error }),
             _ => BadRequest(new { message = result.Error })
         };
     }

@@ -64,7 +64,9 @@ export const PrcVerificationsTable = ({
                 <tbody className="divide-y divide-default-200">
                   {members.map((member) => (
                     <tr key={member.id} className="text-default-800 font-normal text-sm whitespace-nowrap">
-                      <td className="py-3 px-3.5">{member.membershipNo}</td>
+                      <td className="py-3 px-3.5">
+                        {member.membershipNo ?? <span className="text-default-500">Not yet assigned</span>}
+                      </td>
                       <td className="flex py-3 px-3.5 items-center gap-3">
                         <div className="w-9 h-9 flex items-center justify-center rounded-full bg-primary/10 text-primary font-semibold text-xs">
                           {initialsOf(member.firstName, member.lastName)}

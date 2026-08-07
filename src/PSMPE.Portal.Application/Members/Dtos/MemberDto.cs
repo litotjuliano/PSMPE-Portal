@@ -36,7 +36,7 @@ public record MemberDto(
     string? LinkedInUrl,
     string? XUrl,
     string? InstagramUrl,
-    string MembershipNo,
+    string? MembershipNo,
     string? PrcLicenseNo,
     DateOnly? PrcRegistrationDate,
     DateOnly? PrcValidUntilDate,
@@ -65,10 +65,14 @@ public record MemberDto(
     DateTimeOffset CreatedAt,
     DateTimeOffset? UpdatedAt);
 
-/// <summary>Admin-only: creates a Member profile for an existing user, with an explicitly assigned MembershipNo.</summary>
+/// <summary>
+/// Admin-only: creates a Member profile for an existing user. MembershipNo is optional - PSMPE
+/// assigns its own control number, and an admin creating a profile may not have it yet. It can be
+/// supplied later on the edit form, and is mandatory at approval.
+/// </summary>
 public record CreateMemberRequest(
     Guid UserId,
-    string MembershipNo,
+    string? MembershipNo,
     string FirstName,
     string? MiddleName,
     string LastName,
@@ -169,7 +173,11 @@ public record UpdateMemberRequest(
     string MemberType,
     MembershipStatus Status,
     DateOnly? RenewalDueDate,
-    string? NationalDuesReferenceNo);
+    string? NationalDuesReferenceNo,
+    /// <summary>The correction path for a control number mistyped at approval. Null or blank means
+    /// "not supplied" and leaves the stored value alone - it is deliberately NOT a way to clear an
+    /// approved member's number, and the default keeps every existing caller compiling.</summary>
+    string? MembershipNo = null);
 
 /// <summary>
 /// Self-service: no Status or MembershipNo - both are admin/business-controlled, not editable by
@@ -237,3 +245,10 @@ public record PrcVerificationHistoryDto(
     string? Reason,
     Guid DecidedByUserId,
     DateTimeOffset CreatedAt);
+
+/// <summary>
+/// Admin-only: approving an application requires PSMPE's own membership control number, which the
+/// portal never generates. Free text (trimmed, max 32 chars) so the society's numbering scheme
+/// isn't second-guessed, but it must not already belong to another member.
+/// </summary>
+public record ApproveMemberRequest(string MembershipNo);

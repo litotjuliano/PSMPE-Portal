@@ -64,7 +64,9 @@ public static class ReceiptGenerator
             y += 46;
         }
 
-        DrawRow("Membership No.", member.MembershipNo);
+        // Approval always assigns one, so the fallback is defensive only - the DTO is nullable
+        // because applicants awaiting approval have no number yet.
+        DrawRow("Membership No.", member.MembershipNo ?? "-");
         DrawRow("Name", $"{member.FirstName} {member.LastName}");
         DrawRow("Chapter", member.Chapter);
         DrawRow("Member Type", member.MemberType);

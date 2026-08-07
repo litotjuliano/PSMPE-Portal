@@ -149,8 +149,11 @@ public class MemberService(IApplicationDbContext db, ICacheService? cache = null
         return ToDto(member, gracePeriodDays);
     }
 
-    public Task<bool> MembershipNoExistsAsync(string membershipNo, CancellationToken cancellationToken = default) =>
-        db.Members.AsNoTracking().AnyAsync(m => m.MembershipNo == membershipNo, cancellationToken);
+    /// <summary><paramref name="excludeMemberId"/> lets an edit re-save a member's own number
+    /// without colliding with itself.</summary>
+    public Task<bool> MembershipNoExistsAsync(string membershipNo, Guid? excludeMemberId = null, CancellationToken cancellationToken = default) =>
+        db.Members.AsNoTracking()
+            .AnyAsync(m => m.MembershipNo == membershipNo && (excludeMemberId == null || m.Id != excludeMemberId), cancellationToken);
 
     public async Task<Result<MemberDto>> CreateAsync(CreateMemberRequest request, CancellationToken cancellationToken = default)
     {
@@ -253,6 +256,28 @@ public class MemberService(IApplicationDbContext db, ICacheService? cache = null
             return Result.NotFound($"Member '{id}' was not found.");
         }
 
+        // The correction path for a control number mistyped at approval. Without it a typo would be
+        // unfixable through the product - the field appears in no other update path, and
+        // ApproveAsync is idempotent so re-approving won't overwrite it.
+        //
+        // Blank means "not supplied", never "clear it": callers that don't know about this field
+        // omit it, and treating that as a clear would silently un-number approved members.
+        var membershipNo = request.MembershipNo?.Trim();
+        if (!string.IsNullOrEmpty(membershipNo))
+        {
+            if (membershipNo.Length > 32)
+            {
+                return Result.Failure("Membership ID must be 32 characters or fewer.");
+            }
+
+            if (await MembershipNoExistsAsync(membershipNo, id, cancellationToken))
+            {
+                return Result.Conflict($"Membership ID '{membershipNo}' is already in use.");
+            }
+
+            member.MembershipNo = membershipNo;
+        }
+
         member.FirstName = request.FirstName;
         member.MiddleName = request.MiddleName;
         member.LastName = request.LastName;
@@ -306,8 +331,16 @@ public class MemberService(IApplicationDbContext db, ICacheService? cache = null
         return Result.Success();
     }
 
-    /// <summary>Idempotent - approving an already-approved application is a no-op success, not an error.</summary>
-    public async Task<Result> ApproveAsync(Guid id, CancellationToken cancellationToken = default)
+    /// <summary>
+    /// Assigns PSMPE's membership control number and approves in one step - the number is mandatory
+    /// here because nothing else in the product sets it, and the approval email and receipt both
+    /// print it.
+    ///
+    /// Idempotent: approving an already-approved application is a no-op success, and deliberately
+    /// does NOT re-assign the number. Without that guard a repeat call - which the controller makes
+    /// harmless for the email and receipt - would silently renumber a live member.
+    /// </summary>
+    public async Task<Result> ApproveAsync(Guid id, string membershipNo, CancellationToken cancellationToken = default)
     {
         var member = await db.Members.FirstOrDefaultAsync(m => m.Id == id, cancellationToken);
         if (member is null)
@@ -315,12 +348,33 @@ public class MemberService(IApplicationDbContext db, ICacheService? cache = null
             return Result.NotFound($"Member '{id}' was not found.");
         }
 
-        if (member.ApprovedAt is null)
+        if (member.ApprovedAt is not null)
         {
-            member.ApprovedAt = DateTimeOffset.UtcNow;
-            member.UpdatedAt = DateTimeOffset.UtcNow;
-            await db.SaveChangesAsync(cancellationToken);
+            return Result.Success();
         }
+
+        var trimmed = membershipNo?.Trim();
+        if (string.IsNullOrEmpty(trimmed))
+        {
+            return Result.Failure("A Membership ID is required to approve this application.");
+        }
+
+        if (trimmed.Length > 32)
+        {
+            return Result.Failure("Membership ID must be 32 characters or fewer.");
+        }
+
+        // The unique index is the real guard against a concurrent duplicate; this check exists so
+        // the common case returns a clean conflict instead of a raw DbUpdateException.
+        if (await MembershipNoExistsAsync(trimmed, id, cancellationToken))
+        {
+            return Result.Conflict($"Membership ID '{trimmed}' is already in use.");
+        }
+
+        member.MembershipNo = trimmed;
+        member.ApprovedAt = DateTimeOffset.UtcNow;
+        member.UpdatedAt = DateTimeOffset.UtcNow;
+        await db.SaveChangesAsync(cancellationToken);
 
         return Result.Success();
     }
@@ -649,10 +703,13 @@ public class MemberService(IApplicationDbContext db, ICacheService? cache = null
 
         if (member is null)
         {
+            // No MembershipNo: PSMPE issues its own control numbers, and an administrator keys one
+            // in at approval. The portal used to generate a sequential placeholder here, which
+            // showed applicants a number the society had never issued and burned a value for every
+            // abandoned draft.
             member = new Member
             {
                 UserId = userId,
-                MembershipNo = await GenerateMembershipNoAsync(cancellationToken),
                 Status = MembershipStatus.Pending
             };
             db.Members.Add(member);
@@ -793,25 +850,6 @@ public class MemberService(IApplicationDbContext db, ICacheService? cache = null
         }
 
         return await db.PrcVerificationHistories.AnyAsync(h => h.MemberId == memberId, cancellationToken);
-    }
-
-    /// <summary>
-    /// Simple sequential scheme, zero-padded to 6 digits, based on the highest existing
-    /// MembershipNo rather than the row count - a row count would deterministically collide with
-    /// an existing number (and keep failing on every subsequent attempt, not just once) as soon as
-    /// any Member row is ever deleted, leaving a gap below the count. Still not perfectly race-safe
-    /// under concurrent first-time self-registrations, but the unique index on MembershipNo
-    /// guarantees no duplicate ever gets persisted - a rare concurrent collision just surfaces as a
-    /// SaveChanges failure to retry.
-    /// </summary>
-    private async Task<string> GenerateMembershipNoAsync(CancellationToken cancellationToken)
-    {
-        var existingNumbers = await db.Members.Select(m => m.MembershipNo).ToListAsync(cancellationToken);
-        var maxNumber = existingNumbers
-            .Select(no => int.TryParse(no, out var parsed) ? parsed : 0)
-            .DefaultIfEmpty(0)
-            .Max();
-        return (maxNumber + 1).ToString("D6");
     }
 
     /// <summary>

@@ -93,7 +93,8 @@ export interface Member {
   linkedInUrl: string | null
   xUrl: string | null
   instagramUrl: string | null
-  membershipNo: string
+  /** Null until an admin assigns PSMPE's control number at approval. */
+  membershipNo: string | null
   prcLicenseNo: string | null
   prcRegistrationDate: string | null
   prcValidUntilDate: string | null

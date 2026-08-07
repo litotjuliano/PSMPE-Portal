@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
 import { memberApi } from '../api/endpoints/memberApi'
 import type { Member } from '../types/member'
-import { MembershipApprovalsTable, PageBreadcrumb, PageMeta } from '../../integrations/template'
+import { describeError } from '../utils/apiError'
+import { ApproveMembershipModal, MembershipApprovalsTable, PageBreadcrumb, PageMeta } from '../../integrations/template'
 
 const PAGE_SIZE = 20
 
@@ -25,8 +26,21 @@ export function MembershipApprovalsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page])
 
-  const handleApprove = (id: string) => {
-    memberApi.approveMember(id).then(refetch)
+  // Approval assigns PSMPE's control number, so it can't be a one-click action any more - the
+  // dialog collects it and stays open on a duplicate.
+  const [approving, setApproving] = useState<Member | null>(null)
+
+  const handleConfirmApprove = async (membershipNo: string) => {
+    if (!approving) return
+    try {
+      await memberApi.approveMember(approving.id, membershipNo)
+    } catch (err) {
+      // Rethrown so the modal shows it and stays open; previously this call had no catch at all
+      // and a rejected approval failed silently.
+      throw new Error(describeError(err, 'Could not approve this application. Please try again.'))
+    }
+    setApproving(null)
+    await refetch()
   }
 
   return (
@@ -39,13 +53,19 @@ export function MembershipApprovalsPage() {
         ) : (
           <MembershipApprovalsTable
             members={members}
-            onApprove={handleApprove}
+            onApprove={(member) => setApproving(member)}
             page={page}
             pageSize={PAGE_SIZE}
             totalCount={totalCount}
             onPageChange={setPage}
           />
         )}
+        <ApproveMembershipModal
+          isOpen={approving !== null}
+          memberName={approving ? `${approving.firstName} ${approving.lastName}` : undefined}
+          onConfirm={handleConfirmApprove}
+          onCancel={() => setApproving(null)}
+        />
       </main>
     </>
   )

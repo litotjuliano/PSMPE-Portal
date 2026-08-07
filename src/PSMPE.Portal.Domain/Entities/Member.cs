@@ -59,7 +59,13 @@ public class Member : BaseEntity
     public string? XUrl { get; set; }
     public string? InstagramUrl { get; set; }
 
-    public string MembershipNo { get; set; } = string.Empty;
+    /// <summary>
+    /// PSMPE's own control number, keyed in by an administrator at approval - the portal never
+    /// generates one. Null until then, which is why the column is nullable despite carrying a
+    /// unique index: Postgres permits many NULLs under a unique index, so unassigned applicants
+    /// don't collide with each other.
+    /// </summary>
+    public string? MembershipNo { get; set; }
 
     /// <summary>Displayed to applicants as "RMP License No." (Registered Master Plumber) - same
     /// field/workflow as before, only the user-facing label changed; internal naming stays PRC*

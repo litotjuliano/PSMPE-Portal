@@ -3,7 +3,14 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { memberApi, type ProfileCompleteness } from '../api/endpoints/memberApi'
 import { adminApi, type UserSummary } from '../api/endpoints/adminApi'
 import { MembershipStatus } from '../types/member'
-import { MemberFormCard, type MemberFormState, PageBreadcrumb, PageMeta } from '../../integrations/template'
+import { describeError } from '../utils/apiError'
+import {
+  ApproveMembershipModal,
+  MemberFormCard,
+  type MemberFormState,
+  PageBreadcrumb,
+  PageMeta,
+} from '../../integrations/template'
 
 const emptyState: MemberFormState = {
   userId: '',
@@ -74,7 +81,7 @@ export function MemberFormPage() {
       return memberApi.getMemberById(id).then((member) => {
         setState({
           userId: member.userId,
-          membershipNo: member.membershipNo,
+          membershipNo: member.membershipNo ?? '',
           firstName: member.firstName,
           middleName: member.middleName ?? '',
           lastName: member.lastName,
@@ -142,9 +149,19 @@ export function MemberFormPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id, isNew])
 
-  const handleApprove = async () => {
+  // Opens the dialog rather than approving directly - PSMPE's control number is mandatory and
+  // nothing else in the product assigns it.
+  const [approveOpen, setApproveOpen] = useState(false)
+
+  const handleConfirmApprove = async (membershipNo: string) => {
     if (!id) return
-    await memberApi.approveMember(id)
+    try {
+      await memberApi.approveMember(id, membershipNo)
+    } catch (err) {
+      // Rethrown so the modal surfaces it and stays open on a duplicate number.
+      throw new Error(describeError(err, 'Could not approve this application. Please try again.'))
+    }
+    setApproveOpen(false)
     await load()
   }
 
@@ -158,7 +175,7 @@ export function MemberFormPage() {
     if (isNew) {
       await memberApi.createMember({
         userId: state.userId,
-        membershipNo: state.membershipNo,
+        membershipNo: state.membershipNo || null,
         firstName: state.firstName,
         middleName: state.middleName || null,
         lastName: state.lastName,
@@ -208,6 +225,7 @@ export function MemberFormPage() {
       })
     } else if (id) {
       await memberApi.updateMember(id, {
+        membershipNo: state.membershipNo || null,
         firstName: state.firstName,
         middleName: state.middleName || null,
         lastName: state.lastName,
@@ -281,11 +299,17 @@ export function MemberFormPage() {
             onSubmit={handleSubmit}
             users={users}
             approvedAt={approvedAt}
-            onApprove={handleApprove}
+            onApprove={() => setApproveOpen(true)}
             isInGracePeriod={isInGracePeriod}
             completeness={completeness}
           />
         )}
+        <ApproveMembershipModal
+          isOpen={approveOpen}
+          memberName={`${state.firstName} ${state.lastName}`.trim() || undefined}
+          onConfirm={handleConfirmApprove}
+          onCancel={() => setApproveOpen(false)}
+        />
       </main>
     </>
   )
