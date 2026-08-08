@@ -1,5 +1,5 @@
 import type { IconType } from 'react-icons/lib'
-import { LuBadgeCheck, LuBellRing, LuFileText, LuMonitorDot, LuShieldCheck, LuSquareUserRound, LuUserCheck, LuUserRound, LuUsers } from 'react-icons/lu'
+import { LuBanknote, LuBellRing, LuFileText, LuMonitorDot, LuShieldCheck, LuSquareUserRound, LuUserRound, LuUsers } from 'react-icons/lu'
 
 export type MenuItemType = {
   key: string
@@ -53,18 +53,14 @@ export const menuItemsData: MenuItemType[] = [
     href: '/members',
     requiredRoles: ['Admin', 'Super Admin'],
   },
+  // Membership Approvals and RMP Verifications used to sit here. Both were the same
+  // GET /api/members query with a different filter, so they are now tabs on Members. The topbar
+  // notification bell is what surfaces "work is waiting" now that the nav no longer does.
   {
-    key: 'MembershipApprovals',
-    label: 'Membership Approvals',
-    icon: LuUserCheck,
-    href: '/membership-approvals',
-    requiredRoles: ['Admin', 'Super Admin'],
-  },
-  {
-    key: 'PrcVerifications',
-    label: 'RMP Verifications',
-    icon: LuBadgeCheck,
-    href: '/prc-verifications',
+    key: 'MembershipFees',
+    label: 'Membership Fees',
+    icon: LuBanknote,
+    href: '/membership-fees',
     requiredRoles: ['Admin', 'Super Admin'],
   },
   {

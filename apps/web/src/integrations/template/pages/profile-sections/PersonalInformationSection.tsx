@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { LuSquarePen } from 'react-icons/lu'
 import type { Member } from '../../../../core/types/member'
 import { CivilStatuses } from '../../../../core/types/member'
+import { CHAPTER_YEAR_ERROR, CHAPTER_YEAR_MAX, CHAPTER_YEAR_MIN, isValidChapterYear } from '../../../../core/utils/memberFields'
 import { memberApi } from '../../../../core/api/endpoints/memberApi'
 import { StandardButton } from '../../components/shared/StandardButton'
 import { buildFullProfileRequest, describeError } from './shared'
@@ -19,6 +20,9 @@ interface FormState {
   birthdate: string
   gender: string
   civilStatus: string
+  /** Held as a string like every other input; converted back to a number at save time. */
+  chapterYear: string
+  chapterPosition: string
 }
 
 function toFormState(member: Member): FormState {
@@ -30,6 +34,8 @@ function toFormState(member: Member): FormState {
     birthdate: member.birthdate ?? '',
     gender: member.gender ?? '',
     civilStatus: member.civilStatus ?? '',
+    chapterYear: member.chapterYear !== null ? String(member.chapterYear) : '',
+    chapterPosition: member.chapterPosition ?? '',
   }
 }
 
@@ -38,7 +44,8 @@ function toFormState(member: Member): FormState {
  * Licensing; Membership Type, Chapter, and Date Joined moved here from the identity rail
  * (ProfileRail), which narrowed to just photo + Membership ID so it stays usable at every width.
  * None of the three are self-service editable, hence the plain read-only group rather than form
- * inputs.
+ * inputs. The Chapter Officer pair below them is the exception - a post the member holds rather
+ * than a term of their membership, so it stays editable here.
  */
 export const PersonalInformationSection = ({ member, onUpdated }: PersonalInformationSectionProps) => {
   const [editing, setEditing] = useState(false)
@@ -64,6 +71,10 @@ export const PersonalInformationSection = ({ member, onUpdated }: PersonalInform
 
   const handleSave = async () => {
     setError(null)
+    if (!isValidChapterYear(form.chapterYear)) {
+      setError(CHAPTER_YEAR_ERROR)
+      return
+    }
     setSaving(true)
     try {
       const updated = await memberApi.updateMyProfile(
@@ -75,6 +86,8 @@ export const PersonalInformationSection = ({ member, onUpdated }: PersonalInform
           birthdate: form.birthdate || null,
           gender: form.gender || null,
           civilStatus: form.civilStatus || null,
+          chapterYear: form.chapterYear !== '' ? Number(form.chapterYear) : null,
+          chapterPosition: form.chapterPosition || null,
         }),
       )
       onUpdated(updated)
@@ -118,6 +131,41 @@ export const PersonalInformationSection = ({ member, onUpdated }: PersonalInform
           <span className="font-semibold text-default-800">
             {member.approvedAt ? new Date(member.approvedAt).toLocaleDateString() : '-'}
           </span>
+        </div>
+      </div>
+
+      {/* Unlike the three above, an officer post is self-service editable - it describes a role the
+          member holds, not their eligibility, so it isn't locked post-submission. */}
+      <span className="text-xs font-semibold uppercase tracking-wide text-teal mt-2">Chapter Officer</span>
+      <div className="grid grid-cols-1 md:grid-cols-2 2xl:grid-cols-3 gap-4 text-sm">
+        <div>
+          <span className="block font-medium text-default-900 text-sm mb-2">Year</span>
+          {editing ? (
+            <input
+              className="form-input"
+              type="number"
+              min={CHAPTER_YEAR_MIN}
+              max={CHAPTER_YEAR_MAX}
+              placeholder="e.g. 2024"
+              value={form.chapterYear}
+              onChange={(e) => handleChange('chapterYear', e.target.value)}
+            />
+          ) : (
+            <span className="font-semibold text-default-800">{member.chapterYear ?? '-'}</span>
+          )}
+        </div>
+        <div>
+          <span className="block font-medium text-default-900 text-sm mb-2">Position</span>
+          {editing ? (
+            <input
+              className="form-input"
+              placeholder="e.g. Secretary"
+              value={form.chapterPosition}
+              onChange={(e) => handleChange('chapterPosition', e.target.value)}
+            />
+          ) : (
+            <span className="font-semibold text-default-800">{member.chapterPosition || '-'}</span>
+          )}
         </div>
       </div>
 

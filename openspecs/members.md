@@ -18,10 +18,14 @@ see Open questions/TODO for what's deferred.
   - Auth: `members:view` permission (deliberately *not* also gated by the `RequireAdmin` role
     policy — that would block Manager/Accounts, who are granted `members:view` but aren't
     Admin/Super Admin by role; see Authorization rules)
-  - Query: `page`, `pageSize`, `sortBy` (`lastName` | `membershipNo` | `chapter` | `status`), `sortDir`,
-    `status` (optional `MembershipStatus` filter), `pendingApprovalOnly` (optional bool — `true`
-    returns only members with `ApprovedAt == null`; see the Draft/Approval/Status split below for
-    why this is a separate filter from `status`)
+  - Query: `page`, `pageSize`, `sortBy` (`lastName` | `membershipNo` | `chapter` | `status` |
+    `submittedAt`), `sortDir`, `status` (optional `MembershipStatus` filter), `pendingApprovalOnly`
+    (optional bool — `true` returns only members with `ApprovedAt == null`; see the
+    Draft/Approval/Status split below for why this is a separate filter from `status`),
+    `pendingPrcVerificationOnly` (optional bool — a proposed RMP licence change awaiting a decision,
+    or one never reviewed at all)
+  - The three filters back the three tabs of the consolidated Members page — see "One Members page,
+    three tabs" below. `submittedAt` sorting exists so the approval queue can read oldest-first.
   - **Always excludes drafts** (`SubmittedAt == null`) regardless of other filters — an
     in-progress, not-yet-submitted application is invisible here, not just unapproved.
   - Response: `PagedResult<MemberDto>`
@@ -41,6 +45,10 @@ see Open questions/TODO for what's deferred.
   - `membershipNo` is optional — PSMPE assigns its own control number, and an admin creating a
     profile out of band may not have it yet (see "Membership number lifecycle" below). `409` if a
     non-blank value collides with an existing member's.
+  - **`prcLicenseNo` is required** (`400` if blank), matching what `POST /me/submit` already demands
+    of self-service applicants. Without one a member never enters the verification queue and, since
+    approval now requires verification, could never be approved — see "RMP verification gates
+    approval" below.
   - Does **not** create a login account — that's `POST /api/auth/register`'s job. `400` if
     `userId` doesn't exist; `409` if that user already has a profile.
   - Always starts as `Status: Pending`, `ApprovedAt: null`, `SubmittedAt: now` — admin-entered
@@ -70,6 +78,10 @@ see Open questions/TODO for what's deferred.
 - `POST /api/members/{id}/approve` — admin marks an application as reviewed, assigning PSMPE's
   membership control number in the same step
   - Auth: `members:manage` permission
+  - **`400` if the member's RMP licence has not been verified** (`PrcIdVerified == false`). The
+    licence is the eligibility criterion for membership, and approving issues a control number,
+    generates a receipt and emails the member — none of it cheap to unwind. See "RMP verification
+    gates approval" below.
   - Request: `{ membershipNo }` — **required**. `400` if blank/whitespace-only or over 32
     characters; `409` if another member already holds it. Neither approves the application — the
     caller must resolve the number and retry.
@@ -96,7 +108,7 @@ Four separate axes on the same row, easy to conflate:
 - **`SubmittedAt`** — has the applicant finished the wizard? `null` while the wizard's per-step
   autosave (`PUT /me`) has created a row but the applicant hasn't reached the final "Submit"
   step (`POST /me/submit`) yet. A draft is invisible to every admin-facing query
-  (`GET /api/members`, Membership Approvals, notifications) — it isn't a member yet, just a
+  (`GET /api/members`, every Members tab, notifications) — it isn't a member yet, just a
   half-filled form.
 - **`ApprovedAt`** — has an admin reviewed a *submitted* application? `null` until a
   `POST /api/members/{id}/approve` call. Independent of `Status`.
@@ -104,14 +116,39 @@ Four separate axes on the same row, easy to conflate:
   registration (currently only `"Regular Member"`). Purely descriptive, not a workflow state.
 - **`Status`** (`MembershipStatus`: `Pending`/`Active`/`Expired`/`Deactivated`) — payment-gated.
   Per the business rule: approved members who pay dues become `Active`; approved-but-unpaid
-  members *stay* `Pending`. No Payments/Dues domain exists yet, so today an admin flips `Status`
-  to `Active` manually via `PUT /api/members/{id}` once dues are confirmed paid out of band.
+  members *stay* `Pending`. **Verifying a payment is what makes that transition** (see
+  `payments.md`); `PUT /api/members/{id}` can still set `Status` by hand for corrections.
 
-Because an approved-but-unpaid application still has `Status: Pending`, the Membership Approvals
-queue and the notification bell filter on `pendingApprovalOnly=true` (`ApprovedAt == null`), not
+Because an approved-but-unpaid application still has `Status: Pending`, the Pending Approval tab
+and the notification bell filter on `pendingApprovalOnly=true` (`ApprovedAt == null`), not
 `status=Pending` — otherwise already-approved members would never disappear from the "needs
 review" list. And because `GetAllAsync` unconditionally excludes drafts, an in-progress
 application never shows up there either, regardless of which filters are passed.
+
+## RMP verification gates approval
+
+**A member cannot be admitted to PSMPE until their RMP licence has been verified.**
+`MemberService.ApproveAsync` refuses when `PrcIdVerified` is false. The licence is the eligibility
+criterion, and approving assigns a control number, generates a receipt and emails it — all awkward
+to reverse if the licence later turns out not to check out.
+
+Three things make this workable rather than merely restrictive:
+
+- **The gate sits *after* the already-approved short-circuit.** Members approved before this rule
+  existed keep their approval, and a repeat call on them still succeeds. The rule is forward-only,
+  by design — at the time it shipped, 4 of 5 approved members held unverified licences.
+- **`prcLicenseNo` is required at admin create.** `GetAllAsync`'s verification filter only matches
+  members with a licence number (current or pending), so one created without any would have been
+  invisible to the queue *and* blocked from approval — permanently unapprovable. Requiring it closes
+  that at source. Legacy rows in that shape still exist and are still excluded from the queue.
+- **`ApproveApplicationWizard` puts both decisions in one flow**, so the gate doesn't become a round
+  trip between two tabs: step 1 reviews the licence against the uploaded RMP ID (Verify or Reject),
+  step 2 collects the Membership ID, step 3 confirms. An already-verified member starts at step 2 —
+  re-verifying would write a meaningless extra `PrcVerificationHistory` row. Rejecting at step 1
+  ends the flow with the application unapproved and the reason recorded.
+
+The standalone **RMP Verification tab remains** for the other case it serves: an existing, already
+approved member changing their licence details, where no membership decision is involved.
 
 ## Membership number lifecycle
 
@@ -121,12 +158,40 @@ stays `null` until an admin supplies it at approval (`POST /api/members/{id}/app
 is `HasMaxLength(32)` but nullable despite carrying a unique index, since Postgres treats every
 `NULL` as distinct — unapproved applicants never collide with each other while awaiting a number.
 
-The admin UI collects it via a dedicated dialog (`ApproveMembershipModal`) at the moment of
-approval, on both the Membership Approvals list and the member detail page, rather than as a form
-field filled in ahead of time. If a number is mistyped, `PUT /api/members/{id}` is the only
+
+### Uniqueness is case-insensitive
+
+Comparison ignores letter case at **both** layers, so `PSMPE-001` and `psmpe-001` are one number,
+not two:
+
+- `MemberService.MembershipNoExistsAsync` compares on `lower(...)`, and is used by the approve,
+  create, and correction paths alike.
+- The database enforces it with a unique index on `lower("MembershipNo")`, created in raw SQL by
+  the `MembershipNoCaseInsensitiveUnique` migration. EF cannot express a functional index, so it is
+  deliberately **not** declared in `MemberConfiguration` — restoring a plain `HasIndex` there would
+  make case-differing duplicates insertable again.
+
+The index matters independently of the service check: that check can always lose a race with a
+concurrent approval, and a byte-comparing index would happily accept the loser.
+
+### Validation at approval
+
+`ApproveAsync` rejects a blank or whitespace-only ID, one over 32 characters, and one already held
+by another member (`409 Conflict`). Format is deliberately unvalidated beyond length — PSMPE's
+numbering scheme is theirs to decide, so the field stays free text.
+
+`GET /api/members/membership-no/availability?value=…&excludeMemberId=…` (same `Members.Manage`
+permission as approving, since it reports whether a number is taken) backs a debounced live check
+in the dialog, so an admin sees "already assigned" while typing rather than after a rejected
+submit. It is **advisory only**: responses are discarded if the typed value has moved on, a failed
+lookup never blocks approving, and `ApproveAsync` re-checks regardless.
+
+The admin UI collects it in step 2 of `ApproveApplicationWizard` at the moment of approval, on both
+the Pending Approval tab and the member detail page, rather than as a form field filled in ahead of
+time. If a number is mistyped, `PUT /api/members/{id}` is the only
 correction path — re-approving is idempotent and deliberately will not overwrite it (see above), so
-a wrong number is otherwise stuck. Every display site (`/members`, Membership Approvals, PRC
-Verifications, the member's own profile) falls back to "Not yet assigned" rather than a blank cell.
+a wrong number is otherwise stuck. Every display site (all three Members tabs, the member detail
+page, the member's own profile) falls back to "Not yet assigned" rather than a blank cell.
 
 This replaced a `GenerateMembershipNoAsync` scheme that computed max-existing-plus-one and assigned
 it at first wizard autosave — before the applicant had even submitted. Members saw a number the
@@ -164,20 +229,30 @@ Sign-up and the membership application are two separate, decoupled flows:
     resumes with that data intact. Resume position is derived, not stored (see
     `furthestStepReached`/`hasCompleted*Info` in `MyProfilePage.tsx`): resumes at the first step
     whose own required fields aren't all filled yet - Personal Info (name/chapter/member type/etc.),
-    then Contact Info (mobile number/residence address), then Additional Info (PTR Number) - Payment
-    Details has no required Member field of its own (Proof of Payment is an upload, and the
-    terms/consent checkboxes are never persisted), so it's never a distinct resume gate.
-  - **Additional Information step** (3rd) collects PTR Number, TIN (optional), and Company
-    (optional) - alongside a read-only display of the caller's account email.
+    then Contact Info (mobile number/residence address). Neither Additional Info nor Payment Details
+    has a required Member field of its own any more (PTR Number was the last, and is now optional;
+    Proof of Payment is an upload, and the terms/consent checkboxes are never persisted), so
+    completing Contact Info carries the applicant straight to the last step.
+  - **Step gating**: the wizard is a real `<form>` and Save & Continue is its submit button, so
+    every field the server requires carries a native `required` and the browser blocks the step
+    before `onSubmit` runs. Uploads and cross-field rules (age ≥ 18, formats) are checked in
+    `validateStep` on top of that. The stepper circles only ever navigate *backwards*
+    (`target > maxStepReached` is refused), so they can't be used to skip a step's requirements.
+  - **Contact Information step** (2nd) opens with a read-only display of the caller's account email
+    — it sits with the other ways to reach the member rather than on Personal Information, and is
+    changed from Account & Security, never here.
+  - **Additional Information step** (3rd) collects PTR Number, PTR Place Issued, PTR Date Issued,
+    TIN, and Company. **All five are optional** — this step no longer gates submission at all.
   - **Final step** ("Payment Details") shows the membership fee/payment instructions, collects the
     Proof of Payment upload, then a review summary + terms checkbox; Submit calls
     `POST /api/members/me/submit`, which is what actually makes the application visible to admins.
   - `DashboardPage` shows a "Complete your membership application" banner (checks
     `GET /api/members/me`, shown whenever there's no profile yet or `submittedAt` is still null)
     linking to `/profile` — this is what surfaces the resumable wizard from the dashboard.
-- Map-based address picker shown in the mockup is not collected — no Maps API integration exists
-  (see Open questions); the residence/mailing address is instead collected as plain structured
-  text fields (see "Membership Application Form fields" below). Photo and RMP ID are collected in
+- Map-based address picker shown in the mockup is not collected — no Maps API integration exists.
+  Instead, Region/Province/City are cascading dropdowns backed by bundled PSGC reference data, with
+  the ZIP auto-filled on city selection (see "Address entry" below); House No./Street/Barangay
+  remain free text. Photo and RMP ID are collected in
   Personal Info; Proof of Payment is collected in the final Payment Details step - all three via
   the member-scoped upload endpoints (see "File uploads" below), and all three are required to
   submit (`POST /api/members/me/submit`), along with education, profession, RMP license/dates, and
@@ -192,28 +267,106 @@ Membership Application Form" asks for:
 
 - **RMP vs. PRC naming**: the paper form's "RMP License No." is the *same* underlying field as
   the original `PrcLicenseNo` — relabeled in every user-facing string (wizard, profile, admin
-  tables, PRC Verifications queue, notifications), but every internal identifier (`PrcLicenseNo`,
-  `PrcIdVerified`, `PendingPrcLicenseNo`, `PrcVerificationRejectedReason`, the `/prc-verifications`
-  route, `UploadKind.PrcId`) deliberately keeps its original name — renaming the actual
+  tables, the RMP Verification tab, notifications), but every internal identifier (`PrcLicenseNo`,
+  `PrcIdVerified`, `PendingPrcLicenseNo`, `PrcVerificationRejectedReason`, the
+  `pendingPrcVerificationOnly` filter, `UploadKind.PrcId`) deliberately keeps its original name —
+  renaming the actual
   properties/columns/endpoints would be a large, purely-cosmetic ripple with no functional benefit.
+- **Membership type**: `Regular Member` / `New` / `Renewal` / `Senior Citizen`. `Regular Member` is
+  the original sole option and stays in the list purely because every member predating the other
+  three carries it — removing it would leave those records showing a value their own edit form
+  doesn't offer. Nothing validates against `MemberTypes.All`; the column is free text (max 64), so
+  these constants only drive the dropdowns and the seeder. **Known limitation:** New/Renewal
+  describe the *application* while Senior Citizen describes the *person*, so a senior renewing can
+  only express one. Accepted deliberately to match the paper form; revisit if it causes trouble.
+- **Chapter officer**: `ChapterYear` (int) and `ChapterPosition` — an optional record of an officer
+  post held in the member's chapter, shown for *every* chapter, not just NCR. Named `Chapter*`
+  because `Position` already means the member's employment position. Unlike `Chapter`/`MemberType`
+  these are **not** locked post-submission: they describe a role the member holds rather than their
+  eligibility, so someone elected mid-term records it themselves. `ChapterYear` is range-checked
+  (1900–2200) on the self-service path only, matching how `YearsOfPractice` is handled — it's a
+  sanity guard, not protection against a DbUpdateException.
+- **Contact**: `MobileNumber` and `HousePhone` only. Both reformat as you type
+  (`formatPhMobile`/`formatPhLandline` in `core/utils/memberFields.ts`) — mobile strips to a leading
+  `+` plus digits, capped by prefix (12 for `63…`, 11 for `09…`, so a country-code number doesn't
+  lose its last digit); landline groups into `(02) 8123 4567` / `(032) 255 1234`, inferring the area
+  code from the trunk prefix (`02` is NCR, the only single-digit one). Both are idempotent — they
+  strip to digits first — which is what makes them safe on every keystroke. The landline grouping is
+  a heuristic, not a lookup table, so the field stays free text and the server still validates on
+  digit count (7–11). The wizard/profile/admin form briefly also
+  collected `Website`, `FacebookUrl`, `LinkedInUrl`, `XUrl` and `InstagramUrl`; those five were
+  dropped (entity, DTOs, columns, and the URL-format validation that existed solely for them) —
+  the paper application form never asked for them and no member had ever filled one in.
 - **Residence address**: `HouseNo` (optional), `Street`, `Barangay`, `CityMunicipality`, `Province`,
-  `ZipCode` — replaces the old single `Address` string.
+  `ZipCode`, `Country` — replaces the old single `Address` string.
 - **Mailing address**: `MailingHouseNo`, `MailingStreet`, `MailingBarangay`,
-  `MailingCityMunicipality`, `MailingProvince`, `MailingZipCode` — new. The wizard/profile offer a
-  client-side-only "Same as Residence Address" checkbox that copies the residence values across at
-  save time; there's no stored flag, just six independent columns.
+  `MailingCityMunicipality`, `MailingProvince`, `MailingZipCode`, `MailingCountry`. The
+  wizard/profile offer a client-side-only "Same as Residence Address" checkbox that copies the
+  residence values across at save time; there's no stored flag, just seven independent columns.
+  Because there's no flag, its initial state is **inferred** by `mailingMirrorsResidence`
+  (`core/utils/memberFields.ts`), shared by the wizard and the profile Contact tab: ticked when the
+  mailing address is blank or already an exact copy of the residence one, unticked otherwise.
+  Defaulting it to ticked unconditionally would silently overwrite a deliberately-different mailing
+  address on the member's next save.
 - **Education**: `EducationLevel` ("Technical School" / "College / University"), `SchoolName`,
   `CourseYearGraduated` (free text, e.g. "BSCE 2023").
 - **Profession**: `SpecifiedProfession` ("Master Plumber" / "Other Professional Related").
 - **RMP license dates**: `PrcRegistrationDate`, `PrcValidUntilDate` (plain `DateOnly?` data entry —
-  not the deferred AI/OCR extraction proposal). Staged the same way `PrcLicenseNo` already was:
+  not the deferred AI/OCR extraction proposal). Valid Until auto-fills to **one year after** the
+  registration date, on all three surfaces, but stays editable: `shouldDeriveValidUntil`
+  (`core/utils/memberFields.ts`) only overwrites when it's blank or still holds exactly what the
+  *previous* registration date derived, so a hand-typed date is never clobbered. The derivation is
+  string math, not `Date.setFullYear` + `toISOString`, which lands a day early in any timezone east
+  of UTC; a 29 Feb registration clamps to 28 Feb rather than rolling into March. Staged the same way `PrcLicenseNo` already was:
   changing the license number **or** either date requires a fresh RMP ID re-upload, and stages all
   three together as `PendingPrcLicenseNo`/`PendingPrcRegistrationDate`/`PendingPrcValidUntilDate`
   until an admin approves or rejects via the existing PRC Verifications queue.
+- **PTR issuance**: `PtrPlaceIssued` and `PtrDateIssued` (`DateOnly?`). All three PTR fields —
+  including `PtrNumber`, which used to be required — are optional. Dropping the requirement left
+  the Additional Information step with no submit gate of its own, so it also stopped being a
+  distinct resume gate; `hasCompletedAdditionalInfo` was removed rather than left always-true.
 - **Age** is derived from `Birthdate` for display only — never persisted.
 - **Data Privacy Consent**: a second wizard checkbox (RA 10173 text + `privacy.gov.ph` link)
   alongside the existing membership-terms checkbox — same pre-existing pattern as that checkbox
   (client-side Submit gate only, not persisted to the `Member` record).
+
+### Address entry
+
+All three address surfaces (registration wizard, profile Contact tab, admin member form) render one
+shared `PhilippineAddressFields` component rather than the three hand-duplicated copies they used
+to be. Region → Province → City → Country are **type-to-search** boxes (`SearchableSelect`, a thin
+wrapper over a native `<datalist>`); picking a city auto-fills ZIP.
+
+- **Why `<datalist>` rather than a custom combobox**: type-to-filter, keyboard navigation and
+  screen-reader semantics for free, no dependency, and no focus/outside-click handling to get
+  wrong. It doesn't constrain input — which matches the free-text-allowed decision already made for
+  these fields; a value outside the list is an address the dataset is missing, not an error.
+- **Province is not gated on Region.** With no region picked the box offers *all* provinces
+  (`getAllProvinces`), and choosing one back-fills the region via `findRegionFor` — someone who
+  knows their province shouldn't have to work out its region first. City still needs a province.
+
+- **Reference data is bundled, not an API.** `apps/web/src/data/ph-locations.json` (PSGC-derived:
+  17 regions, 87 provinces, 1,647 cities/municipalities) plus a ~216-entry `countries.json`, both
+  behind a dynamic `import()` in `core/utils/phLocations.ts` so they build as separate chunks
+  (~19KB gzipped for locations, ~1.3KB for countries) fetched only when an address form renders —
+  an admin browsing `/members` never pays for them. There is no `GET /api/locations/*` endpoint;
+  the data is static, admin-unmanaged, and the cascade needs it in memory anyway. This matches the
+  existing `Chapter`/`MemberType` precedent (reference data lives in the codebase, not fetched).
+- **Region is not stored.** It exists only to narrow the province list. `findRegionFor` recovers it
+  from the saved province/city when an existing profile is opened — without that, every member who
+  registered before this shipped would see empty dropdowns and think their address was wiped. A
+  saved value that matches nothing in the reference data is kept as a selectable option and
+  flagged, never silently dropped.
+- **ZIP auto-fills but is never locked** — 76 of 1,647 cities have no ZIP on record, and some
+  cities legitimately have several. Selecting a city with no mapped ZIP leaves the field alone
+  rather than blanking it.
+- **`Country` defaults to "Philippines"** but is a full dropdown, since an overseas-resident member
+  is plausible. It's in the submit-required set (`MailingCountry` isn't, matching the other mailing
+  fields); in practice the default means this never blocks a wizard user — it's a guard against a
+  caller that skips the field entirely.
+- **NCR quirk**: the source data models NCR's "province" level as PSGC districts (City of Manila
+  splits into 30 ZIP-bearing entries — Tondo I/II, Binondo, Quiapo…). That's the dataset's real
+  structure, not a defect.
 
 ## File uploads (photo, RMP ID, proof of payment, etc.)
 
@@ -256,7 +409,7 @@ deliberate calls, not the obvious defaults:
   `.../signature`, `.../proof-of-payment` - `[Authorize]` only, multipart file.
 - `GET /api/members/me/{kind}` (same kinds) - `[Authorize]` only, own file.
 - `GET /api/members/me/receipt` - `[Authorize]` only, own file - no matching `POST`, members never
-  upload this themselves (see Membership Approvals below for how it's created).
+  upload this themselves (see "One Members page, three tabs" below for how it's created).
 - `GET /api/members/{id}/{kind}` (same kinds, `Receipt` excluded) - `members:view` permission.
 
 **Images are optimized, not just size-gated**: users frequently don't know how large their phone
@@ -300,14 +453,42 @@ explicitly creating this directory under `USER app`), causing every upload to fa
 `UnauthorizedAccessException` until manually `chown`'d on the running containers (staging and
 production both hit this).
 
-## Membership Approvals + notifications
+## One Members page, three tabs
 
-`MembershipApprovalsPage` (`/membership-approvals`, Admin/Super Admin) lists members with
-`pendingApprovalOnly=true` and lets an admin Approve inline via `ApproveMembershipModal` (which
-collects the required Membership ID, see "Membership number lifecycle" above), or click through to
-`/members/{id}` (`MemberFormCard` opens the same dialog there, since that's where a notification
-click lands - that page also opens read-only, "Approval"-titled, per the same review-not-edit
-reasoning as the applicant-facing flow below). The topbar notification bell and the dedicated
+`MembersPage` (`/members`, Admin/Super Admin) is the single admin-facing member list. It replaced
+three separate nav entries, pages and tables — Members, Membership Approvals and RMP Verifications —
+which were all the *same* `GET /api/members` query with different filters, plus ~400 lines of
+duplicated table markup.
+
+| Tab | URL | Filter | Extra columns | Row actions |
+|---|---|---|---|---|
+| All Members | `/members` | none | Status, Email | Edit, Delete |
+| Pending Approval | `/members?queue=approval` | `pendingApprovalOnly` | Applied | Approve, View |
+| RMP Verification | `/members?queue=rmp` | `pendingPrcVerificationOnly` | Current / Pending RMP No. | Approve, Reject, View ID |
+
+- **The two approvals stayed separate decisions.** Only the navigation and the table code merged.
+  Membership approval admits an applicant once and requires a Membership ID; RMP verification
+  recurs whenever licence details change and can be rejected with a reason that lands in
+  `PrcVerificationHistory`. **A member can be waiting on both at once** — a new applicant with an
+  unverified RMP number appears in both tabs, and clearing one leaves the other pending. That
+  double-listing was the main argument for merging: it previously meant visiting two pages for one
+  person.
+- **The active tab lives in the URL** (`?queue=`) so it is linkable. `/membership-approvals` and
+  `/prc-verifications` are kept as `<Navigate>` redirects rather than deleted, and the notification
+  bell links to `?queue=rmp`.
+- **Tab counts** come from two `pageSize: 1` calls reading `totalCount`, refetched after every
+  decision. No dedicated counts endpoint — the topbar bell already queries both queues the same way,
+  and a one-row response is cheap. A failed count only blanks a badge; it never surfaces as a
+  page-level error.
+- **One table, three views.** `MembersTable` takes `view: 'all' | 'pendingApproval' | 'pendingRmp'`.
+  Name/Membership No./Chapter are shared and sortable in every view; the tail and the action column
+  are per-view. `submittedAt` was added to `GetAllAsync`'s sort whitelist so the approval queue can
+  order oldest-first, which is also its default.
+- **Accepted trade-off**: collapsing three nav entries to one loses the standing "work is waiting"
+  cue. The topbar bell still shows both queues with counts and names. A count badge on the Members
+  nav item would need its own fetch inside `SideNav` and was deliberately left out.
+
+The topbar notification bell and the dedicated
 `NotificationsPage` (`/notifications`) both derive their content from the same
 `pendingApprovalOnly=true` query — no separate notifications entity, no read/unread tracking (an
 item simply stops matching the filter once approved). This admin-facing side is pull-based
@@ -346,9 +527,10 @@ repeat call doesn't regenerate/resend):
 - **Chapter is a fixed const list** (`Domain.Enums.Chapters`, mirrors `RoleNames`/`Permissions`'s
   style), not a database-editable entity — no mockup or requirement showed chapter CRUD.
   Revisit as a real entity+table if admins ever need to add/rename chapters without a deploy.
-- **Payments/Dues domain doesn't exist yet**: `Status` transitions to `Active` are entirely manual
-  (an admin edits the record once dues are confirmed paid out of band). Once a Payments domain
-  exists, it should be the thing that flips `Status`, not manual admin edits.
+- ~~**Payments/Dues domain doesn't exist yet**~~ — **built**, see `payments.md`. Verifying a payment
+  is now the only thing that sets `Status = Active` or moves `RenewalDueDate`. What remains deferred
+  from it: automatic `Active → Expired` (needs a scheduler this product doesn't have — `IsExpired`
+  is computed and surfaced instead), an online payment gateway, and refunds/partial payments.
 - No audit log for profile/status changes yet (same gap noted for role changes in `roles.md`).
 - **Semi-automated, AI/OCR-assisted PRC License verification is a deferred future feature** - a
   full OpenSpec proposal already exists at `openspec/changes/add-prc-ai-verification/` (admin-

@@ -16,6 +16,7 @@ public interface IApplicationDbContext
     DbSet<MemberUpload> MemberUploads { get; }
     DbSet<MemberCertificate> MemberCertificates { get; }
     DbSet<PrcVerificationHistory> PrcVerificationHistories { get; }
+    DbSet<Payment> Payments { get; }
 
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
 }

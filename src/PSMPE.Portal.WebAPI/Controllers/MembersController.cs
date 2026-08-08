@@ -6,6 +6,7 @@ using PSMPE.Portal.Application.Common.Interfaces;
 using PSMPE.Portal.Application.Common.Models;
 using PSMPE.Portal.Application.Members;
 using PSMPE.Portal.Application.Members.Dtos;
+using PSMPE.Portal.Application.Payments;
 using PSMPE.Portal.Domain.Entities;
 using PSMPE.Portal.Domain.Enums;
 using PSMPE.Portal.Infrastructure.Authorization;
@@ -23,7 +24,7 @@ namespace PSMPE.Portal.WebAPI.Controllers;
 public class MembersController(
     IMemberService memberService, IMemberUploadService memberUploadService,
     IMemberCertificateService memberCertificateService, UserManager<ApplicationUser> userManager,
-    IEmailSender emailSender) : ControllerBase
+    IEmailSender emailSender, IPaymentService paymentService) : ControllerBase
 {
     [HttpGet]
     [RequirePermission(Permissions.Members.View)]
@@ -160,6 +161,32 @@ public class MembersController(
         return ToActionResult(result);
     }
 
+    /// <summary>
+    /// Whether a Membership ID is free, so the approve dialog can say so before an admin commits
+    /// rather than after a rejected submit. Advisory only - it can always lose a race with a
+    /// concurrent approval, which is why ApproveAsync re-checks and the database holds a
+    /// case-insensitive unique index behind both.
+    ///
+    /// Same Manage permission as approving: it reports whether a control number is taken, which is
+    /// not something an unprivileged caller should be able to probe.
+    /// </summary>
+    [HttpGet("membership-no/availability")]
+    [RequirePermission(Permissions.Members.Manage)]
+    public async Task<ActionResult<MembershipNoAvailabilityDto>> CheckMembershipNoAvailability(
+        string value, Guid? excludeMemberId = null, CancellationToken cancellationToken = default)
+    {
+        var trimmed = value?.Trim() ?? string.Empty;
+        if (trimmed.Length == 0 || trimmed.Length > 32)
+        {
+            // Nothing to look up - the form reports blank/over-length on its own, and querying for
+            // them would only produce a misleading "available".
+            return Ok(new MembershipNoAvailabilityDto(trimmed, false));
+        }
+
+        var taken = await memberService.MembershipNoExistsAsync(trimmed, excludeMemberId, cancellationToken);
+        return Ok(new MembershipNoAvailabilityDto(trimmed, !taken));
+    }
+
     [HttpPost("{id:guid}/approve")]
     [RequirePermission(Permissions.Members.Manage)]
     public async Task<IActionResult> Approve(Guid id, ApproveMemberRequest request, CancellationToken cancellationToken)
@@ -197,7 +224,9 @@ public class MembersController(
     /// </summary>
     private async Task IssueApprovalReceiptAsync(MemberDto member, CancellationToken cancellationToken)
     {
-        var receiptBytes = ReceiptGenerator.Generate(member);
+        // Fees come from SystemConfig now, so a receipt always shows what PSMPE currently charges.
+        var fees = await paymentService.GetFeesAsync(cancellationToken);
+        var receiptBytes = ReceiptGenerator.Generate(member, fees);
         await using (var stream = new MemoryStream(receiptBytes))
         {
             await memberUploadService.UploadAsync(member.UserId, UploadKind.Receipt, stream, "receipt.jpg", receiptBytes.Length, cancellationToken);

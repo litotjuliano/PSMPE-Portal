@@ -1,0 +1,296 @@
+using System.Globalization;
+using Microsoft.EntityFrameworkCore;
+using PSMPE.Portal.Application.Common.Caching;
+using PSMPE.Portal.Application.Common.Configuration;
+using PSMPE.Portal.Application.Common.Interfaces;
+using PSMPE.Portal.Application.Common.Models;
+using PSMPE.Portal.Application.Payments.Dtos;
+using PSMPE.Portal.Domain.Entities;
+using PSMPE.Portal.Domain.Enums;
+
+namespace PSMPE.Portal.Application.Payments;
+
+/// <summary>
+/// Membership payments - the initial fee and annual renewals. Verifying a payment here is the only
+/// thing in the product that sets MembershipStatus.Active or moves RenewalDueDate; both used to be
+/// manual admin edits. See openspecs/payments.md.
+/// </summary>
+public class PaymentService(IApplicationDbContext db, ICacheService? cache = null) : IPaymentService
+{
+    // Optional so tests can construct the service directly and get no-op caching, matching
+    // MemberService/ContentService.
+    private ICacheService Cache => cache ?? NoOpCacheService.Instance;
+
+    private static PaymentDto ToDto(Payment p) => new(
+        p.Id, p.MemberId,
+        $"{p.Member.FirstName} {p.Member.LastName}".Trim(),
+        p.Member.MembershipNo,
+        p.Kind, p.Amount, p.ReferenceNo, p.PaidOn,
+        p.ProofStorageKey is not null,
+        p.Status, p.RejectedReason, p.DecidedAt, p.CoversUntil, p.CreatedAt);
+
+    public async Task<PagedResult<PaymentDto>> GetAllAsync(
+        int page, int pageSize, PaymentStatus? status = null, CancellationToken cancellationToken = default)
+    {
+        page = Math.Max(page, 1);
+        pageSize = Math.Clamp(pageSize, 1, 100);
+
+        var query = db.Payments.AsNoTracking().Include(p => p.Member).AsQueryable();
+        if (status is not null)
+        {
+            query = query.Where(p => p.Status == status);
+        }
+
+        // Oldest first - a payment queue is worked front to back, and someone who paid three weeks
+        // ago should not sit behind this morning's submissions.
+        query = query.OrderBy(p => p.CreatedAt);
+
+        var totalCount = await query.CountAsync(cancellationToken);
+        var items = await query.Skip((page - 1) * pageSize).Take(pageSize).ToListAsync(cancellationToken);
+        return new PagedResult<PaymentDto>(items.Select(ToDto).ToList(), totalCount, page, pageSize);
+    }
+
+    public async Task<IReadOnlyList<PaymentDto>> GetForMemberAsync(Guid memberId, CancellationToken cancellationToken = default)
+    {
+        var items = await db.Payments.AsNoTracking().Include(p => p.Member)
+            .Where(p => p.MemberId == memberId)
+            // Newest first here - a member reads their own history most-recent-first.
+            .OrderByDescending(p => p.CreatedAt)
+            .ToListAsync(cancellationToken);
+        return items.Select(ToDto).ToList();
+    }
+
+    public async Task<PaymentDto?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default)
+    {
+        var payment = await db.Payments.AsNoTracking().Include(p => p.Member)
+            .FirstOrDefaultAsync(p => p.Id == id, cancellationToken);
+        return payment is null ? null : ToDto(payment);
+    }
+
+    public Task<string?> GetProofKeyAsync(Guid id, CancellationToken cancellationToken = default) =>
+        db.Payments.AsNoTracking().Where(p => p.Id == id).Select(p => p.ProofStorageKey).FirstOrDefaultAsync(cancellationToken);
+
+    public async Task<Result<PaymentDto>> SubmitAsync(
+        Guid userId, SubmitPaymentRequest request, CancellationToken cancellationToken = default)
+    {
+        var member = await db.Members.Include(m => m.User).FirstOrDefaultAsync(m => m.UserId == userId, cancellationToken);
+        if (member is null)
+        {
+            return Result<PaymentDto>.NotFound("You don't have a membership profile yet.");
+        }
+
+        if (request.Amount <= 0)
+        {
+            return Result<PaymentDto>.Failure("Amount must be greater than zero.");
+        }
+
+        if (request.PaidOn > DateOnly.FromDateTime(DateTime.UtcNow))
+        {
+            return Result<PaymentDto>.Failure("Payment date can't be in the future.");
+        }
+
+        if (request.ReferenceNo?.Length > 64)
+        {
+            return Result<PaymentDto>.Failure("Reference number must be 64 characters or fewer.");
+        }
+
+        // One decision at a time. Without this a member could queue several submissions and an
+        // admin verifying two of them would advance the due date twice for one year's dues.
+        var hasPending = await db.Payments.AnyAsync(
+            p => p.MemberId == member.Id && p.Status == PaymentStatus.Submitted, cancellationToken);
+        if (hasPending)
+        {
+            return Result<PaymentDto>.Conflict("You already have a payment awaiting verification.");
+        }
+
+        // Derived, not taken from the caller: a member can't claim a renewal for a membership that
+        // was never activated, nor a second "new membership" payment once they're active.
+        var kind = member.RenewalDueDate is null ? PaymentKind.NewMembership : PaymentKind.Renewal;
+
+        var payment = new Payment
+        {
+            MemberId = member.Id,
+            Member = member,
+            Kind = kind,
+            Amount = request.Amount,
+            ReferenceNo = request.ReferenceNo?.Trim(),
+            PaidOn = request.PaidOn,
+            Status = PaymentStatus.Submitted,
+        };
+
+        db.Payments.Add(payment);
+        await db.SaveChangesAsync(cancellationToken);
+        return Result<PaymentDto>.Success(ToDto(payment));
+    }
+
+    public async Task<Result> AttachProofAsync(Guid paymentId, string storageKey, CancellationToken cancellationToken = default)
+    {
+        var payment = await db.Payments.FirstOrDefaultAsync(p => p.Id == paymentId, cancellationToken);
+        if (payment is null)
+        {
+            return Result.NotFound($"Payment '{paymentId}' was not found.");
+        }
+
+        if (payment.Status != PaymentStatus.Submitted)
+        {
+            return Result.Failure("This payment has already been decided - its proof can no longer be changed.");
+        }
+
+        payment.ProofStorageKey = storageKey;
+        payment.UpdatedAt = DateTimeOffset.UtcNow;
+        await db.SaveChangesAsync(cancellationToken);
+        return Result.Success();
+    }
+
+    public async Task<Result> VerifyAsync(Guid paymentId, Guid decidedByUserId, CancellationToken cancellationToken = default)
+    {
+        var payment = await db.Payments.Include(p => p.Member)
+            .FirstOrDefaultAsync(p => p.Id == paymentId, cancellationToken);
+        if (payment is null)
+        {
+            return Result.NotFound($"Payment '{paymentId}' was not found.");
+        }
+
+        if (payment.Status == PaymentStatus.Verified)
+        {
+            // Idempotent, same as ApproveAsync - a repeat call must not advance the due date again.
+            return Result.Success();
+        }
+
+        if (payment.Status == PaymentStatus.Rejected)
+        {
+            return Result.Failure("This payment was rejected. The member needs to submit a new one.");
+        }
+
+        if (payment.ProofStorageKey is null)
+        {
+            return Result.Failure("This payment has no proof attached - there's nothing to verify against.");
+        }
+
+        var member = payment.Member;
+
+        // Payment can't admit someone. Approval is a separate decision that gates on RMP
+        // verification (see MemberService.ApproveAsync); paying doesn't bypass it.
+        if (member.ApprovedAt is null)
+        {
+            return Result.Failure("This member's application hasn't been approved yet, so their payment can't activate a membership.");
+        }
+
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        member.RenewalDueDate = payment.Kind switch
+        {
+            // First payment: one year from admission, matching the receipt's "Annual Dues are
+            // payable one year after registration".
+            PaymentKind.NewMembership => DateOnly.FromDateTime(member.ApprovedAt.Value.UtcDateTime).AddYears(1),
+
+            // Renewal: one year from the *previous due date*, so the anniversary is fixed. Advancing
+            // from today instead would hand every late payer the grace period for free, permanently
+            // shifting their date each time.
+            _ => (member.RenewalDueDate ?? today).AddYears(1),
+        };
+
+        member.Status = MembershipStatus.Active;
+        member.UpdatedAt = DateTimeOffset.UtcNow;
+
+        payment.Status = PaymentStatus.Verified;
+        payment.RejectedReason = null;
+        payment.DecidedByUserId = decidedByUserId;
+        payment.DecidedAt = DateTimeOffset.UtcNow;
+        payment.CoversUntil = member.RenewalDueDate;
+        payment.UpdatedAt = DateTimeOffset.UtcNow;
+
+        await db.SaveChangesAsync(cancellationToken);
+        return Result.Success();
+    }
+
+    public async Task<Result> RejectAsync(Guid paymentId, string reason, Guid decidedByUserId, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(reason))
+        {
+            return Result.Failure("A reason is required to reject a payment.");
+        }
+
+        var payment = await db.Payments.FirstOrDefaultAsync(p => p.Id == paymentId, cancellationToken);
+        if (payment is null)
+        {
+            return Result.NotFound($"Payment '{paymentId}' was not found.");
+        }
+
+        if (payment.Status == PaymentStatus.Verified)
+        {
+            // Reversing a verification would have to un-advance a due date and possibly deactivate a
+            // live member - deliberately not a thing this endpoint does.
+            return Result.Failure("This payment was already verified and can't be rejected.");
+        }
+
+        payment.Status = PaymentStatus.Rejected;
+        payment.RejectedReason = reason.Trim();
+        payment.DecidedByUserId = decidedByUserId;
+        payment.DecidedAt = DateTimeOffset.UtcNow;
+        payment.UpdatedAt = DateTimeOffset.UtcNow;
+
+        // Status and RenewalDueDate are deliberately untouched - a rejected renewal leaves the
+        // member exactly where they were, still owing.
+        await db.SaveChangesAsync(cancellationToken);
+        return Result.Success();
+    }
+
+    public Task<MembershipFeesDto> GetFeesAsync(CancellationToken cancellationToken = default) =>
+        Cache.GetOrCreateAsync(MembershipFeeKeys.CacheKey, "Cache:MembershipFeesDurationSeconds", 600, async () =>
+        {
+            var keys = MembershipFeeKeys.All.Select(f => f.Key).ToArray();
+            var rows = await db.SystemConfigs.AsNoTracking()
+                .Where(c => keys.Contains(c.Key))
+                .ToDictionaryAsync(c => c.Key, c => c.Value, cancellationToken);
+
+            return new MembershipFeesDto(
+                Read(rows, MembershipFeeKeys.MembershipFee, MembershipFeeKeys.DefaultMembershipFee),
+                Read(rows, MembershipFeeKeys.ShippingFee, MembershipFeeKeys.DefaultShippingFee),
+                Read(rows, MembershipFeeKeys.AnnualDues, MembershipFeeKeys.DefaultAnnualDues));
+        });
+
+    /// <summary>Falls back to the shipped constant for a missing or unparseable row, so a bad config
+    /// value shows the old price rather than charging zero.</summary>
+    private static decimal Read(IReadOnlyDictionary<string, string> rows, string key, decimal fallback) =>
+        rows.TryGetValue(key, out var raw) && decimal.TryParse(raw, NumberStyles.Number, CultureInfo.InvariantCulture, out var value)
+            ? value
+            : fallback;
+
+    public async Task<Result> UpdateFeesAsync(UpdateMembershipFeesRequest request, CancellationToken cancellationToken = default)
+    {
+        var values = new (string Key, decimal Value)[]
+        {
+            (MembershipFeeKeys.MembershipFee, request.MembershipFee),
+            (MembershipFeeKeys.ShippingFee, request.ShippingFee),
+            (MembershipFeeKeys.AnnualDues, request.AnnualDues),
+        };
+
+        if (values.Any(v => v.Value < 0))
+        {
+            return Result.Failure("Fees can't be negative.");
+        }
+
+        foreach (var (key, value) in values)
+        {
+            var row = await db.SystemConfigs.FirstOrDefaultAsync(c => c.Key == key, cancellationToken);
+            if (row is null)
+            {
+                var description = MembershipFeeKeys.All.First(f => f.Key == key).Description;
+                db.SystemConfigs.Add(new SystemConfig { Key = key, Value = value.ToString(CultureInfo.InvariantCulture), Description = description });
+            }
+            else
+            {
+                row.Value = value.ToString(CultureInfo.InvariantCulture);
+                row.UpdatedAt = DateTimeOffset.UtcNow;
+            }
+        }
+
+        await db.SaveChangesAsync(cancellationToken);
+
+        // This is the first write path to SystemConfigs in the product - every other consumer
+        // assumed the table was seed-only and TTL expiry was enough. Evicting here is what keeps
+        // the wizard's total and the receipt from showing a stale price for up to 10 minutes.
+        Cache.Remove(MembershipFeeKeys.CacheKey);
+        return Result.Success();
+    }
+}
