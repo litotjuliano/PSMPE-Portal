@@ -21,6 +21,14 @@ via `[RequirePermission]`.
 - `GET /api/admin/users` — list users with their roles (unchanged, documented in `auth.md`/here for completeness)
   - Auth: `RequireAdminOrApproval` policy (Admin, Super Admin, or Approval role — Approval is
     view-only here, since every write endpoint below stays on `RequireAdmin`/`RequireSuperAdmin`)
+  - Query: `search` (optional — case-insensitive substring match against display name or email),
+    `roles` (optional, repeatable query key, e.g. `?roles=Admin&roles=Manager` — returns the union
+    of matching roles, not an intersection). `roles` is bound with an explicit `[FromQuery]` on the
+    parameter, since `[ApiController]`'s binding-source inference doesn't treat a bare
+    `IReadOnlyCollection<string>` as query-bound on its own. The frontend's shared `apiClient` is
+    configured with `paramsSerializer: { indexes: null }` specifically so array params serialize as
+    repeated bare keys (`roles=a&roles=b`) rather than axios's bracket-notation default
+    (`roles[]=a&roles[]=b`), which this endpoint's binder does not accept.
 - `GET /api/admin/users/{id}` — get one user
   - Auth: `RequireAdminOrApproval` policy
 - `POST /api/admin/users` — create a login account (the admin "New user" form)

@@ -23,7 +23,8 @@ see Open questions/TODO for what's deferred.
     (optional bool — `true` returns only members with `ApprovedAt == null`; see the
     Draft/Approval/Status split below for why this is a separate filter from `status`),
     `pendingPrcVerificationOnly` (optional bool — a proposed RMP licence change awaiting a decision,
-    or one never reviewed at all)
+    or one never reviewed at all), `search` (optional — case-insensitive substring match against
+    first/last name, Membership No., or email; backs the All Members tab's search box)
   - The three filters back the three tabs of the consolidated Members page — see "One Members page,
     three tabs" below. `submittedAt` sorting exists so the approval queue can read oldest-first.
   - **Always excludes drafts** (`SubmittedAt == null`) regardless of other filters — an
