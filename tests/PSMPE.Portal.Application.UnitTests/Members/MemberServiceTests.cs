@@ -397,6 +397,51 @@ public class MemberServiceTests
         Assert.Equal(1, result.TotalCount);
     }
 
+    [Fact]
+    public async Task GetAllAsync_WithSearch_MatchesNameMembershipNoOrEmail_CaseInsensitively()
+    {
+        using var db = TestDbContext.CreateInMemory();
+        var service = new MemberService(db);
+        var match = new Member
+        {
+            UserId = Guid.NewGuid(),
+            User = new ApplicationUser { UserName = "maria.santos@example.com", Email = "maria.santos@example.com" },
+            MembershipNo = "000042",
+            FirstName = "Maria",
+            LastName = "Santos",
+            Chapter = Chapters.Ncr,
+            MemberType = MemberTypes.Regular,
+            Status = MembershipStatus.Active,
+            SubmittedAt = DateTimeOffset.UtcNow.AddDays(-1),
+        };
+        var nonMatch = new Member
+        {
+            UserId = Guid.NewGuid(),
+            User = new ApplicationUser { UserName = "pedro.reyes@example.com", Email = "pedro.reyes@example.com" },
+            MembershipNo = "000099",
+            FirstName = "Pedro",
+            LastName = "Reyes",
+            Chapter = Chapters.Cebu,
+            MemberType = MemberTypes.Regular,
+            Status = MembershipStatus.Active,
+            SubmittedAt = DateTimeOffset.UtcNow.AddDays(-1),
+        };
+        db.Members.AddRange(match, nonMatch);
+        await db.SaveChangesAsync();
+
+        var byName = await service.GetAllAsync(1, 100, "lastName", "asc", status: null, search: "SANTOS");
+        Assert.Single(byName.Items);
+        Assert.Equal(match.Id, byName.Items[0].Id);
+
+        var byMembershipNo = await service.GetAllAsync(1, 100, "lastName", "asc", status: null, search: "000042");
+        Assert.Single(byMembershipNo.Items);
+        Assert.Equal(match.Id, byMembershipNo.Items[0].Id);
+
+        var byEmail = await service.GetAllAsync(1, 100, "lastName", "asc", status: null, search: "maria.santos");
+        Assert.Single(byEmail.Items);
+        Assert.Equal(match.Id, byEmail.Items[0].Id);
+    }
+
     [Theory]
     [InlineData("")]
     [InlineData("   ")]

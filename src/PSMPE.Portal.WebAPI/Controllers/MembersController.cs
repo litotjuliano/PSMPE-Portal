@@ -31,11 +31,11 @@ public class MembersController(
     public async Task<ActionResult<PagedResult<MemberDto>>> GetAll(
         int page = 1, int pageSize = 20, string sortBy = "lastName", string sortDir = "asc",
         MembershipStatus? status = null, bool? pendingApprovalOnly = null, bool? pendingPrcVerificationOnly = null,
-        CancellationToken cancellationToken = default)
+        string? search = null, CancellationToken cancellationToken = default)
     {
         var excludeUserIds = await GetSystemAccountUserIdsAsync();
         return Ok(await memberService.GetAllAsync(
-            page, pageSize, sortBy, sortDir, status, pendingApprovalOnly, pendingPrcVerificationOnly, excludeUserIds, cancellationToken));
+            page, pageSize, sortBy, sortDir, status, pendingApprovalOnly, pendingPrcVerificationOnly, search, excludeUserIds, cancellationToken));
     }
 
     [HttpGet("{id:guid}")]

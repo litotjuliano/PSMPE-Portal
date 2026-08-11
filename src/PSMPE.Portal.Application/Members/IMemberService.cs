@@ -8,7 +8,7 @@ public interface IMemberService
 {
     Task<PagedResult<MemberDto>> GetAllAsync(
         int page, int pageSize, string sortBy, string sortDir, MembershipStatus? status,
-        bool? pendingApprovalOnly = null, bool? pendingPrcVerificationOnly = null,
+        bool? pendingApprovalOnly = null, bool? pendingPrcVerificationOnly = null, string? search = null,
         IReadOnlyCollection<Guid>? excludeUserIds = null, CancellationToken cancellationToken = default);
     Task<MemberDto?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default);
     Task<MemberDto?> GetByUserIdAsync(Guid userId, CancellationToken cancellationToken = default);

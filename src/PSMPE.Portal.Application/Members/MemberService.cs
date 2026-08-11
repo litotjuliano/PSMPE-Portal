@@ -89,7 +89,7 @@ public class MemberService(IApplicationDbContext db, ICacheService? cache = null
 
     public async Task<PagedResult<MemberDto>> GetAllAsync(
         int page, int pageSize, string sortBy, string sortDir, MembershipStatus? status,
-        bool? pendingApprovalOnly = null, bool? pendingPrcVerificationOnly = null,
+        bool? pendingApprovalOnly = null, bool? pendingPrcVerificationOnly = null, string? search = null,
         IReadOnlyCollection<Guid>? excludeUserIds = null, CancellationToken cancellationToken = default)
     {
         page = Math.Max(page, 1);
@@ -128,6 +128,18 @@ public class MemberService(IApplicationDbContext db, ICacheService? cache = null
             // since verified or changed) - both need an admin decision, so both show up here.
             query = query.Where(m => m.PendingPrcLicenseNo != null
                 || (!m.PrcIdVerified && m.PrcLicenseNo != null && m.PendingPrcLicenseNo == null));
+        }
+
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            // Same case-insensitive .ToLower().Contains() idiom already used for MembershipNo
+            // comparisons elsewhere in this file (see MembershipNoExistsAsync).
+            var normalizedSearch = search.Trim().ToLower();
+            query = query.Where(m =>
+                m.FirstName.ToLower().Contains(normalizedSearch)
+                || m.LastName.ToLower().Contains(normalizedSearch)
+                || (m.MembershipNo != null && m.MembershipNo.ToLower().Contains(normalizedSearch))
+                || (m.User.Email != null && m.User.Email.ToLower().Contains(normalizedSearch)));
         }
 
         var descending = string.Equals(sortDir, "desc", StringComparison.OrdinalIgnoreCase);
