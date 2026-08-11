@@ -18,6 +18,11 @@ interface AdminUsersTableProps {
    *  side (admin:manage-users permission / RequireAdmin policy respectively), so an Approval
    *  user (view-only here) must not see either. */
   canManageUsers: boolean
+  /** The raw, un-debounced input value - AdminUsersPage owns the debounce timer. */
+  searchInput?: string
+  onSearchInputChange?: (value: string) => void
+  roleFilter?: Role[]
+  onRoleFilterToggle?: (role: Role) => void
   onToggleRole: (userId: string, role: Role, hasRole: boolean) => void
   onDelete: (id: string) => void
   onVerifyEmail: (userId: string) => void
@@ -73,6 +78,10 @@ export const AdminUsersTable = ({
   canManageRoles,
   isSuperAdmin,
   canManageUsers,
+  searchInput,
+  onSearchInputChange,
+  roleFilter,
+  onRoleFilterToggle,
   onToggleRole,
   onDelete,
   onVerifyEmail,
@@ -101,6 +110,33 @@ export const AdminUsersTable = ({
             New user
           </StandardButton>
         )}
+      </div>
+
+      <div className="card-header flex flex-wrap items-center gap-3 border-t border-default-200">
+        <input
+          type="text"
+          className="form-input max-w-xs"
+          placeholder="Search by name or email…"
+          value={searchInput ?? ''}
+          onChange={(e) => onSearchInputChange?.(e.target.value)}
+        />
+        <div className="flex flex-wrap gap-2">
+          {AssignableRoles.map((role) => {
+            const active = roleFilter?.includes(role) ?? false
+            return (
+              <button
+                key={role}
+                type="button"
+                onClick={() => onRoleFilterToggle?.(role)}
+                className={`btn btn-sm whitespace-nowrap ${
+                  active ? 'bg-primary text-white' : 'border border-default-200 text-default-700'
+                }`}
+              >
+                {role}
+              </button>
+            )
+          })}
+        </div>
       </div>
 
       <div className="flex flex-col">

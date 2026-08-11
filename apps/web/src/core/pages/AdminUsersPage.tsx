@@ -23,17 +23,38 @@ export function AdminUsersPage() {
   // check. False for Approval (view-only here).
   const canManageUsers = isSuperAdmin || (user?.roles.includes(Roles.Admin) ?? false)
 
+  const [searchInput, setSearchInput] = useState('')
+  const [search, setSearch] = useState('')
+  const [roleFilter, setRoleFilter] = useState<Role[]>([])
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setSearch(searchInput)
+      setPage(1)
+    }, 350)
+    return () => clearTimeout(timer)
+  }, [searchInput])
+
   const refetch = () =>
-    adminApi.getUsers({ page, pageSize: PAGE_SIZE, sortBy, sortDir }).then((result) => {
-      setUsers(result.items)
-      setTotalCount(result.totalCount)
-    })
+    adminApi
+      .getUsers({
+        page,
+        pageSize: PAGE_SIZE,
+        sortBy,
+        sortDir,
+        ...(search ? { search } : {}),
+        ...(roleFilter.length > 0 ? { roles: roleFilter } : {}),
+      })
+      .then((result) => {
+        setUsers(result.items)
+        setTotalCount(result.totalCount)
+      })
 
   useEffect(() => {
     setLoading(true)
     refetch().finally(() => setLoading(false))
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page, sortBy, sortDir])
+  }, [page, sortBy, sortDir, search, roleFilter])
 
   const handleToggleRole = (userId: string, role: Role, hasRole: boolean) => {
     const request = hasRole ? adminApi.removeRole(userId, role) : adminApi.assignRole(userId, role)
@@ -64,6 +85,11 @@ export function AdminUsersPage() {
     setPage(1)
   }
 
+  const handleRoleFilterToggle = (role: Role) => {
+    setRoleFilter((current) => (current.includes(role) ? current.filter((r) => r !== role) : [...current, role]))
+    setPage(1)
+  }
+
   return (
     <>
       <PageMeta title="Users" />
@@ -77,6 +103,10 @@ export function AdminUsersPage() {
             canManageRoles={isSuperAdmin}
             isSuperAdmin={isSuperAdmin}
             canManageUsers={canManageUsers}
+            searchInput={searchInput}
+            onSearchInputChange={setSearchInput}
+            roleFilter={roleFilter}
+            onRoleFilterToggle={handleRoleFilterToggle}
             canSendPasswordReset={canManageUsers}
             onSendPasswordReset={handleSendPasswordReset}
             onToggleRole={handleToggleRole}
