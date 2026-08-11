@@ -201,7 +201,13 @@ public class MembersController(
         // an already-approved member), which would otherwise regenerate/resend on every repeat call.
         var wasAlreadyApproved = (await memberService.GetByIdAsync(id, cancellationToken))?.ApprovedAt is not null;
 
-        var result = await memberService.ApproveAsync(id, request.MembershipNo, cancellationToken);
+        var decidedBy = CurrentUserId;
+        if (decidedBy is null)
+        {
+            return Unauthorized();
+        }
+
+        var result = await memberService.ApproveAsync(id, request, decidedBy.Value, cancellationToken);
         if (result.Succeeded && !wasAlreadyApproved)
         {
             var approvedMember = await memberService.GetByIdAsync(id, cancellationToken);

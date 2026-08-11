@@ -5,6 +5,7 @@ using PSMPE.Portal.Application.Common.Configuration;
 using PSMPE.Portal.Application.Common.Interfaces;
 using PSMPE.Portal.Application.Common.Models;
 using PSMPE.Portal.Application.Members.Dtos;
+using PSMPE.Portal.Application.Payments;
 using PSMPE.Portal.Domain.Entities;
 using PSMPE.Portal.Domain.Enums;
 
@@ -389,7 +390,17 @@ public class MemberService(IApplicationDbContext db, ICacheService? cache = null
     /// does NOT re-assign the number. Without that guard a repeat call - which the controller makes
     /// harmless for the email and receipt - would silently renumber a live member.
     /// </summary>
-    public async Task<Result> ApproveAsync(Guid id, string membershipNo, CancellationToken cancellationToken = default)
+    /// <summary>
+    /// Admits an application: assigns the control number, sets ApprovedAt, and accepts the
+    /// registration payment - all in one transaction.
+    ///
+    /// <para>Approval and payment are deliberately indivisible. Requiring a *verified* payment as a
+    /// precondition would deadlock, because verifying a NewMembership payment needs ApprovedAt to
+    /// compute the renewal date. Doing both here, in order, means neither outcome is observable
+    /// without the other: there is no window in which a member is approved but unpaid.</para>
+    /// </summary>
+    public async Task<Result> ApproveAsync(
+        Guid id, ApproveMemberRequest request, Guid decidedByUserId, CancellationToken cancellationToken = default)
     {
         var member = await db.Members.FirstOrDefaultAsync(m => m.Id == id, cancellationToken);
         if (member is null)
@@ -413,7 +424,7 @@ public class MemberService(IApplicationDbContext db, ICacheService? cache = null
             return Result.Failure("This member's RMP licence must be verified before their application can be approved.");
         }
 
-        var trimmed = membershipNo?.Trim();
+        var trimmed = request.MembershipNo?.Trim();
         if (string.IsNullOrEmpty(trimmed))
         {
             return Result.Failure("A Membership ID is required to approve this application.");
@@ -431,12 +442,100 @@ public class MemberService(IApplicationDbContext db, ICacheService? cache = null
             return Result.Conflict($"Membership ID '{trimmed}' is already in use.");
         }
 
+        var paymentResult = await ResolveRegistrationPaymentAsync(member, request.Payment, cancellationToken);
+        if (!paymentResult.Succeeded)
+        {
+            return Result.Failure(paymentResult.Error!);
+        }
+
         member.MembershipNo = trimmed;
         member.ApprovedAt = DateTimeOffset.UtcNow;
         member.UpdatedAt = DateTimeOffset.UtcNow;
+
+        // Applied after ApprovedAt is set - the NewMembership due-date arithmetic reads it.
+        PaymentVerification.Apply(paymentResult.Value!, member, decidedByUserId);
+
         await db.SaveChangesAsync(cancellationToken);
 
         return Result.Success();
+    }
+
+    /// <summary>
+    /// Finds the registration payment to accept, creating one first if the admin supplied details
+    /// for a member who has none.
+    ///
+    /// <para>A member with no payment record would otherwise be permanently unapprovable now that
+    /// approval requires one - the shape admin-created profiles arrive in, since POST /api/members
+    /// never creates a payment. Rather than exempt them (a loophole that would let the admin form
+    /// bypass payment entirely), the approving admin records what was actually paid.</para>
+    /// </summary>
+    private async Task<Result<Payment>> ResolveRegistrationPaymentAsync(
+        Member member, RecordPaymentRequest? supplied, CancellationToken cancellationToken)
+    {
+        var existing = await db.Payments
+            .Where(p => p.MemberId == member.Id && p.Kind == PaymentKind.NewMembership)
+            .OrderByDescending(p => p.CreatedAt)
+            .FirstOrDefaultAsync(cancellationToken);
+
+        if (existing is not null)
+        {
+            if (supplied is not null)
+            {
+                // Rejected rather than ignored: silently discarding what the admin typed would let
+                // them believe they had corrected an amount that in fact never changed.
+                return Result<Payment>.Failure(
+                    "This member already has a registration payment on record - review it instead of entering a new one.");
+            }
+
+            if (existing.Status == PaymentStatus.Rejected)
+            {
+                return Result<Payment>.Failure(
+                    "This member's registration payment was rejected. They need to submit a new one before the application can be approved.");
+            }
+
+            if (existing.ProofStorageKey is null)
+            {
+                return Result<Payment>.Failure(
+                    "This member's registration payment has no proof attached - there's nothing to verify against.");
+            }
+
+            return Result<Payment>.Success(existing);
+        }
+
+        if (supplied is null)
+        {
+            return Result<Payment>.Failure(
+                "This member has no registration payment on record. Record what they paid before approving.");
+        }
+
+        if (supplied.Amount <= 0)
+        {
+            return Result<Payment>.Failure("Payment amount must be greater than zero.");
+        }
+
+        if (supplied.PaidOn > DateOnly.FromDateTime(DateTime.UtcNow))
+        {
+            return Result<Payment>.Failure("Payment date can't be in the future.");
+        }
+
+        if (string.IsNullOrWhiteSpace(supplied.ProofStorageKey))
+        {
+            return Result<Payment>.Failure("Proof of payment is required.");
+        }
+
+        var created = new Payment
+        {
+            MemberId = member.Id,
+            Member = member,
+            Kind = PaymentKind.NewMembership,
+            Amount = supplied.Amount,
+            ReferenceNo = supplied.ReferenceNo?.Trim(),
+            PaidOn = supplied.PaidOn,
+            ProofStorageKey = supplied.ProofStorageKey,
+            Status = PaymentStatus.Submitted,
+        };
+        db.Payments.Add(created);
+        return Result<Payment>.Success(created);
     }
 
     /// <summary>

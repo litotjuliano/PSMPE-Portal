@@ -176,28 +176,7 @@ public class PaymentService(IApplicationDbContext db, ICacheService? cache = nul
             return Result.Failure("This member's application hasn't been approved yet, so their payment can't activate a membership.");
         }
 
-        var today = DateOnly.FromDateTime(DateTime.UtcNow);
-        member.RenewalDueDate = payment.Kind switch
-        {
-            // First payment: one year from admission, matching the receipt's "Annual Dues are
-            // payable one year after registration".
-            PaymentKind.NewMembership => DateOnly.FromDateTime(member.ApprovedAt.Value.UtcDateTime).AddYears(1),
-
-            // Renewal: one year from the *previous due date*, so the anniversary is fixed. Advancing
-            // from today instead would hand every late payer the grace period for free, permanently
-            // shifting their date each time.
-            _ => (member.RenewalDueDate ?? today).AddYears(1),
-        };
-
-        member.Status = MembershipStatus.Active;
-        member.UpdatedAt = DateTimeOffset.UtcNow;
-
-        payment.Status = PaymentStatus.Verified;
-        payment.RejectedReason = null;
-        payment.DecidedByUserId = decidedByUserId;
-        payment.DecidedAt = DateTimeOffset.UtcNow;
-        payment.CoversUntil = member.RenewalDueDate;
-        payment.UpdatedAt = DateTimeOffset.UtcNow;
+        PaymentVerification.Apply(payment, member, decidedByUserId);
 
         await db.SaveChangesAsync(cancellationToken);
         return Result.Success();

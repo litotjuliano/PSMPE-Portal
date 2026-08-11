@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
+using PSMPE.Portal.Application.Common.Configuration;
 using PSMPE.Portal.Domain.Entities;
 using PSMPE.Portal.Domain.Enums;
 
@@ -58,19 +59,10 @@ public static class MemberSeeder
             return;
         }
 
-        db.Members.Add(new Member
-        {
-            UserId = user.Id,
-            MembershipNo = await NextMembershipNoAsync(db),
-            FirstName = "Demo",
-            LastName = "Member",
-            Chapter = Chapters.Ncr,
-            MemberType = MemberTypes.Regular,
-            Status = MembershipStatus.Active,
-            ApprovedAt = DateTimeOffset.UtcNow,
-            SubmittedAt = DateTimeOffset.UtcNow,
-            RenewalDueDate = DateOnly.FromDateTime(DateTime.UtcNow.AddMonths(6))
-        });
+        var member = BuildSeededMember(
+            user.Id, await NextMembershipNoAsync(db), "Demo", "Member", Chapters.Ncr, "MP-100000");
+        db.Members.Add(member);
+        db.Payments.Add(BuildSettledRegistrationPayment(member));
 
         await db.SaveChangesAsync();
         logger.LogInformation("Seeded Member profile for {Email}", DemoMemberEmail);
@@ -116,23 +108,65 @@ public static class MemberSeeder
             return;
         }
 
-        db.Members.Add(new Member
-        {
-            UserId = user.Id,
-            MembershipNo = await NextMembershipNoAsync(db),
-            FirstName = firstName,
-            LastName = lastName,
-            Chapter = chapter,
-            MemberType = MemberTypes.Regular,
-            Status = MembershipStatus.Active,
-            ApprovedAt = DateTimeOffset.UtcNow,
-            SubmittedAt = DateTimeOffset.UtcNow,
-            RenewalDueDate = DateOnly.FromDateTime(DateTime.UtcNow.AddMonths(6))
-        });
+        var membershipNo = await NextMembershipNoAsync(db);
+        var member = BuildSeededMember(
+            user.Id, membershipNo, firstName, lastName, chapter, $"MP-{membershipNo}");
+        db.Members.Add(member);
+        db.Payments.Add(BuildSettledRegistrationPayment(member));
 
         await db.SaveChangesAsync();
         logger.LogInformation("Seeded approved Member profile for {Email}", email);
     }
+
+    /// <summary>
+    /// A seeded member in a state the services would actually produce: RMP licence present and
+    /// verified, approved, Active, with a renewal date.
+    ///
+    /// Seeders write entities directly, so they bypass ApproveAsync's RMP and payment requirements.
+    /// Left unchecked that produced demo data contradicting all three rules at once - approved
+    /// without a licence, Active without a payment - which made the approval wizard render blank
+    /// fields and made the RMP queue list every seeded member forever.
+    /// </summary>
+    private static Member BuildSeededMember(
+        Guid userId, string membershipNo, string firstName, string lastName, string chapter, string prcLicenseNo)
+    {
+        var approvedAt = DateTimeOffset.UtcNow;
+        return new Member
+        {
+            UserId = userId,
+            MembershipNo = membershipNo,
+            FirstName = firstName,
+            LastName = lastName,
+            Chapter = chapter,
+            MemberType = MemberTypes.Regular,
+            PrcLicenseNo = prcLicenseNo,
+            PrcRegistrationDate = DateOnly.FromDateTime(DateTime.UtcNow.AddYears(-2)),
+            PrcValidUntilDate = DateOnly.FromDateTime(DateTime.UtcNow.AddYears(1)),
+            PrcIdVerified = true,
+            Status = MembershipStatus.Active,
+            ApprovedAt = approvedAt,
+            SubmittedAt = approvedAt,
+            // Matches what PaymentVerification.Apply would have computed for the payment below.
+            RenewalDueDate = DateOnly.FromDateTime(approvedAt.UtcDateTime).AddYears(1)
+        };
+    }
+
+    /// <summary>The verified registration payment that backs a seeded member's Active status, so
+    /// seed data doesn't show a membership nobody paid for.</summary>
+    private static Payment BuildSettledRegistrationPayment(Member member) => new()
+    {
+        MemberId = member.Id,
+        Kind = PaymentKind.NewMembership,
+        Amount = MembershipFeeKeys.DefaultMembershipFee + MembershipFeeKeys.DefaultShippingFee,
+        ReferenceNo = "SEED-" + member.MembershipNo,
+        PaidOn = DateOnly.FromDateTime(member.ApprovedAt!.Value.UtcDateTime),
+        // No real file behind this - seeded proof is a placeholder key, and the queue never asks
+        // for it because the payment is already Verified.
+        ProofStorageKey = $"seed/{member.MembershipNo}-proof.jpg",
+        Status = PaymentStatus.Verified,
+        DecidedAt = member.ApprovedAt,
+        CoversUntil = member.RenewalDueDate
+    };
 
     private static async Task<string> NextMembershipNoAsync(ApplicationDbContext db)
     {

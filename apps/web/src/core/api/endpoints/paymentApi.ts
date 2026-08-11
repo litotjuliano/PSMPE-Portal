@@ -55,6 +55,14 @@ export const paymentApi = {
 
   getMyPayments: () => apiClient.get<Payment[]>('/api/payments/me').then((res) => res.data),
 
+  /** Stores a proof for another member and returns its key, for the approval request to carry.
+   *  Admin-only; used when a walk-in has no payment on record yet. */
+  uploadProofForMember: (memberId: string, file: File) => {
+    const form = new FormData()
+    form.append('file', file)
+    return apiClient.post<{ storageKey: string }>(`/api/payments/member/${memberId}/proof`, form).then((res) => res.data)
+  },
+
   getPaymentsForMember: (memberId: string) =>
     apiClient.get<Payment[]>(`/api/payments/member/${memberId}`).then((res) => res.data),
 

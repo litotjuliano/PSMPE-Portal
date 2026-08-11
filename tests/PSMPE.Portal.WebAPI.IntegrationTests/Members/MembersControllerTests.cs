@@ -88,6 +88,22 @@ public class MembersControllerTests : IClassFixture<CustomWebApplicationFactory>
         Assert.IsType<NoContentResult>(await controller.ApprovePrcVerification(memberId, CancellationToken.None));
     }
 
+    /// <summary>
+    /// Approval now admits the member and accepts their registration payment in one transaction, so
+    /// every approval needs a payment. Admin-created members (BuildCreateRequest) have none, so
+    /// these tests supply one the way the approval wizard does for a walk-in.
+    ///
+    /// Most approval tests are about the Membership ID rules rather than the money, so the details
+    /// live here instead of being restated in each of them.
+    /// </summary>
+    private static ApproveMemberRequest ApproveWithPayment(string membershipNo) => new(
+        membershipNo,
+        new RecordPaymentRequest(
+            Amount: 1700m,
+            ReferenceNo: "REF-TEST",
+            PaidOn: DateOnly.FromDateTime(DateTime.UtcNow),
+            ProofStorageKey: "test/proof.jpg"));
+
     private static CreateMemberRequest BuildCreateRequest(Guid userId, string? membershipNo = null) => new(
         UserId: userId,
         MembershipNo: membershipNo ?? Guid.NewGuid().ToString("N")[..8],
@@ -406,14 +422,14 @@ public class MembersControllerTests : IClassFixture<CustomWebApplicationFactory>
 
         await VerifyRmpAsync(controller, createdDto.Id);
 
-        var firstApprove = await controller.Approve(createdDto.Id, new ApproveMemberRequest("A-0001"), CancellationToken.None);
+        var firstApprove = await controller.Approve(createdDto.Id, ApproveWithPayment("A-0001"), CancellationToken.None);
         Assert.IsType<NoContentResult>(firstApprove);
 
         var afterFirst = await controller.GetById(createdDto.Id, CancellationToken.None);
         var afterFirstDto = Assert.IsType<MemberDto>(Assert.IsType<OkObjectResult>(afterFirst.Result).Value);
         Assert.NotNull(afterFirstDto.ApprovedAt);
 
-        var secondApprove = await controller.Approve(createdDto.Id, new ApproveMemberRequest("A-0002"), CancellationToken.None);
+        var secondApprove = await controller.Approve(createdDto.Id, ApproveWithPayment("A-0002"), CancellationToken.None);
         Assert.IsType<NoContentResult>(secondApprove);
 
         var afterSecond = await controller.GetById(createdDto.Id, CancellationToken.None);
@@ -438,7 +454,7 @@ public class MembersControllerTests : IClassFixture<CustomWebApplicationFactory>
         var createdDto = Assert.IsType<MemberDto>(Assert.IsType<OkObjectResult>(created.Result).Value);
         Assert.False(createdDto.PrcIdVerified);
 
-        var result = await controller.Approve(createdDto.Id, new ApproveMemberRequest("RMP-GATE-1"), CancellationToken.None);
+        var result = await controller.Approve(createdDto.Id, ApproveWithPayment("RMP-GATE-1"), CancellationToken.None);
 
         Assert.IsType<BadRequestObjectResult>(result);
         var fetched = await controller.GetById(createdDto.Id, CancellationToken.None);
@@ -446,6 +462,92 @@ public class MembersControllerTests : IClassFixture<CustomWebApplicationFactory>
         Assert.Null(dto.ApprovedAt);
         // The number must not be assigned either - a blocked approval leaves nothing behind.
         Assert.NotEqual("RMP-GATE-1", dto.MembershipNo);
+    }
+
+    /// <summary>
+    /// Approval and payment are one act now. A member with no payment on record and none supplied
+    /// can't be admitted - otherwise the admin form would be a way to bypass payment entirely.
+    /// </summary>
+    [Fact]
+    public async Task Approve_WithNoPaymentOnRecordAndNoneSupplied_IsRejected()
+    {
+        var user = await CreateUserAsync();
+        var controller = CreateController();
+        var created = await controller.Create(BuildCreateRequest(user.Id), CancellationToken.None);
+        var dto = Assert.IsType<MemberDto>(Assert.IsType<OkObjectResult>(created.Result).Value);
+        await VerifyRmpAsync(controller, dto.Id);
+
+        var result = await controller.Approve(dto.Id, new ApproveMemberRequest("PAY-GATE-1"), CancellationToken.None);
+
+        Assert.IsType<BadRequestObjectResult>(result);
+        var fetched = await controller.GetById(dto.Id, CancellationToken.None);
+        var after = Assert.IsType<MemberDto>(Assert.IsType<OkObjectResult>(fetched.Result).Value);
+        Assert.Null(after.ApprovedAt);
+        Assert.NotEqual("PAY-GATE-1", after.MembershipNo);
+    }
+
+    /// <summary>
+    /// The whole point of doing both in one transaction: there is no observable state where the
+    /// member is approved but still unpaid.
+    /// </summary>
+    [Fact]
+    public async Task Approve_AcceptsTheRegistrationPaymentInTheSameTransaction()
+    {
+        var user = await CreateUserAsync();
+        var controller = CreateController();
+        var created = await controller.Create(BuildCreateRequest(user.Id), CancellationToken.None);
+        var dto = Assert.IsType<MemberDto>(Assert.IsType<OkObjectResult>(created.Result).Value);
+        await VerifyRmpAsync(controller, dto.Id);
+
+        Assert.IsType<NoContentResult>(
+            await controller.Approve(dto.Id, ApproveWithPayment("PAY-GATE-2"), CancellationToken.None));
+
+        var fetched = await controller.GetById(dto.Id, CancellationToken.None);
+        var after = Assert.IsType<MemberDto>(Assert.IsType<OkObjectResult>(fetched.Result).Value);
+        Assert.NotNull(after.ApprovedAt);
+        Assert.Equal(MembershipStatus.Active, after.Status);
+        // Set by the payment half of the same operation - proof both ran.
+        Assert.Equal(DateOnly.FromDateTime(after.ApprovedAt!.Value.UtcDateTime).AddYears(1), after.RenewalDueDate);
+
+        var payments = await _paymentService.GetForMemberAsync(dto.Id);
+        var payment = Assert.Single(payments);
+        Assert.Equal(PaymentStatus.Verified, payment.Status);
+        Assert.Equal(after.RenewalDueDate, payment.CoversUntil);
+    }
+
+    /// <summary>
+    /// A self-service applicant already has a payment (created at submit), so the admin reviews it
+    /// rather than entering one. Supplying details anyway is refused rather than silently dropped -
+    /// otherwise the admin would think they had corrected an amount that never changed.
+    /// </summary>
+    [Fact]
+    public async Task Approve_SupplyingAPaymentWhenOneAlreadyExists_IsRejected()
+    {
+        var user = await CreateUserAsync();
+        var controller = CreateController();
+        var created = await controller.Create(BuildCreateRequest(user.Id), CancellationToken.None);
+        var dto = Assert.IsType<MemberDto>(Assert.IsType<OkObjectResult>(created.Result).Value);
+        await VerifyRmpAsync(controller, dto.Id);
+
+        // Stands in for the self-service path, where submitting the application already created a
+        // NewMembership payment for the admin to review.
+        var db = _scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        db.Payments.Add(new Payment
+        {
+            MemberId = dto.Id,
+            Kind = PaymentKind.NewMembership,
+            Amount = 1700m,
+            PaidOn = DateOnly.FromDateTime(DateTime.UtcNow),
+            ProofStorageKey = "existing/proof.jpg",
+            Status = PaymentStatus.Submitted,
+        });
+        await db.SaveChangesAsync();
+
+        var result = await controller.Approve(dto.Id, ApproveWithPayment("PAY-GATE-3"), CancellationToken.None);
+
+        Assert.IsType<BadRequestObjectResult>(result);
+        var fetched = await controller.GetById(dto.Id, CancellationToken.None);
+        Assert.Null(Assert.IsType<MemberDto>(Assert.IsType<OkObjectResult>(fetched.Result).Value).ApprovedAt);
     }
 
     [Fact]
@@ -457,7 +559,7 @@ public class MembersControllerTests : IClassFixture<CustomWebApplicationFactory>
         var createdDto = Assert.IsType<MemberDto>(Assert.IsType<OkObjectResult>(created.Result).Value);
 
         await VerifyRmpAsync(controller, createdDto.Id);
-        var result = await controller.Approve(createdDto.Id, new ApproveMemberRequest("RMP-GATE-2"), CancellationToken.None);
+        var result = await controller.Approve(createdDto.Id, ApproveWithPayment("RMP-GATE-2"), CancellationToken.None);
 
         Assert.IsType<NoContentResult>(result);
         var fetched = await controller.GetById(createdDto.Id, CancellationToken.None);
@@ -476,7 +578,7 @@ public class MembersControllerTests : IClassFixture<CustomWebApplicationFactory>
 
         // Padded so the trim is exercised - admins paste these out of spreadsheets.
         await VerifyRmpAsync(controller, createdDto.Id);
-        var result = await controller.Approve(createdDto.Id, new ApproveMemberRequest("  PSMPE-2026-000123  "), CancellationToken.None);
+        var result = await controller.Approve(createdDto.Id, ApproveWithPayment("  PSMPE-2026-000123  "), CancellationToken.None);
         Assert.IsType<NoContentResult>(result);
 
         var fetched = await controller.GetById(createdDto.Id, CancellationToken.None);
@@ -497,7 +599,7 @@ public class MembersControllerTests : IClassFixture<CustomWebApplicationFactory>
 
         await VerifyRmpAsync(controller, createdDto.Id);
 
-        var result = await controller.Approve(createdDto.Id, new ApproveMemberRequest(membershipNo), CancellationToken.None);
+        var result = await controller.Approve(createdDto.Id, ApproveWithPayment(membershipNo), CancellationToken.None);
 
         Assert.IsType<BadRequestObjectResult>(result);
         var fetched = await controller.GetById(createdDto.Id, CancellationToken.None);
@@ -515,7 +617,7 @@ public class MembersControllerTests : IClassFixture<CustomWebApplicationFactory>
         var firstDto = Assert.IsType<MemberDto>(Assert.IsType<OkObjectResult>(firstCreated.Result).Value);
         await VerifyRmpAsync(controller, firstDto.Id);
         Assert.IsType<NoContentResult>(
-            await controller.Approve(firstDto.Id, new ApproveMemberRequest("DUPLICATE-1"), CancellationToken.None));
+            await controller.Approve(firstDto.Id, ApproveWithPayment("DUPLICATE-1"), CancellationToken.None));
 
         var secondUser = await CreateUserAsync();
         var secondCreated = await controller.Create(BuildCreateRequest(secondUser.Id), CancellationToken.None);
@@ -523,7 +625,7 @@ public class MembersControllerTests : IClassFixture<CustomWebApplicationFactory>
 
         await VerifyRmpAsync(controller, secondDto.Id);
 
-        var result = await controller.Approve(secondDto.Id, new ApproveMemberRequest("DUPLICATE-1"), CancellationToken.None);
+        var result = await controller.Approve(secondDto.Id, ApproveWithPayment("DUPLICATE-1"), CancellationToken.None);
 
         Assert.IsType<ConflictObjectResult>(result);
         var fetched = await controller.GetById(secondDto.Id, CancellationToken.None);
@@ -551,7 +653,7 @@ public class MembersControllerTests : IClassFixture<CustomWebApplicationFactory>
         var firstDto = Assert.IsType<MemberDto>(Assert.IsType<OkObjectResult>(firstCreated.Result).Value);
         await VerifyRmpAsync(controller, firstDto.Id);
         Assert.IsType<NoContentResult>(
-            await controller.Approve(firstDto.Id, new ApproveMemberRequest(original), CancellationToken.None));
+            await controller.Approve(firstDto.Id, ApproveWithPayment(original), CancellationToken.None));
 
         var secondUser = await CreateUserAsync();
         var secondCreated = await controller.Create(BuildCreateRequest(secondUser.Id), CancellationToken.None);
@@ -559,7 +661,7 @@ public class MembersControllerTests : IClassFixture<CustomWebApplicationFactory>
 
         await VerifyRmpAsync(controller, secondDto.Id);
 
-        var result = await controller.Approve(secondDto.Id, new ApproveMemberRequest(secondAttempt), CancellationToken.None);
+        var result = await controller.Approve(secondDto.Id, ApproveWithPayment(secondAttempt), CancellationToken.None);
 
         Assert.IsType<ConflictObjectResult>(result);
         var fetched = await controller.GetById(secondDto.Id, CancellationToken.None);
@@ -575,7 +677,7 @@ public class MembersControllerTests : IClassFixture<CustomWebApplicationFactory>
         var created = await controller.Create(BuildCreateRequest(user.Id), CancellationToken.None);
         var dto = Assert.IsType<MemberDto>(Assert.IsType<OkObjectResult>(created.Result).Value);
         await VerifyRmpAsync(controller, dto.Id);
-        await controller.Approve(dto.Id, new ApproveMemberRequest("PSMPE-777"), CancellationToken.None);
+        await controller.Approve(dto.Id, ApproveWithPayment("PSMPE-777"), CancellationToken.None);
 
         var free = await controller.CheckMembershipNoAvailability("PSMPE-778", null, CancellationToken.None);
         Assert.True(Assert.IsType<MembershipNoAvailabilityDto>(Assert.IsType<OkObjectResult>(free.Result).Value).IsAvailable);
@@ -625,7 +727,7 @@ public class MembersControllerTests : IClassFixture<CustomWebApplicationFactory>
         Assert.IsType<NotFoundResult>(beforeApprove);
 
         await VerifyRmpAsync(adminController, createdDto.Id);
-        var approveResult = await adminController.Approve(createdDto.Id, new ApproveMemberRequest("A-0003"), CancellationToken.None);
+        var approveResult = await adminController.Approve(createdDto.Id, ApproveWithPayment("A-0003"), CancellationToken.None);
         Assert.IsType<NoContentResult>(approveResult);
 
         var afterApprove = await CreateController(user.Id).GetMyReceipt(CancellationToken.None);
@@ -642,8 +744,8 @@ public class MembersControllerTests : IClassFixture<CustomWebApplicationFactory>
         var createdDto = Assert.IsType<MemberDto>(Assert.IsType<OkObjectResult>(created.Result).Value);
 
         await VerifyRmpAsync(adminController, createdDto.Id);
-        Assert.IsType<NoContentResult>(await adminController.Approve(createdDto.Id, new ApproveMemberRequest(Guid.NewGuid().ToString("N")[..8]), CancellationToken.None));
-        Assert.IsType<NoContentResult>(await adminController.Approve(createdDto.Id, new ApproveMemberRequest(Guid.NewGuid().ToString("N")[..8]), CancellationToken.None));
+        Assert.IsType<NoContentResult>(await adminController.Approve(createdDto.Id, ApproveWithPayment(Guid.NewGuid().ToString("N")[..8]), CancellationToken.None));
+        Assert.IsType<NoContentResult>(await adminController.Approve(createdDto.Id, ApproveWithPayment(Guid.NewGuid().ToString("N")[..8]), CancellationToken.None));
 
         var afterSecondApprove = await CreateController(user.Id).GetMyReceipt(CancellationToken.None);
         Assert.IsType<FileStreamResult>(afterSecondApprove);
@@ -654,7 +756,7 @@ public class MembersControllerTests : IClassFixture<CustomWebApplicationFactory>
     {
         var controller = CreateController();
 
-        var result = await controller.Approve(Guid.NewGuid(), new ApproveMemberRequest("A-0006"), CancellationToken.None);
+        var result = await controller.Approve(Guid.NewGuid(), ApproveWithPayment("A-0006"), CancellationToken.None);
 
         Assert.IsType<NotFoundObjectResult>(result);
     }
@@ -706,7 +808,7 @@ public class MembersControllerTests : IClassFixture<CustomWebApplicationFactory>
         var approvedCreated = await controller.Create(BuildCreateRequest(approvedUser.Id), CancellationToken.None);
         var approvedDto = Assert.IsType<MemberDto>(Assert.IsType<OkObjectResult>(approvedCreated.Result).Value);
         await VerifyRmpAsync(controller, approvedDto.Id);
-        await controller.Approve(approvedDto.Id, new ApproveMemberRequest("A-0007"), CancellationToken.None);
+        await controller.Approve(approvedDto.Id, ApproveWithPayment("A-0007"), CancellationToken.None);
 
         var result = await controller.GetAll(page: 1, pageSize: 1000, pendingApprovalOnly: true, cancellationToken: CancellationToken.None);
 

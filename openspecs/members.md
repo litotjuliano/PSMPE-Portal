@@ -89,7 +89,9 @@ see Open questions/TODO for what's deferred.
     approved; idempotent (approving an already-approved application is a no-op success and
     **does not** re-assign `MembershipNo` — a repeat call, e.g. from the receipt/email retry path,
     must never silently renumber a live member).
-  - Does **not** change `Status` — approval and payment are independent gates, see below.
+  - **Also accepts the registration payment, in the same transaction** — see "Approval and payment
+    are one act" below. `Status` therefore becomes `Active` as part of approving, and the request
+    carries an optional `payment` block for members who have none on record.
 - `DELETE /api/members/{id}` — admin removes just the member profile
   - Auth: `members:manage` permission
   - Leaves the underlying login/role account intact — retiring someone's membership record

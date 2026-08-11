@@ -226,8 +226,14 @@ export const memberApi = {
 
   /** PSMPE's own control number, keyed in by the admin - the portal never generates one, so
    *  approval is impossible without it. 400 if blank, 409 if already in use. */
-  approveMember: (id: string, membershipNo: string) =>
-    apiClient.post(`/api/members/${id}/approve`, { membershipNo }).then((res) => res.data),
+  /** Admits the member and accepts their registration payment in one server-side transaction, so
+   *  there is no state where they are approved but unpaid. `payment` is sent only when the member
+   *  has none on record (admin-created profile / walk-in) - supplying it otherwise is refused. */
+  approveMember: (
+    id: string,
+    membershipNo: string,
+    payment?: { amount: number; referenceNo: string | null; paidOn: string; proofStorageKey: string },
+  ) => apiClient.post(`/api/members/${id}/approve`, { membershipNo, payment }).then((res) => res.data),
 
   /** Advisory - the approve endpoint re-checks, and the database has the final say. */
   checkMembershipNoAvailability: (value: string, excludeMemberId?: string) =>

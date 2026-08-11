@@ -258,7 +258,20 @@ public record PrcVerificationHistoryDto(
 /// portal never generates. Free text (trimmed, max 32 chars) so the society's numbering scheme
 /// isn't second-guessed, but it must not already belong to another member.
 /// </summary>
-public record ApproveMemberRequest(string MembershipNo);
+/// <summary>
+/// Admits an application. Approval and payment are now one indivisible act: a member is never
+/// admitted without their registration payment being accepted in the same transaction, so nobody
+/// ends up approved-but-unpaid.
+///
+/// <para><paramref name="Payment"/> is only needed when the member has no payment on record - an
+/// admin-created profile, or a walk-in paying at the office. A self-service applicant already has
+/// one (created at submit), and the admin is reviewing rather than entering it, so this stays null.
+/// Supplying it when a payment already exists is rejected rather than silently ignored.</para>
+/// </summary>
+public record ApproveMemberRequest(string MembershipNo, RecordPaymentRequest? Payment = null);
+
+/// <summary>Payment details entered by an admin on a member's behalf.</summary>
+public record RecordPaymentRequest(decimal Amount, string? ReferenceNo, DateOnly PaidOn, string ProofStorageKey);
 
 /// <summary>
 /// Advisory answer for the approve dialog's live duplicate check. Echoes the trimmed value back so

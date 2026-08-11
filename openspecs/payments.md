@@ -37,6 +37,42 @@ All under `/api/payments`, all authenticated.
   applicant who holds no permissions yet.
 - `PUT /fees` — `members:manage`.
 
+## Approval and payment are one act
+
+A member is **never** admitted without their registration payment being accepted in the same
+transaction. `MemberService.ApproveAsync` does both: assigns the control number, sets `ApprovedAt`,
+then applies the payment — one `SaveChangesAsync`, so there is no observable state in which someone
+is approved but unpaid.
+
+**Why it isn't a precondition.** "Approval requires a verified payment" and "verifying a
+`NewMembership` payment requires `ApprovedAt`" (it's what the renewal date is computed from) is a
+deadlock — neither can go first. Doing both in one transaction, in that order, satisfies the policy
+without one guard waiting on the other.
+
+- **The wizard is the only approval path.** `POST /api/members/{id}/approve` *is* the orchestrator;
+  there is no bare approve endpoint that skips payment, because that would be a loophole around the
+  policy.
+- **`ApproveMemberRequest.Payment` handles the member with nothing on record.** A self-service
+  applicant already has a payment (created at submit) and the admin only reviews it, so the block
+  stays null. An admin-created profile has none — `POST /api/members` never creates one — so the
+  approving admin records what the walk-in actually paid. Without this, admin-created members would
+  be permanently unapprovable, the same deadlock the RMP licence rule hit.
+- **Supplying a payment when one already exists is rejected, not ignored.** Silently discarding what
+  the admin typed would let them believe they had corrected an amount that never changed.
+- **A rejected registration payment blocks approval** until the member submits a new one.
+- **Proof is uploaded first, referenced by key.** `POST /api/payments/member/{id}/proof`
+  (`members:manage`) stores the file and returns its key; the approval request carries the key. The
+  `Payment` row is only created inside the approving transaction, so a failed approval leaves an
+  unreferenced file rather than an orphaned payment record.
+- **`PaymentVerification.Apply`** holds the effect of accepting a payment — status, decider,
+  `CoversUntil`, and the member's `Status`/`RenewalDueDate`. Both `PaymentService.VerifyAsync` (the
+  standalone path, i.e. renewals) and `ApproveAsync` call it, so the due-date arithmetic — the one
+  calculation here nobody can eyeball — has exactly one definition.
+
+**Accepted trade-off:** a review decision ("is this person a qualified Master Plumber?") now blocks
+on an accounting fact. PSMPE cannot admit someone whose cheque is still clearing. Chosen
+deliberately over an override variant; revisit if that case turns out to be common.
+
 ## What verification does
 
 | Kind | Effect |

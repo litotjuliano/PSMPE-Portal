@@ -33,6 +33,13 @@ public record SubmitPaymentRequest(
 public record RejectPaymentRequest(string Reason);
 
 /// <summary>
+/// Where an admin-uploaded proof landed. The key is handed back to the caller only so the approval
+/// request can reference it moments later - it is not exposed on PaymentDto, since it embeds the
+/// member's surname, first name and birthdate.
+/// </summary>
+public record ProofUploadDto(string StorageKey);
+
+/// <summary>
 /// PSMPE's configured fees. Read by the registration wizard (to show the total), the receipt, and
 /// the admin fees screen.
 /// </summary>

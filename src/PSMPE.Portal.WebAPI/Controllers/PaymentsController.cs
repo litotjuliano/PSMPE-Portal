@@ -101,6 +101,35 @@ public class PaymentsController(
         return ToActionResult(await paymentService.AttachProofAsync(id, stored.Value!, cancellationToken));
     }
 
+    /// <summary>
+    /// Stores a proof document for a member who isn't the caller, returning its storage key for the
+    /// approval request to carry.
+    ///
+    /// Exists because approval now requires a payment, and an admin-created profile has none - the
+    /// approving admin records what the walk-in actually paid. Returns the key rather than creating
+    /// a Payment row, so the payment and the approval are still written in one transaction by
+    /// MemberService.ApproveAsync instead of leaving an orphaned row behind if approval then fails.
+    /// </summary>
+    [HttpPost("member/{memberId:guid}/proof")]
+    [RequirePermission(Permissions.Members.Manage)]
+    public async Task<ActionResult<ProofUploadDto>> UploadProofForMember(
+        Guid memberId, IFormFile file, CancellationToken cancellationToken)
+    {
+        var member = await memberService.GetByIdAsync(memberId, cancellationToken);
+        if (member is null)
+        {
+            return NotFound();
+        }
+
+        await using var stream = file.OpenReadStream();
+        var stored = await memberUploadService.UploadPaymentProofAsync(
+            member.UserId, stream, file.FileName, file.Length, cancellationToken);
+
+        return stored.Succeeded
+            ? Ok(new ProofUploadDto(stored.Value!))
+            : BadRequest(new { message = stored.Error });
+    }
+
     /// <summary>Serves a payment's proof. Members may only fetch their own; staff need members:view.</summary>
     [HttpGet("{id:guid}/proof")]
     public async Task<IActionResult> GetProof(Guid id, CancellationToken cancellationToken)

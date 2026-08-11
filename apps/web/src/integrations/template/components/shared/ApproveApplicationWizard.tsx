@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { LuEye } from 'react-icons/lu'
 import { memberApi } from '../../../../core/api/endpoints/memberApi'
+import { paymentApi, type MembershipFees, type Payment } from '../../../../core/api/endpoints/paymentApi'
 import { uploadApi } from '../../../../core/api/endpoints/uploadApi'
 import type { Member } from '../../../../core/types/member'
 import { describeError } from '../../../../core/utils/apiError'
@@ -16,7 +17,14 @@ const CHECK_DEBOUNCE_MS = 350
 
 type AvailabilityStatus = 'idle' | 'checking' | 'available' | 'taken' | 'unknown'
 
-const STEPS = ['RMP Licence', 'Membership ID', 'Confirm']
+const STEP_RMP = 0
+const STEP_PAYMENT = 1
+const STEP_ID = 2
+const STEP_CONFIRM = 3
+
+const STEPS = ['RMP Licence', 'Payment', 'Membership ID', 'Confirm']
+
+const peso = new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' })
 
 interface ApproveApplicationWizardProps {
   /** Null closes the wizard; a member opens it. */
@@ -48,6 +56,21 @@ export const ApproveApplicationWizard = ({ member, onApproved, onCancel }: Appro
   const [rejecting, setRejecting] = useState(false)
   const [previewing, setPreviewing] = useState(false)
 
+  // Payment step. An applicant who came through the wizard already has a payment (created at
+  // submit) and the admin only reviews it; an admin-created profile has none, so the admin records
+  // what was actually paid. Both end at the same place: Confirm sends one request that admits the
+  // member and accepts the payment together.
+  const [existingPayment, setExistingPayment] = useState<Payment | null>(null)
+  const [paymentsLoaded, setPaymentsLoaded] = useState(false)
+  const [fees, setFees] = useState<MembershipFees | null>(null)
+  const [amount, setAmount] = useState('')
+  const [referenceNo, setReferenceNo] = useState('')
+  const [paidOn, setPaidOn] = useState(() => new Date().toISOString().slice(0, 10))
+  const [proofKey, setProofKey] = useState<string | null>(null)
+  const [uploadingProof, setUploadingProof] = useState(false)
+  const [previewingPayment, setPreviewingPayment] = useState(false)
+  const proofInputRef = useRef<HTMLInputElement>(null)
+
   const isOpen = member !== null
   const memberId = member?.id
   // A member can be listed for verification either because their licence was never reviewed or
@@ -58,13 +81,31 @@ export const ApproveApplicationWizard = ({ member, onApproved, onCancel }: Appro
     if (!member) return
     const alreadyVerified = member.prcIdVerified
     setVerified(alreadyVerified)
-    setStep(alreadyVerified ? 1 : 0)
+    setStep(alreadyVerified ? STEP_PAYMENT : STEP_RMP)
     setMembershipNo('')
     setAvailability('idle')
     setBusy(false)
     setError(null)
     setRejecting(false)
     setPreviewing(false)
+
+    setExistingPayment(null)
+    setPaymentsLoaded(false)
+    setProofKey(null)
+    setReferenceNo('')
+    setPaidOn(new Date().toISOString().slice(0, 10))
+    if (proofInputRef.current) proofInputRef.current.value = ''
+
+    void Promise.all([paymentApi.getPaymentsForMember(member.id), paymentApi.getFees()])
+      .then(([payments, loadedFees]) => {
+        const registration = payments.find((p) => p.kind === 'NewMembership' && p.status !== 'Rejected')
+        setExistingPayment(registration ?? null)
+        setFees(loadedFees)
+        // Pre-filled with what PSMPE actually charges, so the common walk-in case is one click.
+        setAmount(registration ? String(registration.amount) : String(loadedFees.registrationTotal))
+      })
+      .catch(() => setError('Could not load this member\'s payment details.'))
+      .finally(() => setPaymentsLoaded(true))
   }, [member])
 
   const trimmed = membershipNo.trim()
@@ -73,7 +114,7 @@ export const ApproveApplicationWizard = ({ member, onApproved, onCancel }: Appro
   // Same advisory pre-check the standalone dialog had: the approve call re-checks, and the
   // database's case-insensitive unique index is the actual guarantee.
   useEffect(() => {
-    if (!isOpen || step !== 1 || !trimmed || tooLong) {
+    if (!isOpen || step !== STEP_ID || !trimmed || tooLong) {
       setAvailability('idle')
       return
     }
@@ -117,7 +158,7 @@ export const ApproveApplicationWizard = ({ member, onApproved, onCancel }: Appro
     try {
       await memberApi.approvePrcVerification(member.id)
       setVerified(true)
-      setStep(1)
+      setStep(STEP_PAYMENT)
     } catch (err) {
       setError(describeError(err, 'Could not verify this RMP licence. Please try again.'))
     } finally {
@@ -148,20 +189,51 @@ export const ApproveApplicationWizard = ({ member, onApproved, onCancel }: Appro
     setError(null)
     setBusy(true)
     try {
-      await memberApi.approveMember(member.id, trimmed)
+      // One request: admits the member and accepts the registration payment together, so there
+      // is no moment where they are approved but unpaid. The payment block is sent only when the
+      // member had none on record - supplying it otherwise is rejected server-side.
+      await memberApi.approveMember(member.id, trimmed, existingPayment ? undefined : {
+        amount: Number(amount),
+        referenceNo: referenceNo.trim() || null,
+        paidOn,
+        proofStorageKey: proofKey!,
+      })
       await onApproved()
       onCancel()
     } catch (err) {
       // Stays open on a duplicate Membership ID - the admin has to pick another, and closing
-      // would lose what they typed. Sent back to step 2, where the field is.
+      // would lose what they typed. Sent back to the step holding the field.
       setError(describeError(err, 'Could not approve this application. Please try again.'))
-      setStep(1)
+      setStep(STEP_ID)
     } finally {
       setBusy(false)
     }
   }
 
   const canContinueFromId = Boolean(trimmed) && !tooLong && availability !== 'taken'
+
+  // Either the member already has a payment to review, or the admin has entered a valid one.
+  const recordedAmount = Number(amount)
+  const canContinueFromPayment = existingPayment
+    ? existingPayment.hasProof
+    : Boolean(proofKey) && Number.isFinite(recordedAmount) && recordedAmount > 0 && Boolean(paidOn)
+
+  const handleProofSelected = async (file: File | undefined) => {
+    if (!file || !member) return
+    setError(null)
+    setUploadingProof(true)
+    try {
+      // Stored now, referenced by key at Confirm - so a failed approval doesn't leave an orphaned
+      // Payment row behind, only an unreferenced file.
+      const { storageKey } = await paymentApi.uploadProofForMember(member.id, file)
+      setProofKey(storageKey)
+    } catch (err) {
+      setError(describeError(err, 'Could not upload the proof of payment.'))
+      if (proofInputRef.current) proofInputRef.current.value = ''
+    } finally {
+      setUploadingProof(false)
+    }
+  }
 
   return (
     <div className="fixed inset-0 z-100 flex items-center justify-center p-4">
@@ -178,7 +250,7 @@ export const ApproveApplicationWizard = ({ member, onApproved, onCancel }: Appro
 
           {error && <p className="text-sm font-medium text-danger">{error}</p>}
 
-          {step === 0 && (
+          {step === STEP_RMP && (
             <div className="flex flex-col gap-3">
               <p className="text-sm text-default-600">
                 Check this licence against the uploaded RMP ID before admitting the application.
@@ -215,7 +287,115 @@ export const ApproveApplicationWizard = ({ member, onApproved, onCancel }: Appro
             </div>
           )}
 
-          {step === 1 && (
+          {step === STEP_PAYMENT && (
+            <div className="flex flex-col gap-3">
+              {!paymentsLoaded ? (
+                <p className="text-sm text-default-500">Loading payment details…</p>
+              ) : existingPayment ? (
+                <>
+                  <p className="text-sm text-default-600">
+                    This applicant submitted a payment. Check it against the proof before admitting them.
+                  </p>
+                  <dl className="grid grid-cols-2 gap-3 text-sm">
+                    <div>
+                      <dt className="font-medium text-default-900 mb-1">Amount</dt>
+                      <dd className="font-semibold text-default-800">{peso.format(existingPayment.amount)}</dd>
+                    </div>
+                    <div>
+                      <dt className="font-medium text-default-900 mb-1">Reference</dt>
+                      <dd className="font-semibold text-default-800">{existingPayment.referenceNo || '-'}</dd>
+                    </div>
+                    <div>
+                      <dt className="font-medium text-default-900 mb-1">Paid On</dt>
+                      <dd className="font-semibold text-default-800">
+                        {new Date(existingPayment.paidOn).toLocaleDateString()}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt className="font-medium text-default-900 mb-1">Expected</dt>
+                      <dd className="font-semibold text-default-800">
+                        {fees ? peso.format(fees.registrationTotal) : '—'}
+                      </dd>
+                    </div>
+                  </dl>
+                  {existingPayment.hasProof ? (
+                    <div>
+                      <StandardButton variant="view" size="sm" icon={LuEye} onClick={() => setPreviewingPayment(true)}>
+                        View proof of payment
+                      </StandardButton>
+                    </div>
+                  ) : (
+                    <p className="text-sm text-danger">
+                      This payment has no proof attached, so it can't be accepted. Ask the member to upload one.
+                    </p>
+                  )}
+                </>
+              ) : (
+                <>
+                  <p className="text-sm text-default-600">
+                    This member has no payment on record — an admin-created profile, or a walk-in. Record what they
+                    actually paid; it's accepted as part of the approval.
+                  </p>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div>
+                      <label htmlFor="wizard-amount" className="block font-medium text-default-900 text-sm mb-2">
+                        Amount Paid
+                      </label>
+                      <input
+                        id="wizard-amount"
+                        className="form-input"
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={amount}
+                        onChange={(e) => setAmount(e.target.value)}
+                      />
+                    </div>
+                    <div>
+                      <label htmlFor="wizard-reference" className="block font-medium text-default-900 text-sm mb-2">
+                        Reference No.
+                      </label>
+                      <input
+                        id="wizard-reference"
+                        className="form-input"
+                        value={referenceNo}
+                        onChange={(e) => setReferenceNo(e.target.value)}
+                      />
+                    </div>
+                    <div>
+                      <label htmlFor="wizard-paid-on" className="block font-medium text-default-900 text-sm mb-2">
+                        Date Paid
+                      </label>
+                      <input
+                        id="wizard-paid-on"
+                        className="form-input"
+                        type="date"
+                        max={new Date().toISOString().slice(0, 10)}
+                        value={paidOn}
+                        onChange={(e) => setPaidOn(e.target.value)}
+                      />
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-3">
+                    <input
+                      ref={proofInputRef}
+                      type="file"
+                      accept="image/jpeg,image/png,application/pdf"
+                      className="text-sm"
+                      onChange={(e) => void handleProofSelected(e.target.files?.[0])}
+                    />
+                    {uploadingProof && <span className="text-xs text-default-500">Uploading…</span>}
+                    {proofKey && !uploadingProof && <span className="text-xs text-success font-medium">Proof attached.</span>}
+                  </div>
+                  <p className="text-xs text-default-500">
+                    Expected total {fees ? peso.format(fees.registrationTotal) : '—'}. JPG, PNG or PDF up to 1 MB.
+                  </p>
+                </>
+              )}
+            </div>
+          )}
+
+          {step === STEP_ID && (
             <div className="flex flex-col gap-3">
               {verified && <p className="text-sm text-success font-medium">RMP licence verified.</p>}
               <p className="text-sm text-default-600">Enter the PSMPE Membership ID to assign to this member.</p>
@@ -252,7 +432,7 @@ export const ApproveApplicationWizard = ({ member, onApproved, onCancel }: Appro
             </div>
           )}
 
-          {step === 2 && (
+          {step === STEP_CONFIRM && (
             <div className="flex flex-col gap-3">
               <dl className="grid grid-cols-2 gap-3 text-sm">
                 <div>
@@ -273,6 +453,12 @@ export const ApproveApplicationWizard = ({ member, onApproved, onCancel }: Appro
                   <dt className="font-medium text-default-900 mb-1">Membership ID</dt>
                   <dd className="font-semibold text-default-800">{trimmed}</dd>
                 </div>
+                <div>
+                  <dt className="font-medium text-default-900 mb-1">Payment</dt>
+                  <dd className="font-semibold text-default-800">
+                    {peso.format(existingPayment ? existingPayment.amount : Number(amount) || 0)}
+                  </dd>
+                </div>
               </dl>
               <p className="text-xs text-default-500">
                 Approving assigns this Membership ID, generates the member's receipt and emails it to them. The ID can
@@ -288,7 +474,7 @@ export const ApproveApplicationWizard = ({ member, onApproved, onCancel }: Appro
           </StandardButton>
 
           <div className="flex items-center gap-2">
-            {step === 0 && (
+            {step === STEP_RMP && (
               <>
                 <StandardButton variant="danger" onClick={() => setRejecting(true)} disabled={busy}>
                   Reject
@@ -298,22 +484,32 @@ export const ApproveApplicationWizard = ({ member, onApproved, onCancel }: Appro
                 </StandardButton>
               </>
             )}
-            {step === 1 && (
+            {step === STEP_PAYMENT && (
               <>
-                {/* Only offered when there was a step 0 to go back to. */}
+                {/* Only when there was an RMP step to return to. */}
                 {!member.prcIdVerified && (
-                  <StandardButton variant="secondary" onClick={() => setStep(0)} disabled={busy}>
+                  <StandardButton variant="secondary" onClick={() => setStep(STEP_RMP)} disabled={busy}>
                     Back
                   </StandardButton>
                 )}
-                <StandardButton onClick={() => setStep(2)} disabled={!canContinueFromId || busy}>
+                <StandardButton onClick={() => setStep(STEP_ID)} disabled={!canContinueFromPayment || busy || uploadingProof}>
                   Continue
                 </StandardButton>
               </>
             )}
-            {step === 2 && (
+            {step === STEP_ID && (
               <>
-                <StandardButton variant="secondary" onClick={() => setStep(1)} disabled={busy}>
+                <StandardButton variant="secondary" onClick={() => setStep(STEP_PAYMENT)} disabled={busy}>
+                  Back
+                </StandardButton>
+                <StandardButton onClick={() => setStep(STEP_CONFIRM)} disabled={!canContinueFromId || busy}>
+                  Continue
+                </StandardButton>
+              </>
+            )}
+            {step === STEP_CONFIRM && (
+              <>
+                <StandardButton variant="secondary" onClick={() => setStep(STEP_ID)} disabled={busy}>
                   Back
                 </StandardButton>
                 <StandardButton variant="success" onClick={handleApprove} loading={busy} loadingLabel="Approving…">
@@ -335,6 +531,15 @@ export const ApproveApplicationWizard = ({ member, onApproved, onCancel }: Appro
         onConfirm={handleReject}
         onCancel={() => setRejecting(false)}
       />
+
+      {previewingPayment && existingPayment && (
+        <FilePreviewModal
+          isOpen
+          title="Proof of Payment"
+          fetchFile={() => paymentApi.fetchProofUrl(existingPayment.id)}
+          onClose={() => setPreviewingPayment(false)}
+        />
+      )}
 
       {previewing && (
         <FilePreviewModal
