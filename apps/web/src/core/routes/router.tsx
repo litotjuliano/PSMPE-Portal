@@ -40,7 +40,7 @@ export const router = createBrowserRouter([
               { path: '/content/:id', element: <ContentEditPage /> },
               { path: '/profile', element: <MyProfilePage /> },
               {
-                element: <ProtectedRoute requiredRoles={[Roles.Admin, Roles.SuperAdmin]} />,
+                element: <ProtectedRoute requiredRoles={[Roles.Admin, Roles.SuperAdmin, Roles.Approval]} />,
                 children: [
                   { path: '/admin/users', element: <AdminUsersPage /> },
                   { path: '/admin/users/:id', element: <AdminUserFormPage /> },

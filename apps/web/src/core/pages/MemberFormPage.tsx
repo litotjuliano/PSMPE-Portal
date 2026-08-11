@@ -4,6 +4,8 @@ import { memberApi, type ProfileCompleteness } from '../api/endpoints/memberApi'
 import { adminApi, type UserSummary } from '../api/endpoints/adminApi'
 import { MembershipStatus } from '../types/member'
 import type { Member } from '../types/member'
+import { useAuth } from '../auth/useAuth'
+import { Roles } from '../types/auth'
 import {
   ApproveApplicationWizard,
   MemberFormCard,
@@ -69,6 +71,8 @@ export function MemberFormPage() {
   const { id } = useParams()
   const isNew = !id || id === 'new'
   const navigate = useNavigate()
+  const { user } = useAuth()
+  const canEdit = user?.roles.includes(Roles.Admin) || user?.roles.includes(Roles.SuperAdmin) || false
 
   const [state, setState] = useState<MemberFormState>(emptyState)
   const [users, setUsers] = useState<UserSummary[]>([])
@@ -298,6 +302,7 @@ export function MemberFormPage() {
             onApprove={() => setApproveOpen(true)}
             isInGracePeriod={isInGracePeriod}
             completeness={completeness}
+            canEdit={canEdit}
           />
         )}
         <ApproveApplicationWizard

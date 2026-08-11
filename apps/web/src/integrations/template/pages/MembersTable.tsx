@@ -21,6 +21,9 @@ export type MembersView = 'all' | 'pendingApproval' | 'pendingRmp'
 interface MembersTableProps {
   members: Member[]
   view: MembersView
+  /** Gates New/Edit/Delete on the 'all' view - false for an Approval user, who only works the
+   *  pendingApproval/pendingRmp queues below and otherwise sees members read-only. */
+  canManageMembers: boolean
   sortBy: SortableColumn
   sortDir: 'asc' | 'desc'
   onSortChange: (column: SortableColumn) => void
@@ -95,6 +98,7 @@ function SortableHeader({
 export const MembersTable = ({
   members,
   view,
+  canManageMembers,
   sortBy,
   sortDir,
   onSortChange,
@@ -122,7 +126,7 @@ export const MembersTable = ({
     <div className="card">
       <div className="card-header flex justify-between items-center">
         <h6 className="card-title">{VIEW_COPY[view].title}</h6>
-        {view === 'all' && (
+        {view === 'all' && canManageMembers && (
           <StandardButton to="/members/new" size="sm" variant="on-primary" icon={LuPlus}>
             New member
           </StandardButton>
@@ -218,22 +222,28 @@ export const MembersTable = ({
                       <td className="py-3 px-3.5">
                         <div className="flex items-center gap-1.5">
                           {view === 'all' && (
-                            <>
-                              <Link
-                                to={`/members/${member.id}`}
-                                className="btn btn-icon size-8 hover:bg-default-150 rounded-full text-default-500"
-                                aria-label="Edit"
-                              >
-                                <LuSquarePen className="size-4" />
+                            canManageMembers ? (
+                              <>
+                                <Link
+                                  to={`/members/${member.id}`}
+                                  className="btn btn-icon size-8 hover:bg-default-150 rounded-full text-default-500"
+                                  aria-label="Edit"
+                                >
+                                  <LuSquarePen className="size-4" />
+                                </Link>
+                                <button
+                                  onClick={() => setDeletingMember(member)}
+                                  className="btn btn-icon size-8 hover:bg-danger/10 hover:text-danger rounded-full text-default-500"
+                                  aria-label="Delete"
+                                >
+                                  <LuTrash2 className="size-4" />
+                                </button>
+                              </>
+                            ) : (
+                              <Link to={`/members/${member.id}`} className="btn btn-sm border border-default-200">
+                                View
                               </Link>
-                              <button
-                                onClick={() => setDeletingMember(member)}
-                                className="btn btn-icon size-8 hover:bg-danger/10 hover:text-danger rounded-full text-default-500"
-                                aria-label="Delete"
-                              >
-                                <LuTrash2 className="size-4" />
-                              </button>
-                            </>
+                            )
                           )}
                           {view === 'pendingApproval' && (
                             <>

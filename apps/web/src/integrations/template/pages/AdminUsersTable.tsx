@@ -14,6 +14,10 @@ interface AdminUsersTableProps {
   /** Edit/Delete are Super-Admin-only - hidden entirely (not just disabled) for a regular Admin,
    *  who's left with only the Email Verification action on this page. */
   isSuperAdmin: boolean
+  /** Gates "New user" and per-row email verification - both are Admin/Super-Admin-only server
+   *  side (admin:manage-users permission / RequireAdmin policy respectively), so an Approval
+   *  user (view-only here) must not see either. */
+  canManageUsers: boolean
   onToggleRole: (userId: string, role: Role, hasRole: boolean) => void
   onDelete: (id: string) => void
   onVerifyEmail: (userId: string) => void
@@ -68,6 +72,7 @@ export const AdminUsersTable = ({
   users,
   canManageRoles,
   isSuperAdmin,
+  canManageUsers,
   onToggleRole,
   onDelete,
   onVerifyEmail,
@@ -91,9 +96,11 @@ export const AdminUsersTable = ({
     <div className="card">
       <div className="card-header flex justify-between items-center">
         <h6 className="card-title">Users</h6>
-        <StandardButton to="/admin/users/new" size="sm" variant="on-primary" icon={LuPlus}>
-          New user
-        </StandardButton>
+        {canManageUsers && (
+          <StandardButton to="/admin/users/new" size="sm" variant="on-primary" icon={LuPlus}>
+            New user
+          </StandardButton>
+        )}
       </div>
 
       <div className="flex flex-col">
@@ -163,10 +170,14 @@ export const AdminUsersTable = ({
                           <span className="py-0.5 px-2.5 inline-flex items-center text-xs font-medium rounded bg-success/10 text-success">
                             Verified
                           </span>
-                        ) : (
+                        ) : canManageUsers ? (
                           <StandardButton variant="warning" size="sm" icon={LuCheck} onClick={() => setVerifyingUser(user)}>
                             Verify
                           </StandardButton>
+                        ) : (
+                          <span className="py-0.5 px-2.5 inline-flex items-center text-xs font-medium rounded bg-default-150 text-default-600">
+                            Unverified
+                          </span>
                         )}
                       </td>
                       <td className="py-3 px-3.5">

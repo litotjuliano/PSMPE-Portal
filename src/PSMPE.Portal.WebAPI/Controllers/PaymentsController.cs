@@ -111,7 +111,7 @@ public class PaymentsController(
     /// MemberService.ApproveAsync instead of leaving an orphaned row behind if approval then fails.
     /// </summary>
     [HttpPost("member/{memberId:guid}/proof")]
-    [RequirePermission(Permissions.Members.Manage)]
+    [RequirePermission(Permissions.Members.Manage, Permissions.Members.Approve)]
     public async Task<ActionResult<ProofUploadDto>> UploadProofForMember(
         Guid memberId, IFormFile file, CancellationToken cancellationToken)
     {

@@ -18,6 +18,10 @@ export function AdminUsersPage() {
   // Gates role-checkbox editing (unchanged) and, as of this change, the per-row Edit/Delete
   // icons too - both hidden entirely for a regular Admin, leaving only Email Verification.
   const isSuperAdmin = user?.roles.includes(Roles.SuperAdmin) ?? false
+  // Approximates the server's admin:manage-users permission / RequireAdmin policy, which the
+  // token doesn't carry - it ships with both roles by default, and the API enforces the real
+  // check. False for Approval (view-only here).
+  const canManageUsers = isSuperAdmin || (user?.roles.includes(Roles.Admin) ?? false)
 
   const refetch = () =>
     adminApi.getUsers({ page, pageSize: PAGE_SIZE, sortBy, sortDir }).then((result) => {
@@ -72,9 +76,8 @@ export function AdminUsersPage() {
             users={users}
             canManageRoles={isSuperAdmin}
             isSuperAdmin={isSuperAdmin}
-            // Approximates the server's admin:manage-users gate, which the token doesn't carry -
-            // it ships with both roles by default, and the API enforces the real check.
-            canSendPasswordReset={isSuperAdmin || (user?.roles.includes(Roles.Admin) ?? false)}
+            canManageUsers={canManageUsers}
+            canSendPasswordReset={canManageUsers}
             onSendPasswordReset={handleSendPasswordReset}
             onToggleRole={handleToggleRole}
             onDelete={handleDelete}

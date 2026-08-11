@@ -108,6 +108,10 @@ interface MemberFormCardProps {
   /** Only present when editing an existing member - surfaces which ID-issuance documents (photo,
    *  signature, valid ID) are still missing, so staff don't have to open My Profile to check. */
   completeness?: ProfileCompleteness | null
+  /** Gates the "Edit" button - an Approval user can approve an application but not edit the
+   *  profile fields (PUT requires Members.Manage, which they don't hold). Defaults to true so
+   *  every other caller of this card keeps its current behavior. */
+  canEdit?: boolean
 }
 
 function DocumentCompletenessRow({
@@ -166,6 +170,7 @@ export const MemberFormCard = ({
   onApprove,
   isInGracePeriod,
   completeness,
+  canEdit = true,
 }: MemberFormCardProps) => {
   // Existing members open in read-only view mode, same as the member's own profile pages - a
   // reviewer landing here (e.g. from a notification, to approve an application) sees a display of
@@ -202,7 +207,7 @@ export const MemberFormCard = ({
               Approve Application
             </button>
           )}
-          {!isNew && !editing && (
+          {!isNew && !editing && canEdit && (
             <StandardButton size="sm" variant="on-primary" icon={LuSquarePen} onClick={() => setEditing(true)}>
               Edit
             </StandardButton>

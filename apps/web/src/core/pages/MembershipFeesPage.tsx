@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
 import { paymentApi } from '../api/endpoints/paymentApi'
 import { describeError } from '../utils/apiError'
+import { useAuth } from '../auth/useAuth'
+import { Roles } from '../types/auth'
 import { PageBreadcrumb, PageMeta, StandardButton } from '../../integrations/template'
 
 const peso = new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' })
@@ -11,6 +13,10 @@ const peso = new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP'
  * config CMS is a much larger thing to design than this change needed.
  */
 export function MembershipFeesPage() {
+  const { user } = useAuth()
+  // False for an Approval user: fees are Members.Manage-gated server side, which they don't hold.
+  const canEdit = user?.roles.includes(Roles.Admin) || user?.roles.includes(Roles.SuperAdmin) || false
+
   const [membershipFee, setMembershipFee] = useState('')
   const [shippingFee, setShippingFee] = useState('')
   const [annualDues, setAnnualDues] = useState('')
@@ -71,6 +77,7 @@ export function MembershipFeesPage() {
         min="0"
         step="0.01"
         value={value}
+        readOnly={!canEdit}
         onChange={(e) => onChange(e.target.value)}
       />
       <p className="text-xs text-default-500 mt-1">{hint}</p>
@@ -115,7 +122,7 @@ export function MembershipFeesPage() {
               </>
             )}
           </div>
-          {!loading && (
+          {!loading && canEdit && (
             <div className="card-footer flex items-center justify-end">
               <StandardButton onClick={handleSave} loading={saving} loadingLabel="Saving…" disabled={!allValid}>
                 Save Fees

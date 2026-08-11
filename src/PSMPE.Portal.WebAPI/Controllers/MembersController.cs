@@ -171,7 +171,7 @@ public class MembersController(
     /// not something an unprivileged caller should be able to probe.
     /// </summary>
     [HttpGet("membership-no/availability")]
-    [RequirePermission(Permissions.Members.Manage)]
+    [RequirePermission(Permissions.Members.Manage, Permissions.Members.Approve)]
     public async Task<ActionResult<MembershipNoAvailabilityDto>> CheckMembershipNoAvailability(
         string value, Guid? excludeMemberId = null, CancellationToken cancellationToken = default)
     {
@@ -188,7 +188,7 @@ public class MembersController(
     }
 
     [HttpPost("{id:guid}/approve")]
-    [RequirePermission(Permissions.Members.Manage)]
+    [RequirePermission(Permissions.Members.Manage, Permissions.Members.Approve)]
     public async Task<IActionResult> Approve(Guid id, ApproveMemberRequest request, CancellationToken cancellationToken)
     {
         if (await IsHiddenMemberAsync(id, cancellationToken))
@@ -253,7 +253,7 @@ public class MembersController(
     }
 
     [HttpPost("{id:guid}/prc-verification/approve")]
-    [RequirePermission(Permissions.Members.Manage)]
+    [RequirePermission(Permissions.Members.Manage, Permissions.Members.Approve)]
     public async Task<IActionResult> ApprovePrcVerification(Guid id, CancellationToken cancellationToken)
     {
         var decidedByUserId = CurrentUserId;
@@ -272,7 +272,7 @@ public class MembersController(
     }
 
     [HttpPost("{id:guid}/prc-verification/reject")]
-    [RequirePermission(Permissions.Members.Manage)]
+    [RequirePermission(Permissions.Members.Manage, Permissions.Members.Approve)]
     public async Task<IActionResult> RejectPrcVerification(Guid id, RejectPrcVerificationRequest request, CancellationToken cancellationToken)
     {
         var decidedByUserId = CurrentUserId;

@@ -35,6 +35,7 @@ public static class Permissions
     {
         public const string View = "members:view";
         public const string Manage = "members:manage";
+        public const string Approve = "members:approve";
     }
 
     public static readonly string[] All =
@@ -43,6 +44,6 @@ public static class Permissions
         Layout.Create, Layout.Delete, Layout.DeleteSystem,
         Admin.ManageUsers, Admin.ManageRoles,
         Ai.UsePrompt,
-        Members.View, Members.Manage
+        Members.View, Members.Manage, Members.Approve
     ];
 }

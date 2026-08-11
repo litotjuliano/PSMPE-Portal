@@ -8,6 +8,9 @@ import { StandardButton } from '../components/shared/StandardButton'
 
 interface PaymentsQueueTableProps {
   payments: Payment[]
+  /** Gates Verify/Reject - false for an Approval user, who can view this queue but not act on
+   *  it (verify/reject are Members.Manage-gated server side). */
+  canManagePayments: boolean
   onVerify: (id: string) => void
   onReject: (id: string, reason: string) => void
   page: number
@@ -30,6 +33,7 @@ const peso = new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP'
  */
 export const PaymentsQueueTable = ({
   payments,
+  canManagePayments,
   onVerify,
   onReject,
   page,
@@ -85,20 +89,25 @@ export const PaymentsQueueTable = ({
                       <td className="py-3 px-3.5">{new Date(payment.paidOn).toLocaleDateString()}</td>
                       <td className="py-3 px-3.5">
                         <div className="flex items-center gap-1.5">
-                          {/* Verifying without looking at the proof is the mistake this queue exists
-                              to prevent, so the button is disabled when there's nothing to look at. */}
-                          <StandardButton
-                            variant="success"
-                            size="sm"
-                            icon={LuCheck}
-                            disabled={!payment.hasProof}
-                            onClick={() => onVerify(payment.id)}
-                          >
-                            Verify
-                          </StandardButton>
-                          <StandardButton variant="danger" size="sm" icon={LuX} onClick={() => setRejectingId(payment.id)}>
-                            Reject
-                          </StandardButton>
+                          {canManagePayments && (
+                            <>
+                              {/* Verifying without looking at the proof is the mistake this queue
+                                  exists to prevent, so the button is disabled when there's nothing
+                                  to look at. */}
+                              <StandardButton
+                                variant="success"
+                                size="sm"
+                                icon={LuCheck}
+                                disabled={!payment.hasProof}
+                                onClick={() => onVerify(payment.id)}
+                              >
+                                Verify
+                              </StandardButton>
+                              <StandardButton variant="danger" size="sm" icon={LuX} onClick={() => setRejectingId(payment.id)}>
+                                Reject
+                              </StandardButton>
+                            </>
+                          )}
                           {payment.hasProof && (
                             <StandardButton variant="view" size="sm" icon={LuEye} onClick={() => setPreviewingId(payment.id)}>
                               View proof

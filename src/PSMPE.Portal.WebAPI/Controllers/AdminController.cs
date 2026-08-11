@@ -16,10 +16,11 @@ using PSMPE.Portal.WebAPI.Extensions;
 namespace PSMPE.Portal.WebAPI.Controllers;
 
 /// <summary>
-/// System-wide administrative actions. Listing users/roles requires Admin; creating a user
-/// requires the admin:manage-users permission; editing/deleting a user, changing role
-/// assignments, and role permissions all require Super Admin (an Admin's only remaining action on
-/// another user's row is VerifyEmail). Super Admin is never assignable/visible through this API,
+/// System-wide administrative actions. Listing users/roles requires Admin, Super Admin, or
+/// Approval (view-only); creating a user requires the admin:manage-users permission;
+/// editing/deleting a user, changing role assignments, and role permissions all require Super
+/// Admin (an Admin's only remaining action on another user's row is VerifyEmail). Super Admin is
+/// never assignable/visible through this API,
 /// for any caller including a Super Admin - it's provisioned only via seeding/config/direct DB.
 /// A Super Admin's own account is visible to themselves (GetUsers/GetUserById) but fully
 /// read-only (UpdateUser/DeleteUser/AssignRole/RemoveRole all reject any Super Admin target) -
@@ -72,7 +73,7 @@ public class AdminController(
         Ok(new { clientIp = HttpContext.Connection.RemoteIpAddress?.ToString() });
 
     [HttpGet("users")]
-    [Authorize(Policy = PolicyNames.RequireAdmin)]
+    [Authorize(Policy = PolicyNames.RequireAdminOrApproval)]
     public async Task<ActionResult<PagedResult<UserSummaryDto>>> GetUsers(
         int page = 1,
         int pageSize = 20,
@@ -122,7 +123,7 @@ public class AdminController(
     // TODO: add search and audit logging once the admin UI needs them.
 
     [HttpGet("users/{id:guid}")]
-    [Authorize(Policy = PolicyNames.RequireAdmin)]
+    [Authorize(Policy = PolicyNames.RequireAdminOrApproval)]
     public async Task<ActionResult<UserSummaryDto>> GetUserById(Guid id)
     {
         var user = await userManager.FindByIdAsync(id.ToString());
@@ -444,7 +445,7 @@ public class AdminController(
     }
 
     [HttpGet("roles")]
-    [Authorize(Policy = PolicyNames.RequireAdmin)]
+    [Authorize(Policy = PolicyNames.RequireAdminOrApproval)]
     public async Task<ActionResult<IReadOnlyList<RoleSummaryDto>>> GetRoles()
     {
         // Super Admin's role (and its full permission claim set) never leaves the server -
@@ -500,7 +501,7 @@ public class AdminController(
     }
 
     [HttpGet("permissions")]
-    [Authorize(Policy = PolicyNames.RequireAdmin)]
+    [Authorize(Policy = PolicyNames.RequireAdminOrApproval)]
     public ActionResult<IReadOnlyList<string>> GetPermissions() => Ok(Permissions.All);
 
     private Guid? CurrentUserId =>

@@ -4,6 +4,8 @@ import { memberApi, type GetMembersParams } from '../api/endpoints/memberApi'
 import { paymentApi, type Payment } from '../api/endpoints/paymentApi'
 import type { Member } from '../types/member'
 import { describeError } from '../utils/apiError'
+import { useAuth } from '../auth/useAuth'
+import { Roles } from '../types/auth'
 import {
   ApproveApplicationWizard,
   MembersTable,
@@ -46,6 +48,12 @@ const DEFAULT_SORT: Record<TabKey, { sortBy: NonNullable<GetMembersParams['sortB
 }
 
 export function MembersPage() {
+  const { user } = useAuth()
+  // False for an Approval user: they work the pendingApproval/pendingRmp queues below, but the
+  // 'all' member list and the payments queue are read-only for them (Members.Manage-gated
+  // server side, which they don't hold).
+  const canManageMembers = user?.roles.includes(Roles.Admin) || user?.roles.includes(Roles.SuperAdmin) || false
+
   // The active tab lives in the URL so it is linkable - the redirects from the old
   // /membership-approvals and /prc-verifications routes and the notification bell all rely on it.
   const [searchParams, setSearchParams] = useSearchParams()
@@ -208,6 +216,7 @@ export function MembersPage() {
         ) : isPayments ? (
           <PaymentsQueueTable
             payments={payments}
+            canManagePayments={canManageMembers}
             onVerify={handleVerifyPayment}
             onReject={handleRejectPayment}
             page={page}
@@ -219,6 +228,7 @@ export function MembersPage() {
           <MembersTable
             members={members}
             view={tabKey}
+            canManageMembers={canManageMembers}
             sortBy={sortBy}
             sortDir={sortDir}
             onSortChange={handleSortChange}

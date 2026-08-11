@@ -51,7 +51,7 @@ export const menuItemsData: MenuItemType[] = [
     label: 'Members',
     icon: LuUsers,
     href: '/members',
-    requiredRoles: ['Admin', 'Super Admin'],
+    requiredRoles: ['Admin', 'Super Admin', 'Approval'],
   },
   // Membership Approvals and RMP Verifications used to sit here. Both were the same
   // GET /api/members query with a different filter, so they are now tabs on Members. The topbar
@@ -61,14 +61,14 @@ export const menuItemsData: MenuItemType[] = [
     label: 'Membership Fees',
     icon: LuBanknote,
     href: '/membership-fees',
-    requiredRoles: ['Admin', 'Super Admin'],
+    requiredRoles: ['Admin', 'Super Admin', 'Approval'],
   },
   {
     key: 'Notifications',
     label: 'Notifications',
     icon: LuBellRing,
     href: '/notifications',
-    requiredRoles: ['Admin', 'Super Admin'],
+    requiredRoles: ['Admin', 'Super Admin', 'Approval'],
   },
   {
     key: 'CMS',
@@ -86,13 +86,13 @@ export const menuItemsData: MenuItemType[] = [
     label: 'Users',
     icon: LuSquareUserRound,
     href: '/admin/users',
-    requiredRoles: ['Admin', 'Super Admin'],
+    requiredRoles: ['Admin', 'Super Admin', 'Approval'],
   },
   {
     key: 'Roles',
     label: 'Roles & Permissions',
     icon: LuShieldCheck,
     href: '/admin/roles',
-    requiredRoles: ['Admin', 'Super Admin'],
+    requiredRoles: ['Admin', 'Super Admin', 'Approval'],
   },
 ]
