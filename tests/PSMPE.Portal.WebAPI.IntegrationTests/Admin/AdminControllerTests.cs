@@ -189,6 +189,34 @@ public class AdminControllerTests : IClassFixture<CustomWebApplicationFactory>, 
     }
 
     [Fact]
+    public async Task GetUsers_WithSearch_MatchesDisplayNameCaseInsensitively()
+    {
+        var match = await CreateUserAsync(RoleNames.Manager, displayName: "Search Target Alpha");
+        await CreateUserAsync(RoleNames.Manager, displayName: "Unrelated Beta");
+
+        var result = UnwrapPaged(await _controller.GetUsers(
+            page: 1, pageSize: 1000, search: "search target", cancellationToken: CancellationToken.None));
+
+        Assert.Contains(result.Items, u => u.Id == match.Id);
+        Assert.Equal(1, result.TotalCount);
+    }
+
+    [Fact]
+    public async Task GetUsers_WithRolesFilter_ReturnsUnionOfMatchingRoles()
+    {
+        var manager = await CreateUserAsync(RoleNames.Manager, displayName: "Role Filter Manager");
+        var accounts = await CreateUserAsync(RoleNames.Accounts, displayName: "Role Filter Accounts");
+        var member = await CreateUserAsync(RoleNames.Member, displayName: "Role Filter Member");
+
+        var result = UnwrapPaged(await _controller.GetUsers(
+            page: 1, pageSize: 1000, roles: [RoleNames.Manager, RoleNames.Accounts], cancellationToken: CancellationToken.None));
+
+        Assert.Contains(result.Items, u => u.Id == manager.Id);
+        Assert.Contains(result.Items, u => u.Id == accounts.Id);
+        Assert.DoesNotContain(result.Items, u => u.Id == member.Id);
+    }
+
+    [Fact]
     public async Task GetUserById_ReturnsUser()
     {
         var user = await CreateUserAsync(RoleNames.Manager);

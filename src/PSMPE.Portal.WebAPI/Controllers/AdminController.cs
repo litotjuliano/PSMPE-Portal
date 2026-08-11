@@ -79,6 +79,8 @@ public class AdminController(
         int pageSize = 20,
         string sortBy = "displayName",
         string sortDir = "asc",
+        string? search = null,
+        IReadOnlyCollection<string>? roles = null,
         CancellationToken cancellationToken = default)
     {
         page = Math.Max(page, 1);
@@ -97,6 +99,31 @@ public class AdminController(
             query = query.Where(u => !superAdminIds.Contains(u.Id) || u.Id == callerId);
         }
 
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var normalizedSearch = search.Trim().ToLower();
+            query = query.Where(u =>
+                u.DisplayName.ToLower().Contains(normalizedSearch)
+                || (u.Email != null && u.Email.ToLower().Contains(normalizedSearch)));
+        }
+
+        if (roles is { Count: > 0 })
+        {
+            // Same shape as the superAdminIds check above: resolve matching ids via
+            // UserManager.GetUsersInRoleAsync (a role isn't a queryable column on ApplicationUser),
+            // then filter the query by id. Unioned across every requested role.
+            var matchingIds = new HashSet<Guid>();
+            foreach (var role in roles)
+            {
+                foreach (var user in await userManager.GetUsersInRoleAsync(role))
+                {
+                    matchingIds.Add(user.Id);
+                }
+            }
+
+            query = query.Where(u => matchingIds.Contains(u.Id));
+        }
+
         var descending = string.Equals(sortDir, "desc", StringComparison.OrdinalIgnoreCase);
         query = sortBy.ToLowerInvariant() switch
         {
@@ -112,15 +139,15 @@ public class AdminController(
         var summaries = new List<UserSummaryDto>(pageOfUsers.Count);
         foreach (var user in pageOfUsers)
         {
-            var roles = await userManager.GetRolesAsync(user);
-            summaries.Add(new UserSummaryDto(user.Id, user.Email ?? string.Empty, user.DisplayName, roles.ToList(), user.CreatedAt, user.EmailConfirmed,
+            var userRoles = await userManager.GetRolesAsync(user);
+            summaries.Add(new UserSummaryDto(user.Id, user.Email ?? string.Empty, user.DisplayName, userRoles.ToList(), user.CreatedAt, user.EmailConfirmed,
                 user.DataPrivacyConsentAt, user.DataPrivacyConsentVersion));
         }
 
         return Ok(new PagedResult<UserSummaryDto>(summaries, totalCount, page, pageSize));
     }
 
-    // TODO: add search and audit logging once the admin UI needs them.
+    // TODO: add audit logging once the admin UI needs it.
 
     [HttpGet("users/{id:guid}")]
     [Authorize(Policy = PolicyNames.RequireAdminOrApproval)]
