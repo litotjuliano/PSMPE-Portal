@@ -14,6 +14,8 @@ export interface GetMembersParams {
   /** Members with a proposed PRC License No. change awaiting a decision, or whose current
    *  PRC License No. has never been reviewed at all. */
   pendingPrcVerificationOnly?: boolean
+  /** Matches name, Membership No., or email - case-insensitive substring match. */
+  search?: string
 }
 
 export interface CreateMemberRequest {
