@@ -4,7 +4,7 @@ import { LuCheck, LuChevronDown, LuChevronUp, LuEye, LuPlus, LuSquarePen, LuTras
 import type { GetMembersParams } from '../../../core/api/endpoints/memberApi'
 import { uploadApi } from '../../../core/api/endpoints/uploadApi'
 import type { Member } from '../../../core/types/member'
-import { MembershipStatus } from '../../../core/types/member'
+import { MembershipStatus, type MembershipStatusValue } from '../../../core/types/member'
 import { ConfirmationModal } from '../components/shared/ConfirmationModal'
 import { FilePreviewModal } from '../components/shared/FilePreviewModal'
 import { StandardButton } from '../components/shared/StandardButton'
@@ -24,6 +24,12 @@ interface MembersTableProps {
   /** Gates New/Edit/Delete on the 'all' view - false for an Approval user, who only works the
    *  pendingApproval/pendingRmp queues below and otherwise sees members read-only. */
   canManageMembers: boolean
+  /** 'all' view only. The raw, un-debounced input value - MembersPage owns the debounce timer
+   *  that turns this into the actual filter sent to the server. */
+  searchInput?: string
+  onSearchInputChange?: (value: string) => void
+  statusFilter?: MembershipStatusValue | null
+  onStatusFilterChange?: (status: MembershipStatusValue | null) => void
   sortBy: SortableColumn
   sortDir: 'asc' | 'desc'
   onSortChange: (column: SortableColumn) => void
@@ -99,6 +105,10 @@ export const MembersTable = ({
   members,
   view,
   canManageMembers,
+  searchInput,
+  onSearchInputChange,
+  statusFilter,
+  onStatusFilterChange,
   sortBy,
   sortDir,
   onSortChange,
@@ -132,6 +142,31 @@ export const MembersTable = ({
           </StandardButton>
         )}
       </div>
+
+      {view === 'all' && (
+        <div className="card-header flex flex-wrap items-center gap-3 border-t border-default-200">
+          <input
+            type="text"
+            className="form-input max-w-xs"
+            placeholder="Search by name, membership no., or email…"
+            value={searchInput ?? ''}
+            onChange={(e) => onSearchInputChange?.(e.target.value)}
+          />
+          <select
+            className="form-input max-w-40"
+            value={statusFilter ?? ''}
+            onChange={(e) =>
+              onStatusFilterChange?.(e.target.value === '' ? null : (Number(e.target.value) as MembershipStatusValue))
+            }
+          >
+            <option value="">All statuses</option>
+            <option value={MembershipStatus.Pending}>Pending</option>
+            <option value={MembershipStatus.Active}>Active</option>
+            <option value={MembershipStatus.Expired}>Expired</option>
+            <option value={MembershipStatus.Deactivated}>Deactivated</option>
+          </select>
+        </div>
+      )}
 
       <div className="flex flex-col">
         <div className="overflow-x-auto">

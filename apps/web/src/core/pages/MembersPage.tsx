@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { memberApi, type GetMembersParams } from '../api/endpoints/memberApi'
 import { paymentApi, type Payment } from '../api/endpoints/paymentApi'
-import type { Member } from '../types/member'
+import type { Member, MembershipStatusValue } from '../types/member'
 import { describeError } from '../utils/apiError'
 import { useAuth } from '../auth/useAuth'
 import { Roles } from '../types/auth'
@@ -74,6 +74,20 @@ export function MembersPage() {
 
   const [approving, setApproving] = useState<Member | null>(null)
 
+  const [searchInput, setSearchInput] = useState('')
+  const [search, setSearch] = useState('')
+  const [statusFilter, setStatusFilter] = useState<MembershipStatusValue | null>(null)
+
+  // Debounces typing into the search box - fetchList only re-runs off `search`, not
+  // `searchInput`, so a fetch fires once per pause in typing rather than per keystroke.
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setSearch(searchInput)
+      setPage(1)
+    }, 350)
+    return () => clearTimeout(timer)
+  }, [searchInput])
+
   const fetchList = useCallback(
     async () => {
       // The Payments tab is the one tab backed by a different entity and a different endpoint.
@@ -84,13 +98,17 @@ export function MembersPage() {
         return
       }
 
-      const result = await memberApi.getMembers({ page, pageSize: PAGE_SIZE, sortBy, sortDir, ...activeTab.filter })
+      const result = await memberApi.getMembers({
+        page, pageSize: PAGE_SIZE, sortBy, sortDir, ...activeTab.filter,
+        ...(tabKey === 'all' && search ? { search } : {}),
+        ...(tabKey === 'all' && statusFilter !== null ? { status: statusFilter } : {}),
+      })
       setMembers(result.items)
       setTotalCount(result.totalCount)
     },
     // activeTab is derived from the URL, so depending on the param itself keeps this stable.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [page, sortBy, sortDir, queueParam],
+    [page, sortBy, sortDir, queueParam, search, statusFilter],
   )
 
   /**
@@ -133,6 +151,9 @@ export function MembersPage() {
     setPage(1)
     setSortBy(DEFAULT_SORT[tab.key].sortBy)
     setSortDir(DEFAULT_SORT[tab.key].sortDir)
+    setSearchInput('')
+    setSearch('')
+    setStatusFilter(null)
     setSearchParams(tab.queueParam ? { queue: tab.queueParam } : {}, { replace: true })
   }
 
@@ -143,6 +164,11 @@ export function MembersPage() {
       setSortBy(column)
       setSortDir('asc')
     }
+    setPage(1)
+  }
+
+  const handleStatusFilterChange = (status: MembershipStatusValue | null) => {
+    setStatusFilter(status)
     setPage(1)
   }
 
@@ -229,6 +255,10 @@ export function MembersPage() {
             members={members}
             view={tabKey}
             canManageMembers={canManageMembers}
+            searchInput={searchInput}
+            onSearchInputChange={setSearchInput}
+            statusFilter={statusFilter}
+            onStatusFilterChange={handleStatusFilterChange}
             sortBy={sortBy}
             sortDir={sortDir}
             onSortChange={handleSortChange}
