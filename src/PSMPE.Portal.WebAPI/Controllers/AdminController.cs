@@ -80,7 +80,7 @@ public class AdminController(
         string sortBy = "displayName",
         string sortDir = "asc",
         string? search = null,
-        IReadOnlyCollection<string>? roles = null,
+        [FromQuery] IReadOnlyCollection<string>? roles = null,
         CancellationToken cancellationToken = default)
     {
         page = Math.Max(page, 1);
