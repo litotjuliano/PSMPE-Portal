@@ -17,6 +17,7 @@ const DEV_SEED_ACCOUNTS = [
   { role: 'Admin', email: 'admin.user@psmpe.local', password: 'ChangeMe123!' },
   { role: 'Manager', email: 'manager@psmpe.local', password: 'ChangeMe123!' },
   { role: 'Accounts', email: 'accounts@psmpe.local', password: 'ChangeMe123!' },
+  { role: 'Approval', email: 'approval@psmpe.local', password: 'ChangeMe123!' },
   { role: 'Member', email: 'member@psmpe.local', password: 'ChangeMe123!' },
 ] as const
 

@@ -1,9 +1,11 @@
 using System.Text.RegularExpressions;
 using Microsoft.EntityFrameworkCore;
 using PSMPE.Portal.Application.Common.Caching;
+using PSMPE.Portal.Application.Common.Configuration;
 using PSMPE.Portal.Application.Common.Interfaces;
 using PSMPE.Portal.Application.Common.Models;
 using PSMPE.Portal.Application.Members.Dtos;
+using PSMPE.Portal.Application.Payments;
 using PSMPE.Portal.Domain.Entities;
 using PSMPE.Portal.Domain.Enums;
 
@@ -21,8 +23,10 @@ public class MemberService(IApplicationDbContext db, ICacheService? cache = null
     private const string GracePeriodCacheKey = "config:membership-grace-period-days";
 
     private Task<int> GetGracePeriodDaysAsync(CancellationToken cancellationToken) =>
-        // No invalidation hook needed - there is no write path to SystemConfigs anywhere in the
-        // app (seeded once at startup, never updated by any endpoint), so this is TTL-only expiry.
+        // TTL-only expiry: nothing in the app writes *this* key (it's seeded at startup and changed
+        // only by editing the row directly). PaymentService.UpdateFeesAsync is now a write path to
+        // SystemConfigs, but it evicts its own cache entry - if a grace-period editor is ever added
+        // it must do the same here.
         Cache.GetOrCreateAsync(GracePeriodCacheKey, "Cache:GracePeriodDurationSeconds", 600, async () =>
         {
             var config = await db.SystemConfigs.AsNoTracking()
@@ -50,25 +54,42 @@ public class MemberService(IApplicationDbContext db, ICacheService? cache = null
         return today <= m.RenewalDueDate.Value.AddDays(gracePeriodDays);
     }
 
+    /// <summary>
+    /// Past the renewal date *and* past the grace period. Computed rather than stored: flipping the
+    /// persisted Status on a schedule would need a background service, and this product has none
+    /// (no IHostedService anywhere). Surfacing it as a derived flag keeps the UI honest today
+    /// without pretending a scheduler exists - the stored Status stays admin-controlled.
+    /// </summary>
+    private static bool ComputeIsExpired(Member m, int gracePeriodDays)
+    {
+        if (m.Status != MembershipStatus.Active || m.RenewalDueDate is null)
+        {
+            return false;
+        }
+
+        return DateOnly.FromDateTime(DateTime.UtcNow) > m.RenewalDueDate.Value.AddDays(gracePeriodDays);
+    }
+
     private static MemberDto ToDto(Member m, int gracePeriodDays) => new(
         m.Id, m.UserId, m.User.Email ?? string.Empty, m.FirstName, m.MiddleName, m.LastName, m.Suffix,
         m.Birthdate, m.Gender, m.CivilStatus,
         m.EducationLevel, m.SchoolName, m.CourseYearGraduated, m.SpecifiedProfession,
         m.MobileNumber,
-        m.HouseNo, m.Street, m.Barangay, m.CityMunicipality, m.Province, m.ZipCode,
-        m.MailingHouseNo, m.MailingStreet, m.MailingBarangay, m.MailingCityMunicipality, m.MailingProvince, m.MailingZipCode,
-        m.HousePhone, m.Website, m.FacebookUrl, m.LinkedInUrl, m.XUrl, m.InstagramUrl,
+        m.HouseNo, m.Street, m.Barangay, m.CityMunicipality, m.Province, m.ZipCode, m.Country,
+        m.MailingHouseNo, m.MailingStreet, m.MailingBarangay, m.MailingCityMunicipality, m.MailingProvince, m.MailingZipCode, m.MailingCountry,
+        m.HousePhone,
         m.MembershipNo, m.PrcLicenseNo, m.PrcRegistrationDate, m.PrcValidUntilDate,
-        m.PtrNumber, m.Tin, m.PrcIdVerified,
-        m.PendingPrcLicenseNo, m.PendingPrcRegistrationDate, m.PendingPrcValidUntilDate, m.PrcVerificationRejectedReason, m.Chapter,
+        m.PtrNumber, m.PtrPlaceIssued, m.PtrDateIssued, m.Tin, m.PrcIdVerified,
+        m.PendingPrcLicenseNo, m.PendingPrcRegistrationDate, m.PendingPrcValidUntilDate, m.PrcVerificationRejectedReason,
+        m.Chapter, m.ChapterYear, m.ChapterPosition,
         m.EmploymentStatus, m.Company, m.Position, m.BusinessAddress, m.YearsOfPractice, m.Specialization, m.Skills,
         m.MemberType,
         m.Status, m.RenewalDueDate, m.NationalDuesReferenceNo, m.ApprovedAt, m.SubmittedAt,
-        ComputeIsInGracePeriod(m, gracePeriodDays), m.CreatedAt, m.UpdatedAt);
+        ComputeIsInGracePeriod(m, gracePeriodDays), ComputeIsExpired(m, gracePeriodDays), m.CreatedAt, m.UpdatedAt);
 
     public async Task<PagedResult<MemberDto>> GetAllAsync(
         int page, int pageSize, string sortBy, string sortDir, MembershipStatus? status,
-        bool? pendingApprovalOnly = null, bool? pendingPrcVerificationOnly = null,
+        bool? pendingApprovalOnly = null, bool? pendingPrcVerificationOnly = null, string? search = null,
         IReadOnlyCollection<Guid>? excludeUserIds = null, CancellationToken cancellationToken = default)
     {
         page = Math.Max(page, 1);
@@ -109,12 +130,27 @@ public class MemberService(IApplicationDbContext db, ICacheService? cache = null
                 || (!m.PrcIdVerified && m.PrcLicenseNo != null && m.PendingPrcLicenseNo == null));
         }
 
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            // Same case-insensitive .ToLower().Contains() idiom already used for MembershipNo
+            // comparisons elsewhere in this file (see MembershipNoExistsAsync).
+            var normalizedSearch = search.Trim().ToLower();
+            query = query.Where(m =>
+                m.FirstName.ToLower().Contains(normalizedSearch)
+                || m.LastName.ToLower().Contains(normalizedSearch)
+                || (m.MembershipNo != null && m.MembershipNo.ToLower().Contains(normalizedSearch))
+                || (m.User.Email != null && m.User.Email.ToLower().Contains(normalizedSearch)));
+        }
+
         var descending = string.Equals(sortDir, "desc", StringComparison.OrdinalIgnoreCase);
         query = sortBy.ToLowerInvariant() switch
         {
             "membershipno" => descending ? query.OrderByDescending(m => m.MembershipNo) : query.OrderBy(m => m.MembershipNo),
             "chapter" => descending ? query.OrderByDescending(m => m.Chapter) : query.OrderBy(m => m.Chapter),
             "status" => descending ? query.OrderByDescending(m => m.Status) : query.OrderBy(m => m.Status),
+            // Oldest application first is the natural order for the approval queue - it has always
+            // shown an "Applied" column but had no way to sort by it.
+            "submittedat" => descending ? query.OrderByDescending(m => m.SubmittedAt) : query.OrderBy(m => m.SubmittedAt),
             _ => descending ? query.OrderByDescending(m => m.LastName) : query.OrderBy(m => m.LastName),
         };
 
@@ -151,21 +187,45 @@ public class MemberService(IApplicationDbContext db, ICacheService? cache = null
 
     /// <summary><paramref name="excludeMemberId"/> lets an edit re-save a member's own number
     /// without colliding with itself.</summary>
-    public Task<bool> MembershipNoExistsAsync(string membershipNo, Guid? excludeMemberId = null, CancellationToken cancellationToken = default) =>
-        db.Members.AsNoTracking()
-            .AnyAsync(m => m.MembershipNo == membershipNo && (excludeMemberId == null || m.Id != excludeMemberId), cancellationToken);
+    /// <summary>
+    /// Case-insensitive on purpose: "PSMPE-001" and "psmpe-001" are the same control number to
+    /// everyone except a byte comparison, and letting both through would put two members on one
+    /// number. Matched by the case-insensitive unique index the same comparison relies on - see
+    /// the MembershipNoCaseInsensitiveUnique migration - so a concurrent insert can't slip past
+    /// this check either.
+    /// </summary>
+    public Task<bool> MembershipNoExistsAsync(string membershipNo, Guid? excludeMemberId = null, CancellationToken cancellationToken = default)
+    {
+        var normalized = membershipNo.Trim().ToLowerInvariant();
+        return db.Members.AsNoTracking()
+            .AnyAsync(
+                m => m.MembershipNo != null
+                    && m.MembershipNo.ToLower() == normalized
+                    && (excludeMemberId == null || m.Id != excludeMemberId),
+                cancellationToken);
+    }
 
     public async Task<Result<MemberDto>> CreateAsync(CreateMemberRequest request, CancellationToken cancellationToken = default)
     {
+        // Admin-created profiles skip the wizard and are marked submitted immediately, so nothing
+        // else would ever demand a licence number from them - but without one a member can never
+        // enter the verification queue (see GetAllAsync's pendingPrcVerificationOnly filter), and
+        // therefore can never be approved now that approval requires verification. Requiring it
+        // here matches what SubmitMyProfileAsync already demands of self-service applicants.
+        if (string.IsNullOrWhiteSpace(request.PrcLicenseNo))
+        {
+            return Result<MemberDto>.Failure("RMP License No. is required - a member without one can't be verified or approved.");
+        }
+
         var lengthError = ValidateMemberFieldLengths(
             request.FirstName, request.MiddleName, request.LastName, request.Suffix,
             request.CivilStatus, request.Chapter, request.MemberType,
             request.EducationLevel, request.SchoolName, request.CourseYearGraduated, request.SpecifiedProfession,
-            request.HouseNo, request.Street, request.Barangay, request.CityMunicipality, request.Province, request.ZipCode,
-            request.MailingHouseNo, request.MailingStreet, request.MailingBarangay, request.MailingCityMunicipality, request.MailingProvince, request.MailingZipCode,
-            request.PrcLicenseNo, request.PtrNumber, request.Company, request.Position,
-            request.BusinessAddress, request.Specialization, request.Skills, request.EmploymentStatus,
-            request.Website, request.FacebookUrl, request.LinkedInUrl, request.XUrl, request.InstagramUrl);
+            request.HouseNo, request.Street, request.Barangay, request.CityMunicipality, request.Province, request.ZipCode, request.Country,
+            request.MailingHouseNo, request.MailingStreet, request.MailingBarangay, request.MailingCityMunicipality, request.MailingProvince, request.MailingZipCode, request.MailingCountry,
+            request.PrcLicenseNo, request.PtrNumber, request.PtrPlaceIssued, request.Company, request.Position,
+            request.ChapterPosition,
+            request.BusinessAddress, request.Specialization, request.Skills, request.EmploymentStatus);
         if (lengthError is not null)
         {
             return Result<MemberDto>.Failure(lengthError);
@@ -193,24 +253,25 @@ public class MemberService(IApplicationDbContext db, ICacheService? cache = null
             CityMunicipality = request.CityMunicipality,
             Province = request.Province,
             ZipCode = request.ZipCode,
+            Country = request.Country,
             MailingHouseNo = request.MailingHouseNo,
             MailingStreet = request.MailingStreet,
             MailingBarangay = request.MailingBarangay,
             MailingCityMunicipality = request.MailingCityMunicipality,
             MailingProvince = request.MailingProvince,
             MailingZipCode = request.MailingZipCode,
+            MailingCountry = request.MailingCountry,
             HousePhone = request.HousePhone,
-            Website = request.Website,
-            FacebookUrl = request.FacebookUrl,
-            LinkedInUrl = request.LinkedInUrl,
-            XUrl = request.XUrl,
-            InstagramUrl = request.InstagramUrl,
             PrcLicenseNo = request.PrcLicenseNo,
             PrcRegistrationDate = request.PrcRegistrationDate,
             PrcValidUntilDate = request.PrcValidUntilDate,
             PtrNumber = request.PtrNumber,
+            PtrPlaceIssued = request.PtrPlaceIssued,
+            PtrDateIssued = request.PtrDateIssued,
             Tin = request.Tin,
             Chapter = request.Chapter,
+            ChapterYear = request.ChapterYear,
+            ChapterPosition = request.ChapterPosition,
             EmploymentStatus = request.EmploymentStatus,
             Company = request.Company,
             Position = request.Position,
@@ -240,11 +301,11 @@ public class MemberService(IApplicationDbContext db, ICacheService? cache = null
             request.FirstName, request.MiddleName, request.LastName, request.Suffix,
             request.CivilStatus, request.Chapter, request.MemberType,
             request.EducationLevel, request.SchoolName, request.CourseYearGraduated, request.SpecifiedProfession,
-            request.HouseNo, request.Street, request.Barangay, request.CityMunicipality, request.Province, request.ZipCode,
-            request.MailingHouseNo, request.MailingStreet, request.MailingBarangay, request.MailingCityMunicipality, request.MailingProvince, request.MailingZipCode,
-            request.PrcLicenseNo, request.PtrNumber, request.Company, request.Position,
-            request.BusinessAddress, request.Specialization, request.Skills, request.EmploymentStatus,
-            request.Website, request.FacebookUrl, request.LinkedInUrl, request.XUrl, request.InstagramUrl);
+            request.HouseNo, request.Street, request.Barangay, request.CityMunicipality, request.Province, request.ZipCode, request.Country,
+            request.MailingHouseNo, request.MailingStreet, request.MailingBarangay, request.MailingCityMunicipality, request.MailingProvince, request.MailingZipCode, request.MailingCountry,
+            request.PrcLicenseNo, request.PtrNumber, request.PtrPlaceIssued, request.Company, request.Position,
+            request.ChapterPosition,
+            request.BusinessAddress, request.Specialization, request.Skills, request.EmploymentStatus);
         if (lengthError is not null)
         {
             return Result.Failure(lengthError);
@@ -296,24 +357,25 @@ public class MemberService(IApplicationDbContext db, ICacheService? cache = null
         member.CityMunicipality = request.CityMunicipality;
         member.Province = request.Province;
         member.ZipCode = request.ZipCode;
+        member.Country = request.Country;
         member.MailingHouseNo = request.MailingHouseNo;
         member.MailingStreet = request.MailingStreet;
         member.MailingBarangay = request.MailingBarangay;
         member.MailingCityMunicipality = request.MailingCityMunicipality;
         member.MailingProvince = request.MailingProvince;
         member.MailingZipCode = request.MailingZipCode;
+        member.MailingCountry = request.MailingCountry;
         member.HousePhone = request.HousePhone;
-        member.Website = request.Website;
-        member.FacebookUrl = request.FacebookUrl;
-        member.LinkedInUrl = request.LinkedInUrl;
-        member.XUrl = request.XUrl;
-        member.InstagramUrl = request.InstagramUrl;
         member.PrcLicenseNo = request.PrcLicenseNo;
         member.PrcRegistrationDate = request.PrcRegistrationDate;
         member.PrcValidUntilDate = request.PrcValidUntilDate;
         member.PtrNumber = request.PtrNumber;
+        member.PtrPlaceIssued = request.PtrPlaceIssued;
+        member.PtrDateIssued = request.PtrDateIssued;
         member.Tin = request.Tin;
         member.Chapter = request.Chapter;
+        member.ChapterYear = request.ChapterYear;
+        member.ChapterPosition = request.ChapterPosition;
         member.EmploymentStatus = request.EmploymentStatus;
         member.Company = request.Company;
         member.Position = request.Position;
@@ -340,7 +402,17 @@ public class MemberService(IApplicationDbContext db, ICacheService? cache = null
     /// does NOT re-assign the number. Without that guard a repeat call - which the controller makes
     /// harmless for the email and receipt - would silently renumber a live member.
     /// </summary>
-    public async Task<Result> ApproveAsync(Guid id, string membershipNo, CancellationToken cancellationToken = default)
+    /// <summary>
+    /// Admits an application: assigns the control number, sets ApprovedAt, and accepts the
+    /// registration payment - all in one transaction.
+    ///
+    /// <para>Approval and payment are deliberately indivisible. Requiring a *verified* payment as a
+    /// precondition would deadlock, because verifying a NewMembership payment needs ApprovedAt to
+    /// compute the renewal date. Doing both here, in order, means neither outcome is observable
+    /// without the other: there is no window in which a member is approved but unpaid.</para>
+    /// </summary>
+    public async Task<Result> ApproveAsync(
+        Guid id, ApproveMemberRequest request, Guid decidedByUserId, CancellationToken cancellationToken = default)
     {
         var member = await db.Members.FirstOrDefaultAsync(m => m.Id == id, cancellationToken);
         if (member is null)
@@ -353,7 +425,18 @@ public class MemberService(IApplicationDbContext db, ICacheService? cache = null
             return Result.Success();
         }
 
-        var trimmed = membershipNo?.Trim();
+        // The RMP licence is the eligibility criterion for membership, so it has to be checked
+        // before an application is admitted - approving issues a control number, generates a
+        // receipt and emails the member, none of which is cheap to unwind.
+        //
+        // Deliberately placed *after* the already-approved short-circuit above: members approved
+        // before this rule existed keep their approval, and a repeat call on them still succeeds.
+        if (!member.PrcIdVerified)
+        {
+            return Result.Failure("This member's RMP licence must be verified before their application can be approved.");
+        }
+
+        var trimmed = request.MembershipNo?.Trim();
         if (string.IsNullOrEmpty(trimmed))
         {
             return Result.Failure("A Membership ID is required to approve this application.");
@@ -371,12 +454,100 @@ public class MemberService(IApplicationDbContext db, ICacheService? cache = null
             return Result.Conflict($"Membership ID '{trimmed}' is already in use.");
         }
 
+        var paymentResult = await ResolveRegistrationPaymentAsync(member, request.Payment, cancellationToken);
+        if (!paymentResult.Succeeded)
+        {
+            return Result.Failure(paymentResult.Error!);
+        }
+
         member.MembershipNo = trimmed;
         member.ApprovedAt = DateTimeOffset.UtcNow;
         member.UpdatedAt = DateTimeOffset.UtcNow;
+
+        // Applied after ApprovedAt is set - the NewMembership due-date arithmetic reads it.
+        PaymentVerification.Apply(paymentResult.Value!, member, decidedByUserId);
+
         await db.SaveChangesAsync(cancellationToken);
 
         return Result.Success();
+    }
+
+    /// <summary>
+    /// Finds the registration payment to accept, creating one first if the admin supplied details
+    /// for a member who has none.
+    ///
+    /// <para>A member with no payment record would otherwise be permanently unapprovable now that
+    /// approval requires one - the shape admin-created profiles arrive in, since POST /api/members
+    /// never creates a payment. Rather than exempt them (a loophole that would let the admin form
+    /// bypass payment entirely), the approving admin records what was actually paid.</para>
+    /// </summary>
+    private async Task<Result<Payment>> ResolveRegistrationPaymentAsync(
+        Member member, RecordPaymentRequest? supplied, CancellationToken cancellationToken)
+    {
+        var existing = await db.Payments
+            .Where(p => p.MemberId == member.Id && p.Kind == PaymentKind.NewMembership)
+            .OrderByDescending(p => p.CreatedAt)
+            .FirstOrDefaultAsync(cancellationToken);
+
+        if (existing is not null)
+        {
+            if (supplied is not null)
+            {
+                // Rejected rather than ignored: silently discarding what the admin typed would let
+                // them believe they had corrected an amount that in fact never changed.
+                return Result<Payment>.Failure(
+                    "This member already has a registration payment on record - review it instead of entering a new one.");
+            }
+
+            if (existing.Status == PaymentStatus.Rejected)
+            {
+                return Result<Payment>.Failure(
+                    "This member's registration payment was rejected. They need to submit a new one before the application can be approved.");
+            }
+
+            if (existing.ProofStorageKey is null)
+            {
+                return Result<Payment>.Failure(
+                    "This member's registration payment has no proof attached - there's nothing to verify against.");
+            }
+
+            return Result<Payment>.Success(existing);
+        }
+
+        if (supplied is null)
+        {
+            return Result<Payment>.Failure(
+                "This member has no registration payment on record. Record what they paid before approving.");
+        }
+
+        if (supplied.Amount <= 0)
+        {
+            return Result<Payment>.Failure("Payment amount must be greater than zero.");
+        }
+
+        if (supplied.PaidOn > DateOnly.FromDateTime(DateTime.UtcNow))
+        {
+            return Result<Payment>.Failure("Payment date can't be in the future.");
+        }
+
+        if (string.IsNullOrWhiteSpace(supplied.ProofStorageKey))
+        {
+            return Result<Payment>.Failure("Proof of payment is required.");
+        }
+
+        var created = new Payment
+        {
+            MemberId = member.Id,
+            Member = member,
+            Kind = PaymentKind.NewMembership,
+            Amount = supplied.Amount,
+            ReferenceNo = supplied.ReferenceNo?.Trim(),
+            PaidOn = supplied.PaidOn,
+            ProofStorageKey = supplied.ProofStorageKey,
+            Status = PaymentStatus.Submitted,
+        };
+        db.Payments.Add(created);
+        return Result<Payment>.Success(created);
     }
 
     /// <summary>
@@ -523,8 +694,14 @@ public class MemberService(IApplicationDbContext db, ICacheService? cache = null
         if (string.IsNullOrWhiteSpace(member.CityMunicipality)) missing.Add(("City or Municipality", contactInfoStep));
         if (string.IsNullOrWhiteSpace(member.Province)) missing.Add(("Province", contactInfoStep));
         if (string.IsNullOrWhiteSpace(member.ZipCode)) missing.Add(("Zip code", contactInfoStep));
+        // In practice never trips - the wizard pre-selects "Philippines" - but a caller that skips
+        // the field entirely (a future non-wizard integration) shouldn't get a countryless address
+        // through. MailingCountry is deliberately not required, matching the other mailing fields.
+        if (string.IsNullOrWhiteSpace(member.Country)) missing.Add(("Country", contactInfoStep));
         if (string.IsNullOrWhiteSpace(member.MobileNumber)) missing.Add(("Mobile number", contactInfoStep));
-        if (string.IsNullOrWhiteSpace(member.PtrNumber)) missing.Add(("PTR number", additionalInfoStep));
+        // Nothing on the Additional Information step is required any more - PTR Number was the last
+        // one, and it's now optional alongside its place/date and TIN/Company. The step is kept
+        // because it still collects those; it just no longer blocks submission.
 
         var uploadKinds = await db.MemberUploads.AsNoTracking()
             .Where(u => u.UserId == userId).Select(u => u.Kind).ToListAsync(cancellationToken);
@@ -558,6 +735,7 @@ public class MemberService(IApplicationDbContext db, ICacheService? cache = null
         {
             member.SubmittedAt = DateTimeOffset.UtcNow;
             member.UpdatedAt = DateTimeOffset.UtcNow;
+            await EnsureRegistrationPaymentAsync(member, cancellationToken);
             await db.SaveChangesAsync(cancellationToken);
         }
 
@@ -581,9 +759,6 @@ public class MemberService(IApplicationDbContext db, ICacheService? cache = null
         return HousePhonePattern.IsMatch(value) && digitsOnly is >= 7 and <= 11;
     }
 
-    private static bool IsValidUrl(string value) =>
-        Uri.TryCreate(value, UriKind.Absolute, out var uri) && (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps);
-
     /// <summary>
     /// Mirrors the HasMaxLength constraints already declared in MemberConfiguration.cs - without
     /// this, an over-length value falls through to an uncaught DbUpdateException at
@@ -594,11 +769,11 @@ public class MemberService(IApplicationDbContext db, ICacheService? cache = null
         string firstName, string? middleName, string lastName, string? suffix,
         string? civilStatus, string chapter, string memberType,
         string? educationLevel, string? schoolName, string? courseYearGraduated, string? specifiedProfession,
-        string? houseNo, string? street, string? barangay, string? cityMunicipality, string? province, string? zipCode,
-        string? mailingHouseNo, string? mailingStreet, string? mailingBarangay, string? mailingCityMunicipality, string? mailingProvince, string? mailingZipCode,
-        string? prcLicenseNo, string? ptrNumber, string? company, string? position,
-        string? businessAddress, string? specialization, string? skills, string? employmentStatus,
-        string? website, string? facebookUrl, string? linkedInUrl, string? xUrl, string? instagramUrl)
+        string? houseNo, string? street, string? barangay, string? cityMunicipality, string? province, string? zipCode, string? country,
+        string? mailingHouseNo, string? mailingStreet, string? mailingBarangay, string? mailingCityMunicipality, string? mailingProvince, string? mailingZipCode, string? mailingCountry,
+        string? prcLicenseNo, string? ptrNumber, string? ptrPlaceIssued, string? company, string? position,
+        string? chapterPosition,
+        string? businessAddress, string? specialization, string? skills, string? employmentStatus)
     {
         // Requiredness itself is intentionally NOT checked here - the wizard's per-step autosave
         // (UpsertMyProfileAsync) must tolerate empty values for an in-progress draft; actual
@@ -626,21 +801,13 @@ public class MemberService(IApplicationDbContext db, ICacheService? cache = null
         foreach (var (value, label, maxLength) in new (string? Value, string Label, int MaxLength)[]
         {
             (houseNo, "House No.", 32), (street, "Street", 128), (barangay, "Barangay", 128),
-            (cityMunicipality, "City/Municipality", 128), (province, "Province", 64), (zipCode, "Zip code", 8),
+            (cityMunicipality, "City/Municipality", 128), (province, "Province", 64), (zipCode, "Zip code", 8), (country, "Country", 64),
             (mailingHouseNo, "Mailing House No.", 32), (mailingStreet, "Mailing Street", 128), (mailingBarangay, "Mailing Barangay", 128),
-            (mailingCityMunicipality, "Mailing City/Municipality", 128), (mailingProvince, "Mailing Province", 64), (mailingZipCode, "Mailing Zip code", 8),
+            (mailingCityMunicipality, "Mailing City/Municipality", 128), (mailingProvince, "Mailing Province", 64), (mailingZipCode, "Mailing Zip code", 8), (mailingCountry, "Mailing Country", 64),
+            (chapterPosition, "Chapter position", 128), (ptrPlaceIssued, "PTR place issued", 128),
         })
         {
             if (value?.Length > maxLength) return $"{label} must be {maxLength} characters or fewer.";
-        }
-
-        foreach (var (value, label) in new (string? Value, string Label)[]
-        {
-            (website, "Website"), (facebookUrl, "Facebook URL"), (linkedInUrl, "LinkedIn URL"),
-            (xUrl, "X URL"), (instagramUrl, "Instagram URL"),
-        })
-        {
-            if (value?.Length > 256) return $"{label} must be 256 characters or fewer.";
         }
 
         return null;
@@ -663,33 +830,28 @@ public class MemberService(IApplicationDbContext db, ICacheService? cache = null
             return Result<MemberDto>.Failure("House phone must be a valid landline number.");
         }
 
-        var urlFields = new (string? Value, string Label)[]
-        {
-            (request.Website, "Website"), (request.FacebookUrl, "Facebook URL"), (request.LinkedInUrl, "LinkedIn URL"),
-            (request.XUrl, "X URL"), (request.InstagramUrl, "Instagram URL"),
-        };
-        foreach (var (value, label) in urlFields)
-        {
-            if (!string.IsNullOrWhiteSpace(value) && !IsValidUrl(value))
-            {
-                return Result<MemberDto>.Failure($"{label} must be a valid URL (starting with http:// or https://).");
-            }
-        }
-
         if (request.YearsOfPractice is < 0)
         {
             return Result<MemberDto>.Failure("Years of practice cannot be negative.");
+        }
+
+        // Sanity range only - an int column can hold anything, so unlike the length checks this
+        // isn't guarding against a DbUpdateException. Same self-service-only placement as
+        // YearsOfPractice above; the admin paths trust the admin.
+        if (request.ChapterYear is < 1900 or > 2200)
+        {
+            return Result<MemberDto>.Failure("Chapter year must be between 1900 and 2200.");
         }
 
         var lengthError = ValidateMemberFieldLengths(
             request.FirstName, request.MiddleName, request.LastName, request.Suffix,
             request.CivilStatus, request.Chapter, request.MemberType,
             request.EducationLevel, request.SchoolName, request.CourseYearGraduated, request.SpecifiedProfession,
-            request.HouseNo, request.Street, request.Barangay, request.CityMunicipality, request.Province, request.ZipCode,
-            request.MailingHouseNo, request.MailingStreet, request.MailingBarangay, request.MailingCityMunicipality, request.MailingProvince, request.MailingZipCode,
-            request.PrcLicenseNo, request.PtrNumber, request.Company, request.Position,
-            request.BusinessAddress, request.Specialization, request.Skills, request.EmploymentStatus,
-            request.Website, request.FacebookUrl, request.LinkedInUrl, request.XUrl, request.InstagramUrl);
+            request.HouseNo, request.Street, request.Barangay, request.CityMunicipality, request.Province, request.ZipCode, request.Country,
+            request.MailingHouseNo, request.MailingStreet, request.MailingBarangay, request.MailingCityMunicipality, request.MailingProvince, request.MailingZipCode, request.MailingCountry,
+            request.PrcLicenseNo, request.PtrNumber, request.PtrPlaceIssued, request.Company, request.Position,
+            request.ChapterPosition,
+            request.BusinessAddress, request.Specialization, request.Skills, request.EmploymentStatus);
         if (lengthError is not null)
         {
             return Result<MemberDto>.Failure(lengthError);
@@ -779,20 +941,24 @@ public class MemberService(IApplicationDbContext db, ICacheService? cache = null
         member.CityMunicipality = request.CityMunicipality;
         member.Province = request.Province;
         member.ZipCode = request.ZipCode;
+        member.Country = request.Country;
         member.MailingHouseNo = request.MailingHouseNo;
         member.MailingStreet = request.MailingStreet;
         member.MailingBarangay = request.MailingBarangay;
         member.MailingCityMunicipality = request.MailingCityMunicipality;
         member.MailingProvince = request.MailingProvince;
         member.MailingZipCode = request.MailingZipCode;
+        member.MailingCountry = request.MailingCountry;
         member.HousePhone = request.HousePhone;
-        member.Website = request.Website;
-        member.FacebookUrl = request.FacebookUrl;
-        member.LinkedInUrl = request.LinkedInUrl;
-        member.XUrl = request.XUrl;
-        member.InstagramUrl = request.InstagramUrl;
         member.PtrNumber = request.PtrNumber;
+        member.PtrPlaceIssued = request.PtrPlaceIssued;
+        member.PtrDateIssued = request.PtrDateIssued;
         member.Tin = request.Tin;
+        // Chapter officer details describe a post the member holds, not their eligibility, so they
+        // sit outside the !isDraft Chapter/MemberType lock below - a member elected mid-term
+        // records it themselves.
+        member.ChapterYear = request.ChapterYear;
+        member.ChapterPosition = request.ChapterPosition;
         // Professional Information is entirely optional and never locked post-submission - a
         // member can fill it in (or change it) at any time, unlike MemberType/Chapter/PrcLicenseNo.
         member.EmploymentStatus = request.EmploymentStatus;
@@ -833,6 +999,13 @@ public class MemberService(IApplicationDbContext db, ICacheService? cache = null
             return Result.Failure("Cannot delete a member with PRC verification history.");
         }
 
+        // Payment.MemberId is a Restrict FK for the same reason - a financial record must not be
+        // swept away with the member it belongs to.
+        if (await db.Payments.AnyAsync(p => p.MemberId == id, cancellationToken))
+        {
+            return Result.Failure("Cannot delete a member with payment history.");
+        }
+
         db.Members.Remove(member);
         await db.SaveChangesAsync(cancellationToken);
         return Result.Success();
@@ -851,6 +1024,59 @@ public class MemberService(IApplicationDbContext db, ICacheService? cache = null
 
         return await db.PrcVerificationHistories.AnyAsync(h => h.MemberId == memberId, cancellationToken);
     }
+
+    /// <summary>
+    /// Makes sure a freshly submitted application has a NewMembership Payment for an admin to
+    /// verify, carrying over the Proof of Payment the wizard already required.
+    ///
+    /// Done here rather than by changing the submit gate itself so an older client that never calls
+    /// POST /api/payments/me still produces a verifiable record - without this, an application could
+    /// be approved and then have no payment to activate it. If the member already declared one
+    /// (amount, reference, date) through the payments endpoint, that row is left alone and only its
+    /// proof is filled in.
+    /// </summary>
+    private async Task EnsureRegistrationPaymentAsync(Member member, CancellationToken cancellationToken)
+    {
+        var proofKey = await db.MemberUploads.AsNoTracking()
+            .Where(u => u.UserId == member.UserId && u.Kind == UploadKind.ProofOfPayment)
+            .Select(u => u.StorageKey)
+            .FirstOrDefaultAsync(cancellationToken);
+
+        var existing = await db.Payments
+            .FirstOrDefaultAsync(p => p.MemberId == member.Id && p.Kind == PaymentKind.NewMembership, cancellationToken);
+
+        if (existing is not null)
+        {
+            existing.ProofStorageKey ??= proofKey;
+            return;
+        }
+
+        // Read inline rather than through IPaymentService: MemberService is constructed as
+        // `new MemberService(db)` in ~70 unit tests, and adding a required dependency to satisfy
+        // one default value would break all of them for no benefit.
+        var feeRows = await db.SystemConfigs.AsNoTracking()
+            .Where(c => c.Key == MembershipFeeKeys.MembershipFee || c.Key == MembershipFeeKeys.ShippingFee)
+            .ToDictionaryAsync(c => c.Key, c => c.Value, cancellationToken);
+
+        db.Payments.Add(new Payment
+        {
+            MemberId = member.Id,
+            Kind = PaymentKind.NewMembership,
+            // What PSMPE charges, not what the member typed - they didn't declare an amount on this
+            // path. The admin sees the proof and can reject if it doesn't match.
+            Amount = ReadFee(feeRows, MembershipFeeKeys.MembershipFee, MembershipFeeKeys.DefaultMembershipFee)
+                + ReadFee(feeRows, MembershipFeeKeys.ShippingFee, MembershipFeeKeys.DefaultShippingFee),
+            PaidOn = DateOnly.FromDateTime(DateTime.UtcNow),
+            ProofStorageKey = proofKey,
+            Status = PaymentStatus.Submitted,
+        });
+    }
+
+    private static decimal ReadFee(IReadOnlyDictionary<string, string> rows, string key, decimal fallback) =>
+        rows.TryGetValue(key, out var raw)
+            && decimal.TryParse(raw, System.Globalization.NumberStyles.Number, System.Globalization.CultureInfo.InvariantCulture, out var value)
+            ? value
+            : fallback;
 
     /// <summary>
     /// Baseline 50% once submitted (Steps 1-3 registration is done) plus up to 50% more split

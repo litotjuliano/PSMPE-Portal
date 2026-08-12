@@ -5,7 +5,7 @@ import type { Member, MembershipStatusValue } from '../../types/member'
 export interface GetMembersParams {
   page?: number
   pageSize?: number
-  sortBy?: 'lastName' | 'membershipNo' | 'chapter' | 'status'
+  sortBy?: 'lastName' | 'membershipNo' | 'chapter' | 'status' | 'submittedAt'
   sortDir?: 'asc' | 'desc'
   status?: MembershipStatusValue
   /** Applications with no ApprovedAt yet - distinct from status, since an approved
@@ -14,6 +14,8 @@ export interface GetMembersParams {
   /** Members with a proposed PRC License No. change awaiting a decision, or whose current
    *  PRC License No. has never been reviewed at all. */
   pendingPrcVerificationOnly?: boolean
+  /** Matches name, Membership No., or email - case-insensitive substring match. */
+  search?: string
 }
 
 export interface CreateMemberRequest {
@@ -38,24 +40,25 @@ export interface CreateMemberRequest {
   cityMunicipality: string | null
   province: string | null
   zipCode: string | null
+  country: string | null
   mailingHouseNo: string | null
   mailingStreet: string | null
   mailingBarangay: string | null
   mailingCityMunicipality: string | null
   mailingProvince: string | null
   mailingZipCode: string | null
+  mailingCountry: string | null
   housePhone: string | null
-  website: string | null
-  facebookUrl: string | null
-  linkedInUrl: string | null
-  xUrl: string | null
-  instagramUrl: string | null
   prcLicenseNo: string | null
   prcRegistrationDate: string | null
   prcValidUntilDate: string | null
   ptrNumber: string | null
+  ptrPlaceIssued: string | null
+  ptrDateIssued: string | null
   tin: string | null
   chapter: string
+  chapterYear: number | null
+  chapterPosition: string | null
   employmentStatus: string | null
   company: string | null
   position: string | null
@@ -92,24 +95,25 @@ export interface UpdateMemberRequest {
   cityMunicipality: string | null
   province: string | null
   zipCode: string | null
+  country: string | null
   mailingHouseNo: string | null
   mailingStreet: string | null
   mailingBarangay: string | null
   mailingCityMunicipality: string | null
   mailingProvince: string | null
   mailingZipCode: string | null
+  mailingCountry: string | null
   housePhone: string | null
-  website: string | null
-  facebookUrl: string | null
-  linkedInUrl: string | null
-  xUrl: string | null
-  instagramUrl: string | null
   prcLicenseNo: string | null
   prcRegistrationDate: string | null
   prcValidUntilDate: string | null
   ptrNumber: string | null
+  ptrPlaceIssued: string | null
+  ptrDateIssued: string | null
   tin: string | null
   chapter: string
+  chapterYear: number | null
+  chapterPosition: string | null
   employmentStatus: string | null
   company: string | null
   position: string | null
@@ -142,24 +146,25 @@ export interface UpdateMyProfileRequest {
   cityMunicipality: string | null
   province: string | null
   zipCode: string | null
+  country: string | null
   mailingHouseNo: string | null
   mailingStreet: string | null
   mailingBarangay: string | null
   mailingCityMunicipality: string | null
   mailingProvince: string | null
   mailingZipCode: string | null
+  mailingCountry: string | null
   housePhone: string | null
-  website: string | null
-  facebookUrl: string | null
-  linkedInUrl: string | null
-  xUrl: string | null
-  instagramUrl: string | null
   prcLicenseNo: string | null
   prcRegistrationDate: string | null
   prcValidUntilDate: string | null
   ptrNumber: string | null
+  ptrPlaceIssued: string | null
+  ptrDateIssued: string | null
   tin: string | null
   chapter: string
+  chapterYear: number | null
+  chapterPosition: string | null
   employmentStatus: string | null
   company: string | null
   position: string | null
@@ -195,6 +200,13 @@ export interface MemberCertificate {
   createdAt: string
 }
 
+export interface MembershipNoAvailability {
+  /** The trimmed value the server actually checked - compare against what's on screen before
+   *  trusting a response, since debounced requests can resolve out of order. */
+  membershipNo: string
+  isAvailable: boolean
+}
+
 export const memberApi = {
   getMembers: (params: GetMembersParams = {}) =>
     apiClient.get<PagedResult<Member>>('/api/members', { params }).then((res) => res.data),
@@ -216,8 +228,22 @@ export const memberApi = {
 
   /** PSMPE's own control number, keyed in by the admin - the portal never generates one, so
    *  approval is impossible without it. 400 if blank, 409 if already in use. */
-  approveMember: (id: string, membershipNo: string) =>
-    apiClient.post(`/api/members/${id}/approve`, { membershipNo }).then((res) => res.data),
+  /** Admits the member and accepts their registration payment in one server-side transaction, so
+   *  there is no state where they are approved but unpaid. `payment` is sent only when the member
+   *  has none on record (admin-created profile / walk-in) - supplying it otherwise is refused. */
+  approveMember: (
+    id: string,
+    membershipNo: string,
+    payment?: { amount: number; referenceNo: string | null; paidOn: string; proofStorageKey: string },
+  ) => apiClient.post(`/api/members/${id}/approve`, { membershipNo, payment }).then((res) => res.data),
+
+  /** Advisory - the approve endpoint re-checks, and the database has the final say. */
+  checkMembershipNoAvailability: (value: string, excludeMemberId?: string) =>
+    apiClient
+      .get<MembershipNoAvailability>('/api/members/membership-no/availability', {
+        params: { value, excludeMemberId },
+      })
+      .then((res) => res.data),
 
   submitMyProfile: () => apiClient.post('/api/members/me/submit').then((res) => res.data),
 

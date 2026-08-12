@@ -8,7 +8,7 @@ public interface IMemberService
 {
     Task<PagedResult<MemberDto>> GetAllAsync(
         int page, int pageSize, string sortBy, string sortDir, MembershipStatus? status,
-        bool? pendingApprovalOnly = null, bool? pendingPrcVerificationOnly = null,
+        bool? pendingApprovalOnly = null, bool? pendingPrcVerificationOnly = null, string? search = null,
         IReadOnlyCollection<Guid>? excludeUserIds = null, CancellationToken cancellationToken = default);
     Task<MemberDto?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default);
     Task<MemberDto?> GetByUserIdAsync(Guid userId, CancellationToken cancellationToken = default);
@@ -17,7 +17,7 @@ public interface IMemberService
     Task<Result> UpdateAsync(Guid id, UpdateMemberRequest request, CancellationToken cancellationToken = default);
     /// <summary>Assigns PSMPE's membership control number and approves. The number is mandatory -
     /// nothing else in the product sets it.</summary>
-    Task<Result> ApproveAsync(Guid id, string membershipNo, CancellationToken cancellationToken = default);
+    Task<Result> ApproveAsync(Guid id, ApproveMemberRequest request, Guid decidedByUserId, CancellationToken cancellationToken = default);
     Task<Result<MemberDto>> UpsertMyProfileAsync(Guid userId, UpdateMyProfileRequest request, CancellationToken cancellationToken = default);
     Task<Result> SubmitMyProfileAsync(Guid userId, CancellationToken cancellationToken = default);
     Task<Result> DeleteAsync(Guid id, CancellationToken cancellationToken = default);

@@ -61,14 +61,16 @@ public class MembersControllerAuthTests : IClassFixture<CustomWebApplicationFact
         {
             firstName = "X", middleName = (string?)null, lastName = "Y", suffix = (string?)null,
             birthdate = (string?)null, gender = (string?)null, civilStatus = (string?)null, address = (string?)null,
-            mobileNumber = (string?)null, housePhone = (string?)null, website = (string?)null, facebookUrl = (string?)null,
-            linkedInUrl = (string?)null, xUrl = (string?)null, instagramUrl = (string?)null,
+            mobileNumber = (string?)null, housePhone = (string?)null,
             prcLicenseNo = (string?)null, ptrNumber = (string?)null, tin = (string?)null,
             chapter = Chapters.Ncr, employmentStatus = (string?)null, company = (string?)null, position = (string?)null,
             businessAddress = (string?)null, yearsOfPractice = (int?)null, specialization = (string?)null, skills = (string?)null,
             memberType = MemberTypes.Regular, status = 0, renewalDueDate = (string?)null, nationalDuesReferenceNo = (string?)null
         }];
         yield return [HttpMethod.Post, $"/api/members/{id}/approve", null!];
+        // Reports whether a control number is taken - not something an unprivileged caller should
+        // be able to probe, so it carries the same permission as approving.
+        yield return [HttpMethod.Get, "/api/members/membership-no/availability?value=PSMPE-1", null!];
         yield return [HttpMethod.Post, $"/api/members/{id}/prc-verification/approve", null!];
         yield return [HttpMethod.Post, $"/api/members/{id}/prc-verification/reject", new { reason = "Illegible document" }];
     }

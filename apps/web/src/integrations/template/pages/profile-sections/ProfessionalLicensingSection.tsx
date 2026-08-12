@@ -9,6 +9,7 @@ import { StandardButton } from '../../components/shared/StandardButton'
 import { StatusBadge } from '../../components/shared/StatusBadge'
 import { FilePreviewModal } from '../../components/shared/FilePreviewModal'
 import { buildFullProfileRequest, describeError } from './shared'
+import { deriveRmpValidUntil, shouldDeriveValidUntil } from '../../../../core/utils/memberFields'
 
 interface ProfessionalLicensingSectionProps {
   member: Member
@@ -24,6 +25,8 @@ interface FormState {
   prcRegistrationDate: string
   prcValidUntilDate: string
   ptrNumber: string
+  ptrPlaceIssued: string
+  ptrDateIssued: string
   tin: string
   employmentStatus: string
   company: string
@@ -44,6 +47,8 @@ function toFormState(member: Member): FormState {
     prcRegistrationDate: member.prcRegistrationDate ?? '',
     prcValidUntilDate: member.prcValidUntilDate ?? '',
     ptrNumber: member.ptrNumber ?? '',
+    ptrPlaceIssued: member.ptrPlaceIssued ?? '',
+    ptrDateIssued: member.ptrDateIssued ?? '',
     tin: member.tin ?? '',
     employmentStatus: member.employmentStatus ?? '',
     company: member.company ?? '',
@@ -66,7 +71,7 @@ function missingRequiredFields(member: Member): string[] {
   if (!member.prcLicenseNo) missing.push('RMP License No.')
   if (!member.prcRegistrationDate) missing.push('RMP Registration Date')
   if (!member.prcValidUntilDate) missing.push('RMP Valid Until Date')
-  if (!member.ptrNumber) missing.push('PTR Number')
+  // PTR Number is deliberately absent - it's optional now, so nudging for it would be wrong.
   return missing
 }
 
@@ -192,6 +197,8 @@ export const ProfessionalLicensingSection = ({ member, onUpdated }: Professional
           prcRegistrationDate: form.prcRegistrationDate || null,
           prcValidUntilDate: form.prcValidUntilDate || null,
           ptrNumber: form.ptrNumber || null,
+          ptrPlaceIssued: form.ptrPlaceIssued || null,
+          ptrDateIssued: form.ptrDateIssued || null,
           tin: form.tin || null,
           prcIdReuploaded: prcCardChanged && prcIdJustReuploaded,
           employmentStatus: form.employmentStatus || null,
@@ -330,7 +337,12 @@ export const ProfessionalLicensingSection = ({ member, onUpdated }: Professional
                 type="date"
                 className="form-input"
                 value={form.prcRegistrationDate}
-                onChange={(e) => handleChange('prcRegistrationDate', e.target.value)}
+                onChange={(e) => {
+                  if (shouldDeriveValidUntil(form.prcValidUntilDate, form.prcRegistrationDate)) {
+                    handleChange('prcValidUntilDate', deriveRmpValidUntil(e.target.value))
+                  }
+                  handleChange('prcRegistrationDate', e.target.value)
+                }}
               />
             </div>
             <div>
@@ -352,6 +364,24 @@ export const ProfessionalLicensingSection = ({ member, onUpdated }: Professional
             <div>
               <label className="block font-medium text-default-900 text-sm mb-2">PTR Number</label>
               <input className="form-input" value={form.ptrNumber} onChange={(e) => handleChange('ptrNumber', e.target.value)} />
+            </div>
+            <div>
+              <label className="block font-medium text-default-900 text-sm mb-2">PTR Place Issued</label>
+              <input
+                className="form-input"
+                placeholder="e.g. Quezon City"
+                value={form.ptrPlaceIssued}
+                onChange={(e) => handleChange('ptrPlaceIssued', e.target.value)}
+              />
+            </div>
+            <div>
+              <label className="block font-medium text-default-900 text-sm mb-2">PTR Date Issued</label>
+              <input
+                className="form-input"
+                type="date"
+                value={form.ptrDateIssued}
+                onChange={(e) => handleChange('ptrDateIssued', e.target.value)}
+              />
             </div>
             <div>
               <label className="block font-medium text-default-900 text-sm mb-2">TIN</label>
@@ -423,6 +453,14 @@ export const ProfessionalLicensingSection = ({ member, onUpdated }: Professional
             <div>
               <span className="block font-medium text-default-900 text-sm mb-2">PTR Number</span>
               <span className="font-semibold text-default-800">{member.ptrNumber || '-'}</span>
+            </div>
+            <div>
+              <span className="block font-medium text-default-900 text-sm mb-2">PTR Place Issued</span>
+              <span className="font-semibold text-default-800">{member.ptrPlaceIssued || '-'}</span>
+            </div>
+            <div>
+              <span className="block font-medium text-default-900 text-sm mb-2">PTR Date Issued</span>
+              <span className="font-semibold text-default-800">{member.ptrDateIssued || '-'}</span>
             </div>
             <div>
               <span className="block font-medium text-default-900 text-sm mb-2">TIN</span>

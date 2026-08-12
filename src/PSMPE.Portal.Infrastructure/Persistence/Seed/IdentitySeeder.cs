@@ -41,6 +41,11 @@ public static class IdentitySeeder
             Permissions.Ai.UsePrompt,
             Permissions.Members.View
         ],
+        [RoleNames.Approval] =
+        [
+            Permissions.Members.View,
+            Permissions.Members.Approve
+        ],
         [RoleNames.Member] =
         [
             Permissions.Content.Create, Permissions.Content.Update
@@ -58,6 +63,7 @@ public static class IdentitySeeder
         (RoleNames.Admin, "admin.user@psmpe.local", "Demo Admin"),
         (RoleNames.Manager, "manager@psmpe.local", "Demo Manager"),
         (RoleNames.Accounts, "accounts@psmpe.local", "Demo Accounts"),
+        (RoleNames.Approval, "approval@psmpe.local", "Demo Approval"),
         (RoleNames.Member, "member@psmpe.local", "Demo Member"),
     ];
 

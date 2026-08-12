@@ -18,8 +18,10 @@ public class MemberConfiguration : IEntityTypeConfiguration<Member>
         builder.Property(m => m.MembershipNo).HasMaxLength(32);
         builder.Property(m => m.Chapter).IsRequired().HasMaxLength(64);
         builder.Property(m => m.MemberType).IsRequired().HasMaxLength(64);
+        builder.Property(m => m.ChapterPosition).HasMaxLength(128);
         builder.Property(m => m.PrcLicenseNo).HasMaxLength(64);
         builder.Property(m => m.PtrNumber).HasMaxLength(64);
+        builder.Property(m => m.PtrPlaceIssued).HasMaxLength(128);
         builder.Property(m => m.Tin).HasMaxLength(32);
         builder.Property(m => m.CivilStatus).HasMaxLength(32);
         builder.Property(m => m.Company).HasMaxLength(256);
@@ -36,6 +38,7 @@ public class MemberConfiguration : IEntityTypeConfiguration<Member>
         builder.Property(m => m.CityMunicipality).HasMaxLength(128);
         builder.Property(m => m.Province).HasMaxLength(64);
         builder.Property(m => m.ZipCode).HasMaxLength(8);
+        builder.Property(m => m.Country).HasMaxLength(64);
 
         // Mailing address - same shape as residence.
         builder.Property(m => m.MailingHouseNo).HasMaxLength(32);
@@ -44,6 +47,7 @@ public class MemberConfiguration : IEntityTypeConfiguration<Member>
         builder.Property(m => m.MailingCityMunicipality).HasMaxLength(128);
         builder.Property(m => m.MailingProvince).HasMaxLength(64);
         builder.Property(m => m.MailingZipCode).HasMaxLength(8);
+        builder.Property(m => m.MailingCountry).HasMaxLength(64);
 
         // Educational record.
         builder.Property(m => m.EducationLevel).HasMaxLength(32);
@@ -53,11 +57,6 @@ public class MemberConfiguration : IEntityTypeConfiguration<Member>
         builder.Property(m => m.SpecifiedProfession).HasMaxLength(64);
 
         builder.Property(m => m.HousePhone).HasMaxLength(32);
-        builder.Property(m => m.Website).HasMaxLength(256);
-        builder.Property(m => m.FacebookUrl).HasMaxLength(256);
-        builder.Property(m => m.LinkedInUrl).HasMaxLength(256);
-        builder.Property(m => m.XUrl).HasMaxLength(256);
-        builder.Property(m => m.InstagramUrl).HasMaxLength(256);
 
         builder.Property(m => m.EmploymentStatus).HasMaxLength(32);
         builder.Property(m => m.Position).HasMaxLength(128);
@@ -66,7 +65,10 @@ public class MemberConfiguration : IEntityTypeConfiguration<Member>
         builder.Property(m => m.Skills).HasMaxLength(512);
 
         builder.HasIndex(m => m.UserId).IsUnique();
-        builder.HasIndex(m => m.MembershipNo).IsUnique();
+        // MembershipNo's uniqueness is enforced by a *case-insensitive* index on lower("MembershipNo"),
+        // created in raw SQL by the MembershipNoCaseInsensitiveUnique migration. EF can't express a
+        // functional index, so it is deliberately not declared here - don't "restore" a plain
+        // HasIndex for it, or duplicates differing only in case become insertable again.
 
         builder.HasOne(m => m.User)
             .WithOne()

@@ -10,11 +10,31 @@ import {
   SpecifiedProfessions,
   type MembershipStatusValue,
 } from '../../../core/types/member'
+import {
+  CHAPTER_YEAR_MAX,
+  CHAPTER_YEAR_MIN,
+  deriveRmpValidUntil,
+  formatPhLandline,
+  formatPhMobile,
+  shouldDeriveValidUntil,
+} from '../../../core/utils/memberFields'
 import type { UserSummary } from '../../../core/api/endpoints/adminApi'
 import type { ProfileCompleteness } from '../../../core/api/endpoints/memberApi'
 import { uploadApi } from '../../../core/api/endpoints/uploadApi'
 import { StandardButton } from '../components/shared/StandardButton'
 import { FilePreviewModal } from '../components/shared/FilePreviewModal'
+import { PhilippineAddressFields, type AddressValue } from '../components/shared/PhilippineAddressFields'
+
+/** The address component speaks generic field names; mailing state keys are prefixed. */
+const MAILING_FIELD = {
+  houseNo: 'mailingHouseNo',
+  street: 'mailingStreet',
+  barangay: 'mailingBarangay',
+  cityMunicipality: 'mailingCityMunicipality',
+  province: 'mailingProvince',
+  zipCode: 'mailingZipCode',
+  country: 'mailingCountry',
+} as const satisfies Record<keyof AddressValue, keyof MemberFormState>
 
 export interface MemberFormState {
   userId: string
@@ -36,25 +56,26 @@ export interface MemberFormState {
   cityMunicipality: string
   province: string
   zipCode: string
+  country: string
   mailingHouseNo: string
   mailingStreet: string
   mailingBarangay: string
   mailingCityMunicipality: string
   mailingProvince: string
   mailingZipCode: string
+  mailingCountry: string
   mobileNumber: string
   housePhone: string
-  website: string
-  facebookUrl: string
-  linkedInUrl: string
-  xUrl: string
-  instagramUrl: string
   prcLicenseNo: string
   prcRegistrationDate: string
   prcValidUntilDate: string
   ptrNumber: string
+  ptrPlaceIssued: string
+  ptrDateIssued: string
   tin: string
   chapter: string
+  chapterYear: string
+  chapterPosition: string
   employmentStatus: string
   company: string
   position: string
@@ -87,6 +108,10 @@ interface MemberFormCardProps {
   /** Only present when editing an existing member - surfaces which ID-issuance documents (photo,
    *  signature, valid ID) are still missing, so staff don't have to open My Profile to check. */
   completeness?: ProfileCompleteness | null
+  /** Gates the "Edit" button - an Approval user can approve an application but not edit the
+   *  profile fields (PUT requires Members.Manage, which they don't hold). Defaults to true so
+   *  every other caller of this card keeps its current behavior. */
+  canEdit?: boolean
 }
 
 function DocumentCompletenessRow({
@@ -145,6 +170,7 @@ export const MemberFormCard = ({
   onApprove,
   isInGracePeriod,
   completeness,
+  canEdit = true,
 }: MemberFormCardProps) => {
   // Existing members open in read-only view mode, same as the member's own profile pages - a
   // reviewer landing here (e.g. from a notification, to approve an application) sees a display of
@@ -181,7 +207,7 @@ export const MemberFormCard = ({
               Approve Application
             </button>
           )}
-          {!isNew && !editing && (
+          {!isNew && !editing && canEdit && (
             <StandardButton size="sm" variant="on-primary" icon={LuSquarePen} onClick={() => setEditing(true)}>
               Edit
             </StandardButton>
@@ -255,6 +281,7 @@ export const MemberFormCard = ({
           <ViewField label="City or Municipality" value={state.cityMunicipality} />
           <ViewField label="Province" value={state.province} />
           <ViewField label="Zip Code" value={state.zipCode} />
+          <ViewField label="Country" value={state.country} />
 
           <div className="md:col-span-2 border-t border-default-200 pt-4">
             <h6 className="font-semibold text-default-800 text-sm">Mailing Address</h6>
@@ -265,19 +292,18 @@ export const MemberFormCard = ({
           <ViewField label="City or Municipality" value={state.mailingCityMunicipality} />
           <ViewField label="Province" value={state.mailingProvince} />
           <ViewField label="Zip Code" value={state.mailingZipCode} />
-
-          <ViewField label="Website" value={state.website} />
-          <ViewField label="Facebook" value={state.facebookUrl} />
-          <ViewField label="LinkedIn" value={state.linkedInUrl} />
-          <ViewField label="X" value={state.xUrl} />
-          <ViewField label="Instagram" value={state.instagramUrl} />
+          <ViewField label="Country" value={state.mailingCountry} />
 
           <ViewField label="RMP License No." value={state.prcLicenseNo} />
           <ViewField label="RMP Registration Date" value={state.prcRegistrationDate} />
           <ViewField label="RMP Valid Until" value={state.prcValidUntilDate} />
           <ViewField label="PTR Number" value={state.ptrNumber} />
+          <ViewField label="PTR Place Issued" value={state.ptrPlaceIssued} />
+          <ViewField label="PTR Date Issued" value={state.ptrDateIssued} />
           <ViewField label="TIN" value={state.tin} />
           <ViewField label="Chapter" value={state.chapter} />
+          <ViewField label="Chapter Officer Year" value={state.chapterYear} />
+          <ViewField label="Chapter Position" value={state.chapterPosition} />
 
           <ViewField label="Employment Status" value={state.employmentStatus} />
           <ViewField label="Company" value={state.company} />
@@ -363,7 +389,7 @@ export const MemberFormCard = ({
               className="form-input"
               placeholder="09XXXXXXXXX"
               value={state.mobileNumber}
-              onChange={(e) => onChange('mobileNumber', e.target.value)}
+              onChange={(e) => onChange('mobileNumber', formatPhMobile(e.target.value))}
             />
           </div>
           <div>
@@ -372,7 +398,7 @@ export const MemberFormCard = ({
               className="form-input"
               placeholder="e.g. (02) 8123 4567"
               value={state.housePhone}
-              onChange={(e) => onChange('housePhone', e.target.value)}
+              onChange={(e) => onChange('housePhone', formatPhLandline(e.target.value))}
             />
           </div>
 
@@ -423,92 +449,40 @@ export const MemberFormCard = ({
           <div className="md:col-span-2 border-t border-default-200 pt-4">
             <h6 className="font-semibold text-default-800 text-sm">Residence Address</h6>
           </div>
-          <div>
-            <label className="block font-medium text-default-900 text-sm mb-2">House No.</label>
-            <input className="form-input" value={state.houseNo} onChange={(e) => onChange('houseNo', e.target.value)} />
-          </div>
-          <div>
-            <label className="block font-medium text-default-900 text-sm mb-2">Street</label>
-            <input className="form-input" value={state.street} onChange={(e) => onChange('street', e.target.value)} />
-          </div>
-          <div>
-            <label className="block font-medium text-default-900 text-sm mb-2">Barangay</label>
-            <input className="form-input" value={state.barangay} onChange={(e) => onChange('barangay', e.target.value)} />
-          </div>
-          <div>
-            <label className="block font-medium text-default-900 text-sm mb-2">City or Municipality</label>
-            <input
-              className="form-input"
-              value={state.cityMunicipality}
-              onChange={(e) => onChange('cityMunicipality', e.target.value)}
-            />
-          </div>
-          <div>
-            <label className="block font-medium text-default-900 text-sm mb-2">Province</label>
-            <input className="form-input" value={state.province} onChange={(e) => onChange('province', e.target.value)} />
-          </div>
-          <div>
-            <label className="block font-medium text-default-900 text-sm mb-2">Zip Code</label>
-            <input className="form-input" value={state.zipCode} onChange={(e) => onChange('zipCode', e.target.value)} />
-          </div>
+          {/* No `required` here - admin edits are deliberately looser than the self-service
+              wizard, same as these fields have always been on this form. */}
+          <PhilippineAddressFields
+            idPrefix="admin-residence"
+            gridClassName="contents"
+            value={{
+              houseNo: state.houseNo,
+              street: state.street,
+              barangay: state.barangay,
+              cityMunicipality: state.cityMunicipality,
+              province: state.province,
+              zipCode: state.zipCode,
+              country: state.country,
+            }}
+            onChange={onChange}
+          />
 
           <div className="md:col-span-2 border-t border-default-200 pt-4">
             <h6 className="font-semibold text-default-800 text-sm">Mailing Address</h6>
           </div>
-          <div>
-            <label className="block font-medium text-default-900 text-sm mb-2">House No.</label>
-            <input className="form-input" value={state.mailingHouseNo} onChange={(e) => onChange('mailingHouseNo', e.target.value)} />
-          </div>
-          <div>
-            <label className="block font-medium text-default-900 text-sm mb-2">Street</label>
-            <input className="form-input" value={state.mailingStreet} onChange={(e) => onChange('mailingStreet', e.target.value)} />
-          </div>
-          <div>
-            <label className="block font-medium text-default-900 text-sm mb-2">Barangay</label>
-            <input className="form-input" value={state.mailingBarangay} onChange={(e) => onChange('mailingBarangay', e.target.value)} />
-          </div>
-          <div>
-            <label className="block font-medium text-default-900 text-sm mb-2">City or Municipality</label>
-            <input
-              className="form-input"
-              value={state.mailingCityMunicipality}
-              onChange={(e) => onChange('mailingCityMunicipality', e.target.value)}
-            />
-          </div>
-          <div>
-            <label className="block font-medium text-default-900 text-sm mb-2">Province</label>
-            <input className="form-input" value={state.mailingProvince} onChange={(e) => onChange('mailingProvince', e.target.value)} />
-          </div>
-          <div>
-            <label className="block font-medium text-default-900 text-sm mb-2">Zip Code</label>
-            <input className="form-input" value={state.mailingZipCode} onChange={(e) => onChange('mailingZipCode', e.target.value)} />
-          </div>
-
-          <div>
-            <label className="block font-medium text-default-900 text-sm mb-2">Website</label>
-            <input
-              className="form-input"
-              placeholder="https://example.com"
-              value={state.website}
-              onChange={(e) => onChange('website', e.target.value)}
-            />
-          </div>
-          <div>
-            <label className="block font-medium text-default-900 text-sm mb-2">Facebook</label>
-            <input className="form-input" value={state.facebookUrl} onChange={(e) => onChange('facebookUrl', e.target.value)} />
-          </div>
-          <div>
-            <label className="block font-medium text-default-900 text-sm mb-2">LinkedIn</label>
-            <input className="form-input" value={state.linkedInUrl} onChange={(e) => onChange('linkedInUrl', e.target.value)} />
-          </div>
-          <div>
-            <label className="block font-medium text-default-900 text-sm mb-2">X</label>
-            <input className="form-input" value={state.xUrl} onChange={(e) => onChange('xUrl', e.target.value)} />
-          </div>
-          <div>
-            <label className="block font-medium text-default-900 text-sm mb-2">Instagram</label>
-            <input className="form-input" value={state.instagramUrl} onChange={(e) => onChange('instagramUrl', e.target.value)} />
-          </div>
+          <PhilippineAddressFields
+            idPrefix="admin-mailing"
+            gridClassName="contents"
+            value={{
+              houseNo: state.mailingHouseNo,
+              street: state.mailingStreet,
+              barangay: state.mailingBarangay,
+              cityMunicipality: state.mailingCityMunicipality,
+              province: state.mailingProvince,
+              zipCode: state.mailingZipCode,
+              country: state.mailingCountry,
+            }}
+            onChange={(field, next) => onChange(MAILING_FIELD[field], next)}
+          />
 
           {/* Editable after create too - this is the correction path for a control number
               mistyped at approval. Not required: PSMPE assigns it, and an admin creating a profile
@@ -527,7 +501,14 @@ export const MemberFormCard = ({
           </div>
           <div>
             <label className="block font-medium text-default-900 text-sm mb-2">RMP License No.</label>
-            <input className="form-input" value={state.prcLicenseNo} onChange={(e) => onChange('prcLicenseNo', e.target.value)} />
+            {/* Required: without a licence number a member never reaches the verification queue,
+                and approval now requires verification. See MemberService.CreateAsync. */}
+            <input
+              className="form-input"
+              required
+              value={state.prcLicenseNo}
+              onChange={(e) => onChange('prcLicenseNo', e.target.value)}
+            />
           </div>
           <div>
             <label className="block font-medium text-default-900 text-sm mb-2">RMP Registration Date</label>
@@ -535,7 +516,12 @@ export const MemberFormCard = ({
               type="date"
               className="form-input"
               value={state.prcRegistrationDate}
-              onChange={(e) => onChange('prcRegistrationDate', e.target.value)}
+              onChange={(e) => {
+                if (shouldDeriveValidUntil(state.prcValidUntilDate, state.prcRegistrationDate)) {
+                  onChange('prcValidUntilDate', deriveRmpValidUntil(e.target.value))
+                }
+                onChange('prcRegistrationDate', e.target.value)
+              }}
             />
           </div>
           <div>
@@ -550,6 +536,24 @@ export const MemberFormCard = ({
           <div>
             <label className="block font-medium text-default-900 text-sm mb-2">PTR Number</label>
             <input className="form-input" value={state.ptrNumber} onChange={(e) => onChange('ptrNumber', e.target.value)} />
+          </div>
+          <div>
+            <label className="block font-medium text-default-900 text-sm mb-2">PTR Place Issued</label>
+            <input
+              className="form-input"
+              placeholder="e.g. Quezon City"
+              value={state.ptrPlaceIssued}
+              onChange={(e) => onChange('ptrPlaceIssued', e.target.value)}
+            />
+          </div>
+          <div>
+            <label className="block font-medium text-default-900 text-sm mb-2">PTR Date Issued</label>
+            <input
+              className="form-input"
+              type="date"
+              value={state.ptrDateIssued}
+              onChange={(e) => onChange('ptrDateIssued', e.target.value)}
+            />
           </div>
           <div>
             <label className="block font-medium text-default-900 text-sm mb-2">TIN</label>
@@ -570,6 +574,27 @@ export const MemberFormCard = ({
                 </option>
               ))}
             </select>
+          </div>
+          <div>
+            <label className="block font-medium text-default-900 text-sm mb-2">Chapter Officer Year</label>
+            <input
+              className="form-input"
+              type="number"
+              min={CHAPTER_YEAR_MIN}
+              max={CHAPTER_YEAR_MAX}
+              placeholder="e.g. 2024"
+              value={state.chapterYear}
+              onChange={(e) => onChange('chapterYear', e.target.value)}
+            />
+          </div>
+          <div>
+            <label className="block font-medium text-default-900 text-sm mb-2">Chapter Position</label>
+            <input
+              className="form-input"
+              placeholder="e.g. Secretary"
+              value={state.chapterPosition}
+              onChange={(e) => onChange('chapterPosition', e.target.value)}
+            />
           </div>
           <div>
             <label className="block font-medium text-default-900 text-sm mb-2">Employment Status</label>

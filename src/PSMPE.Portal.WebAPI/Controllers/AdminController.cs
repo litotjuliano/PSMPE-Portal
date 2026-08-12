@@ -16,10 +16,11 @@ using PSMPE.Portal.WebAPI.Extensions;
 namespace PSMPE.Portal.WebAPI.Controllers;
 
 /// <summary>
-/// System-wide administrative actions. Listing users/roles requires Admin; creating a user
-/// requires the admin:manage-users permission; editing/deleting a user, changing role
-/// assignments, and role permissions all require Super Admin (an Admin's only remaining action on
-/// another user's row is VerifyEmail). Super Admin is never assignable/visible through this API,
+/// System-wide administrative actions. Listing users/roles requires Admin, Super Admin, or
+/// Approval (view-only); creating a user requires the admin:manage-users permission;
+/// editing/deleting a user, changing role assignments, and role permissions all require Super
+/// Admin (an Admin's only remaining action on another user's row is VerifyEmail). Super Admin is
+/// never assignable/visible through this API,
 /// for any caller including a Super Admin - it's provisioned only via seeding/config/direct DB.
 /// A Super Admin's own account is visible to themselves (GetUsers/GetUserById) but fully
 /// read-only (UpdateUser/DeleteUser/AssignRole/RemoveRole all reject any Super Admin target) -
@@ -72,12 +73,14 @@ public class AdminController(
         Ok(new { clientIp = HttpContext.Connection.RemoteIpAddress?.ToString() });
 
     [HttpGet("users")]
-    [Authorize(Policy = PolicyNames.RequireAdmin)]
+    [Authorize(Policy = PolicyNames.RequireAdminOrApproval)]
     public async Task<ActionResult<PagedResult<UserSummaryDto>>> GetUsers(
         int page = 1,
         int pageSize = 20,
         string sortBy = "displayName",
         string sortDir = "asc",
+        string? search = null,
+        [FromQuery] IReadOnlyCollection<string>? roles = null,
         CancellationToken cancellationToken = default)
     {
         page = Math.Max(page, 1);
@@ -96,6 +99,47 @@ public class AdminController(
             query = query.Where(u => !superAdminIds.Contains(u.Id) || u.Id == callerId);
         }
 
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var normalizedSearch = search.Trim().ToLower();
+            query = query.Where(u =>
+                u.DisplayName.ToLower().Contains(normalizedSearch)
+                || (u.Email != null && u.Email.ToLower().Contains(normalizedSearch)));
+        }
+
+        if (roles is { Count: > 0 })
+        {
+            // Same shape as the superAdminIds check above: resolve matching ids via
+            // UserManager.GetUsersInRoleAsync (a role isn't a queryable column on ApplicationUser),
+            // then filter the query by id.
+            //
+            // Intersected, not unioned: selecting two roles means "holds both", so the filter
+            // narrows as you add chips rather than widening. Most users hold exactly one role, so
+            // a two-role selection is usually empty by design - the UI says so explicitly rather
+            // than leaving an unexplained blank table.
+            HashSet<Guid>? matchingIds = null;
+            foreach (var role in roles)
+            {
+                var idsWithRole = (await userManager.GetUsersInRoleAsync(role)).Select(u => u.Id).ToHashSet();
+                if (matchingIds is null)
+                {
+                    matchingIds = idsWithRole;
+                }
+                else
+                {
+                    matchingIds.IntersectWith(idsWithRole);
+                }
+
+                if (matchingIds.Count == 0)
+                {
+                    break;
+                }
+            }
+
+            var ids = matchingIds ?? [];
+            query = query.Where(u => ids.Contains(u.Id));
+        }
+
         var descending = string.Equals(sortDir, "desc", StringComparison.OrdinalIgnoreCase);
         query = sortBy.ToLowerInvariant() switch
         {
@@ -111,18 +155,18 @@ public class AdminController(
         var summaries = new List<UserSummaryDto>(pageOfUsers.Count);
         foreach (var user in pageOfUsers)
         {
-            var roles = await userManager.GetRolesAsync(user);
-            summaries.Add(new UserSummaryDto(user.Id, user.Email ?? string.Empty, user.DisplayName, roles.ToList(), user.CreatedAt, user.EmailConfirmed,
+            var userRoles = await userManager.GetRolesAsync(user);
+            summaries.Add(new UserSummaryDto(user.Id, user.Email ?? string.Empty, user.DisplayName, userRoles.ToList(), user.CreatedAt, user.EmailConfirmed,
                 user.DataPrivacyConsentAt, user.DataPrivacyConsentVersion));
         }
 
         return Ok(new PagedResult<UserSummaryDto>(summaries, totalCount, page, pageSize));
     }
 
-    // TODO: add search and audit logging once the admin UI needs them.
+    // TODO: add audit logging once the admin UI needs it.
 
     [HttpGet("users/{id:guid}")]
-    [Authorize(Policy = PolicyNames.RequireAdmin)]
+    [Authorize(Policy = PolicyNames.RequireAdminOrApproval)]
     public async Task<ActionResult<UserSummaryDto>> GetUserById(Guid id)
     {
         var user = await userManager.FindByIdAsync(id.ToString());
@@ -444,7 +488,7 @@ public class AdminController(
     }
 
     [HttpGet("roles")]
-    [Authorize(Policy = PolicyNames.RequireAdmin)]
+    [Authorize(Policy = PolicyNames.RequireAdminOrApproval)]
     public async Task<ActionResult<IReadOnlyList<RoleSummaryDto>>> GetRoles()
     {
         // Super Admin's role (and its full permission claim set) never leaves the server -
@@ -500,7 +544,7 @@ public class AdminController(
     }
 
     [HttpGet("permissions")]
-    [Authorize(Policy = PolicyNames.RequireAdmin)]
+    [Authorize(Policy = PolicyNames.RequireAdminOrApproval)]
     public ActionResult<IReadOnlyList<string>> GetPermissions() => Ok(Permissions.All);
 
     private Guid? CurrentUserId =>

@@ -18,18 +18,61 @@ export function AdminUsersPage() {
   // Gates role-checkbox editing (unchanged) and, as of this change, the per-row Edit/Delete
   // icons too - both hidden entirely for a regular Admin, leaving only Email Verification.
   const isSuperAdmin = user?.roles.includes(Roles.SuperAdmin) ?? false
+  // Approximates the server's admin:manage-users permission / RequireAdmin policy, which the
+  // token doesn't carry - it ships with both roles by default, and the API enforces the real
+  // check. False for Approval (view-only here).
+  const canManageUsers = isSuperAdmin || (user?.roles.includes(Roles.Admin) ?? false)
 
+  const [searchInput, setSearchInput] = useState('')
+  const [search, setSearch] = useState('')
+  const [roleFilter, setRoleFilter] = useState<Role[]>([])
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setSearch(searchInput)
+      setPage(1)
+    }, 350)
+    return () => clearTimeout(timer)
+  }, [searchInput])
+
+  const fetchUsers = () =>
+    adminApi.getUsers({
+      page,
+      pageSize: PAGE_SIZE,
+      sortBy,
+      sortDir,
+      ...(search ? { search } : {}),
+      ...(roleFilter.length > 0 ? { roles: roleFilter } : {}),
+    })
+
+  /** Refetch for the current filters, used after a mutation. */
   const refetch = () =>
-    adminApi.getUsers({ page, pageSize: PAGE_SIZE, sortBy, sortDir }).then((result) => {
+    fetchUsers().then((result) => {
       setUsers(result.items)
       setTotalCount(result.totalCount)
     })
 
   useEffect(() => {
+    // Guarded against out-of-order responses: toggling two role chips quickly fires two requests,
+    // and without this the slower first one can land last and repaint the list with results for a
+    // filter that is no longer selected - which reads as "the filter is wrong".
+    let cancelled = false
     setLoading(true)
-    refetch().finally(() => setLoading(false))
+    fetchUsers()
+      .then((result) => {
+        if (cancelled) return
+        setUsers(result.items)
+        setTotalCount(result.totalCount)
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false)
+      })
+
+    return () => {
+      cancelled = true
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page, sortBy, sortDir])
+  }, [page, sortBy, sortDir, search, roleFilter])
 
   const handleToggleRole = (userId: string, role: Role, hasRole: boolean) => {
     const request = hasRole ? adminApi.removeRole(userId, role) : adminApi.assignRole(userId, role)
@@ -60,6 +103,11 @@ export function AdminUsersPage() {
     setPage(1)
   }
 
+  const handleRoleFilterToggle = (role: Role) => {
+    setRoleFilter((current) => (current.includes(role) ? current.filter((r) => r !== role) : [...current, role]))
+    setPage(1)
+  }
+
   return (
     <>
       <PageMeta title="Users" />
@@ -72,9 +120,12 @@ export function AdminUsersPage() {
             users={users}
             canManageRoles={isSuperAdmin}
             isSuperAdmin={isSuperAdmin}
-            // Approximates the server's admin:manage-users gate, which the token doesn't carry -
-            // it ships with both roles by default, and the API enforces the real check.
-            canSendPasswordReset={isSuperAdmin || (user?.roles.includes(Roles.Admin) ?? false)}
+            canManageUsers={canManageUsers}
+            searchInput={searchInput}
+            onSearchInputChange={setSearchInput}
+            roleFilter={roleFilter}
+            onRoleFilterToggle={handleRoleFilterToggle}
+            canSendPasswordReset={canManageUsers}
             onSendPasswordReset={handleSendPasswordReset}
             onToggleRole={handleToggleRole}
             onDelete={handleDelete}

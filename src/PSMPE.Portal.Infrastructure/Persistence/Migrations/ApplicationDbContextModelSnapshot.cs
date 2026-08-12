@@ -330,6 +330,13 @@ namespace PSMPE.Portal.Infrastructure.Persistence.Migrations
                         .HasMaxLength(64)
                         .HasColumnType("character varying(64)");
 
+                    b.Property<string>("ChapterPosition")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
+
+                    b.Property<int?>("ChapterYear")
+                        .HasColumnType("integer");
+
                     b.Property<string>("CityMunicipality")
                         .HasMaxLength(128)
                         .HasColumnType("character varying(128)");
@@ -341,6 +348,10 @@ namespace PSMPE.Portal.Infrastructure.Persistence.Migrations
                     b.Property<string>("Company")
                         .HasMaxLength(256)
                         .HasColumnType("character varying(256)");
+
+                    b.Property<string>("Country")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
 
                     b.Property<string>("CourseYearGraduated")
                         .HasMaxLength(128)
@@ -356,10 +367,6 @@ namespace PSMPE.Portal.Infrastructure.Persistence.Migrations
                     b.Property<string>("EmploymentStatus")
                         .HasMaxLength(32)
                         .HasColumnType("character varying(32)");
-
-                    b.Property<string>("FacebookUrl")
-                        .HasMaxLength(256)
-                        .HasColumnType("character varying(256)");
 
                     b.Property<string>("FirstName")
                         .IsRequired()
@@ -377,18 +384,10 @@ namespace PSMPE.Portal.Infrastructure.Persistence.Migrations
                         .HasMaxLength(32)
                         .HasColumnType("character varying(32)");
 
-                    b.Property<string>("InstagramUrl")
-                        .HasMaxLength(256)
-                        .HasColumnType("character varying(256)");
-
                     b.Property<string>("LastName")
                         .IsRequired()
                         .HasMaxLength(128)
                         .HasColumnType("character varying(128)");
-
-                    b.Property<string>("LinkedInUrl")
-                        .HasMaxLength(256)
-                        .HasColumnType("character varying(256)");
 
                     b.Property<string>("MailingBarangay")
                         .HasMaxLength(128)
@@ -397,6 +396,10 @@ namespace PSMPE.Portal.Infrastructure.Persistence.Migrations
                     b.Property<string>("MailingCityMunicipality")
                         .HasMaxLength(128)
                         .HasColumnType("character varying(128)");
+
+                    b.Property<string>("MailingCountry")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
 
                     b.Property<string>("MailingHouseNo")
                         .HasMaxLength(32)
@@ -470,9 +473,16 @@ namespace PSMPE.Portal.Infrastructure.Persistence.Migrations
                         .HasMaxLength(64)
                         .HasColumnType("character varying(64)");
 
+                    b.Property<DateOnly?>("PtrDateIssued")
+                        .HasColumnType("date");
+
                     b.Property<string>("PtrNumber")
                         .HasMaxLength(64)
                         .HasColumnType("character varying(64)");
+
+                    b.Property<string>("PtrPlaceIssued")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
 
                     b.Property<DateOnly?>("RenewalDueDate")
                         .HasColumnType("date");
@@ -517,14 +527,6 @@ namespace PSMPE.Portal.Infrastructure.Persistence.Migrations
                     b.Property<Guid>("UserId")
                         .HasColumnType("uuid");
 
-                    b.Property<string>("Website")
-                        .HasMaxLength(256)
-                        .HasColumnType("character varying(256)");
-
-                    b.Property<string>("XUrl")
-                        .HasMaxLength(256)
-                        .HasColumnType("character varying(256)");
-
                     b.Property<int?>("YearsOfPractice")
                         .HasColumnType("integer");
 
@@ -533,9 +535,6 @@ namespace PSMPE.Portal.Infrastructure.Persistence.Migrations
                         .HasColumnType("character varying(8)");
 
                     b.HasKey("Id");
-
-                    b.HasIndex("MembershipNo")
-                        .IsUnique();
 
                     b.HasIndex("UserId")
                         .IsUnique();
@@ -619,6 +618,68 @@ namespace PSMPE.Portal.Infrastructure.Persistence.Migrations
                         .IsUnique();
 
                     b.ToTable("MemberUploads");
+                });
+
+            modelBuilder.Entity("PSMPE.Portal.Domain.Entities.Payment", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<decimal>("Amount")
+                        .HasPrecision(12, 2)
+                        .HasColumnType("numeric(12,2)");
+
+                    b.Property<DateOnly?>("CoversUntil")
+                        .HasColumnType("date");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTimeOffset?>("DecidedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("DecidedByUserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<Guid>("MemberId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateOnly>("PaidOn")
+                        .HasColumnType("date");
+
+                    b.Property<string>("ProofStorageKey")
+                        .HasMaxLength(512)
+                        .HasColumnType("character varying(512)");
+
+                    b.Property<string>("ReferenceNo")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("RejectedReason")
+                        .HasMaxLength(512)
+                        .HasColumnType("character varying(512)");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("MemberId");
+
+                    b.HasIndex("Status");
+
+                    b.ToTable("Payments");
                 });
 
             modelBuilder.Entity("PSMPE.Portal.Domain.Entities.PrcVerificationHistory", b =>
@@ -785,6 +846,17 @@ namespace PSMPE.Portal.Infrastructure.Persistence.Migrations
                         .IsRequired();
 
                     b.Navigation("User");
+                });
+
+            modelBuilder.Entity("PSMPE.Portal.Domain.Entities.Payment", b =>
+                {
+                    b.HasOne("PSMPE.Portal.Domain.Entities.Member", "Member")
+                        .WithMany()
+                        .HasForeignKey("MemberId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Member");
                 });
 
             modelBuilder.Entity("PSMPE.Portal.Domain.Entities.PrcVerificationHistory", b =>

@@ -1,4 +1,5 @@
 using PSMPE.Portal.Application.Members.Dtos;
+using PSMPE.Portal.Application.Payments.Dtos;
 using SkiaSharp;
 
 namespace PSMPE.Portal.Application.Members;
@@ -18,11 +19,10 @@ public static class ReceiptGenerator
 {
     private const int Width = 1000;
     private const int Height = 1300;
-    private const decimal MembershipFee = 1500m;
-    private const decimal ShippingFee = 200m;
-    private const decimal AnnualDues = 600m;
 
-    public static byte[] Generate(MemberDto member)
+    /// <param name="fees">PSMPE's configured fees. Passed in rather than read here so this stays a
+    /// pure renderer with no database dependency - the caller resolves them from SystemConfig.</param>
+    public static byte[] Generate(MemberDto member, MembershipFeesDto fees)
     {
         using var bitmap = new SKBitmap(Width, Height);
         using var canvas = new SKCanvas(bitmap);
@@ -79,15 +79,15 @@ public static class ReceiptGenerator
         canvas.DrawText("Payment Summary", marginX, y, sectionPaint);
         y += 50;
 
-        DrawRow("Membership Fee", $"₱{MembershipFee:N2}");
-        DrawRow("Shipping Fee", $"₱{ShippingFee:N2}");
+        DrawRow("Membership Fee", $"₱{fees.MembershipFee:N2}");
+        DrawRow("Shipping Fee", $"₱{fees.ShippingFee:N2}");
         y += 10;
         canvas.DrawLine(marginX, y, Width - marginX, y, linePaint);
         y += 46;
-        DrawRow("Total Paid", $"₱{MembershipFee + ShippingFee:N2}");
+        DrawRow("Total Paid", $"₱{fees.RegistrationTotal:N2}");
 
         y += 40;
-        canvas.DrawText($"Annual Dues of ₱{AnnualDues:N2} are payable one year after registration.", marginX, y, labelPaint);
+        canvas.DrawText($"Annual Dues of ₱{fees.AnnualDues:N2} are payable one year after registration.", marginX, y, labelPaint);
 
         canvas.DrawText($"Generated {DateTimeOffset.UtcNow:MMMM d, yyyy}", Width / 2f, Height - 40, footerPaint);
 

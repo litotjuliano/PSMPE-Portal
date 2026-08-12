@@ -1,5 +1,7 @@
+using System.Globalization;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using PSMPE.Portal.Application.Common.Configuration;
 using PSMPE.Portal.Domain.Entities;
 
 namespace PSMPE.Portal.Infrastructure.Persistence.Seed;
@@ -12,19 +14,27 @@ public static class SystemConfigSeeder
         ("SiteName", "PSMPE Portal", "Display name shown in the admin UI and page titles."),
         ("AllowPublicRegistration", "false", "Whether new users can self-register via /api/auth/register."),
         ("DefaultTheme", "light", "Default UI theme for new users."),
-        ("MembershipGracePeriodDays", "30", "Days after RenewalDueDate a member keeps limited portal access before being treated as fully Expired.")
+        ("MembershipGracePeriodDays", "30", "Days after RenewalDueDate a member keeps limited portal access before being treated as fully Expired."),
+        .. MembershipFeeKeys.All.Select(f => (f.Key, f.Default.ToString(CultureInfo.InvariantCulture), f.Description)),
     ];
 
     public static async Task SeedAsync(ApplicationDbContext db, ILogger logger)
     {
-        if (!await db.SystemConfigs.AnyAsync())
-        {
-            foreach (var (key, value, description) in DefaultConfig)
-            {
-                db.SystemConfigs.Add(new SystemConfig { Key = key, Value = value, Description = description });
-            }
+        // Per-key rather than the original all-or-nothing `if (!AnyAsync())`: that only ever seeded
+        // a completely empty table, so any key added after the first deployment would never appear
+        // on an existing database. Each key is now filled in independently, and an admin-edited
+        // value is left alone.
+        var existingKeys = await db.SystemConfigs.Select(c => c.Key).ToListAsync();
+        var missing = DefaultConfig.Where(c => !existingKeys.Contains(c.Key)).ToArray();
 
-            logger.LogInformation("Seeded {Count} system configuration rows.", DefaultConfig.Length);
+        foreach (var (key, value, description) in missing)
+        {
+            db.SystemConfigs.Add(new SystemConfig { Key = key, Value = value, Description = description });
+        }
+
+        if (missing.Length > 0)
+        {
+            logger.LogInformation("Seeded {Count} missing system configuration rows.", missing.Length);
         }
 
         if (!await db.Layouts.AnyAsync(l => l.IsSystemLayout))

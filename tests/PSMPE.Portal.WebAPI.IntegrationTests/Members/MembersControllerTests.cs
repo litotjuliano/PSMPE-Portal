@@ -8,8 +8,10 @@ using PSMPE.Portal.Application.Common.Interfaces;
 using PSMPE.Portal.Application.Common.Models;
 using PSMPE.Portal.Application.Members;
 using PSMPE.Portal.Application.Members.Dtos;
+using PSMPE.Portal.Application.Payments;
 using PSMPE.Portal.Domain.Entities;
 using PSMPE.Portal.Domain.Enums;
+using PSMPE.Portal.Infrastructure.Persistence;
 using PSMPE.Portal.WebAPI.Controllers;
 using SkiaSharp;
 using Xunit;
@@ -31,6 +33,7 @@ public class MembersControllerTests : IClassFixture<CustomWebApplicationFactory>
     private readonly IMemberUploadService _memberUploadService;
     private readonly IMemberCertificateService _memberCertificateService;
     private readonly IEmailSender _emailSender;
+    private readonly IPaymentService _paymentService;
 
     public MembersControllerTests(CustomWebApplicationFactory factory)
     {
@@ -41,6 +44,7 @@ public class MembersControllerTests : IClassFixture<CustomWebApplicationFactory>
         _memberUploadService = _scope.ServiceProvider.GetRequiredService<IMemberUploadService>();
         _memberCertificateService = _scope.ServiceProvider.GetRequiredService<IMemberCertificateService>();
         _emailSender = _scope.ServiceProvider.GetRequiredService<IEmailSender>();
+        _paymentService = _scope.ServiceProvider.GetRequiredService<IPaymentService>();
     }
 
     public Task InitializeAsync() => _factory.InitializeAsync();
@@ -55,7 +59,7 @@ public class MembersControllerTests : IClassFixture<CustomWebApplicationFactory>
     {
         var claims = new List<Claim> { new(ClaimTypes.NameIdentifier, (callerId ?? Guid.NewGuid()).ToString()) };
         var httpContext = new DefaultHttpContext { User = new ClaimsPrincipal(new ClaimsIdentity(claims, "TestAuth")) };
-        return new MembersController(_memberService, _memberUploadService, _memberCertificateService, _userManager, _emailSender)
+        return new MembersController(_memberService, _memberUploadService, _memberCertificateService, _userManager, _emailSender, _paymentService)
         {
             ControllerContext = new ControllerContext { HttpContext = httpContext }
         };
@@ -73,6 +77,32 @@ public class MembersControllerTests : IClassFixture<CustomWebApplicationFactory>
         await _userManager.AddToRoleAsync(user, role);
         return user;
     }
+
+    /// <summary>
+    /// Clears RMP verification, which MemberService.ApproveAsync now requires before an application
+    /// can be approved. Most approval tests are about the Membership ID rules rather than the
+    /// licence check, so the step lives here instead of being spelled out in each of them.
+    /// </summary>
+    private static async Task VerifyRmpAsync(MembersController controller, Guid memberId)
+    {
+        Assert.IsType<NoContentResult>(await controller.ApprovePrcVerification(memberId, CancellationToken.None));
+    }
+
+    /// <summary>
+    /// Approval now admits the member and accepts their registration payment in one transaction, so
+    /// every approval needs a payment. Admin-created members (BuildCreateRequest) have none, so
+    /// these tests supply one the way the approval wizard does for a walk-in.
+    ///
+    /// Most approval tests are about the Membership ID rules rather than the money, so the details
+    /// live here instead of being restated in each of them.
+    /// </summary>
+    private static ApproveMemberRequest ApproveWithPayment(string membershipNo) => new(
+        membershipNo,
+        new RecordPaymentRequest(
+            Amount: 1700m,
+            ReferenceNo: "REF-TEST",
+            PaidOn: DateOnly.FromDateTime(DateTime.UtcNow),
+            ProofStorageKey: "test/proof.jpg"));
 
     private static CreateMemberRequest BuildCreateRequest(Guid userId, string? membershipNo = null) => new(
         UserId: userId,
@@ -94,25 +124,20 @@ public class MembersControllerTests : IClassFixture<CustomWebApplicationFactory>
         Barangay: "Sample Barangay",
         CityMunicipality: "Quezon City",
         Province: "Metro Manila",
-        ZipCode: "1100",
+        ZipCode: "1100", Country: "Philippines",
         MailingHouseNo: null,
         MailingStreet: null,
         MailingBarangay: null,
         MailingCityMunicipality: null,
         MailingProvince: null,
-        MailingZipCode: null,
+        MailingZipCode: null, MailingCountry: null,
         HousePhone: null,
-        Website: null,
-        FacebookUrl: null,
-        LinkedInUrl: null,
-        XUrl: null,
-        InstagramUrl: null,
         PrcLicenseNo: "MP 12345",
         PrcRegistrationDate: new DateOnly(2020, 1, 1),
         PrcValidUntilDate: new DateOnly(2030, 1, 1),
-        PtrNumber: "PTR-0012345",
+        PtrNumber: "PTR-0012345", PtrPlaceIssued: null, PtrDateIssued: null,
         Tin: null,
-        Chapter: Chapters.QuezonCity,
+        Chapter: Chapters.QuezonCity, ChapterYear: null, ChapterPosition: null,
         EmploymentStatus: null,
         Company: "JLA Plumbing Works Inc.",
         Position: null,
@@ -158,13 +183,13 @@ public class MembersControllerTests : IClassFixture<CustomWebApplicationFactory>
             Birthdate: dto.Birthdate, Gender: dto.Gender, CivilStatus: "Married",
             EducationLevel: dto.EducationLevel, SchoolName: dto.SchoolName, CourseYearGraduated: dto.CourseYearGraduated, SpecifiedProfession: dto.SpecifiedProfession,
             MobileNumber: "09181234567",
-            HouseNo: dto.HouseNo, Street: dto.Street, Barangay: dto.Barangay, CityMunicipality: dto.CityMunicipality, Province: dto.Province, ZipCode: dto.ZipCode,
+            HouseNo: dto.HouseNo, Street: dto.Street, Barangay: dto.Barangay, CityMunicipality: dto.CityMunicipality, Province: dto.Province, ZipCode: dto.ZipCode, Country: dto.Country,
             MailingHouseNo: dto.MailingHouseNo, MailingStreet: dto.MailingStreet, MailingBarangay: dto.MailingBarangay,
-            MailingCityMunicipality: dto.MailingCityMunicipality, MailingProvince: dto.MailingProvince, MailingZipCode: dto.MailingZipCode,
-            HousePhone: null, Website: null, FacebookUrl: null, LinkedInUrl: null, XUrl: null, InstagramUrl: null,
+            MailingCityMunicipality: dto.MailingCityMunicipality, MailingProvince: dto.MailingProvince, MailingZipCode: dto.MailingZipCode, MailingCountry: dto.MailingCountry,
+            HousePhone: null,
             PrcLicenseNo: dto.PrcLicenseNo, PrcRegistrationDate: dto.PrcRegistrationDate, PrcValidUntilDate: dto.PrcValidUntilDate,
-            PtrNumber: "PTR-9999999", Tin: "123-456-789",
-            Chapter: dto.Chapter, EmploymentStatus: null, Company: dto.Company, Position: null, BusinessAddress: null,
+            PtrNumber: "PTR-9999999", PtrPlaceIssued: null, PtrDateIssued: null, Tin: "123-456-789",
+            Chapter: dto.Chapter, ChapterYear: dto.ChapterYear, ChapterPosition: dto.ChapterPosition, EmploymentStatus: null, Company: dto.Company, Position: null, BusinessAddress: null,
             YearsOfPractice: null, Specialization: null, Skills: null, MemberType: dto.MemberType, Status: dto.Status,
             RenewalDueDate: dto.RenewalDueDate, NationalDuesReferenceNo: dto.NationalDuesReferenceNo);
         await controller.Update(dto.Id, updateRequest, CancellationToken.None);
@@ -273,10 +298,10 @@ public class MembersControllerTests : IClassFixture<CustomWebApplicationFactory>
             Birthdate: null, Gender: "Female", CivilStatus: null,
             EducationLevel: null, SchoolName: null, CourseYearGraduated: null, SpecifiedProfession: null,
             MobileNumber: null,
-            HouseNo: null, Street: "Cebu City", Barangay: null, CityMunicipality: null, Province: null, ZipCode: null,
-            MailingHouseNo: null, MailingStreet: null, MailingBarangay: null, MailingCityMunicipality: null, MailingProvince: null, MailingZipCode: null,
-            HousePhone: null, Website: null, FacebookUrl: null, LinkedInUrl: null, XUrl: null, InstagramUrl: null,
-            PrcLicenseNo: null, PrcRegistrationDate: null, PrcValidUntilDate: null, PtrNumber: null, Tin: null, Chapter: Chapters.Cebu,
+            HouseNo: null, Street: "Cebu City", Barangay: null, CityMunicipality: null, Province: null, ZipCode: null, Country: null,
+            MailingHouseNo: null, MailingStreet: null, MailingBarangay: null, MailingCityMunicipality: null, MailingProvince: null, MailingZipCode: null, MailingCountry: null,
+            HousePhone: null,
+            PrcLicenseNo: null, PrcRegistrationDate: null, PrcValidUntilDate: null, PtrNumber: null, PtrPlaceIssued: null, PtrDateIssued: null, Tin: null, Chapter: Chapters.Cebu, ChapterYear: null, ChapterPosition: null,
             EmploymentStatus: null, Company: null, Position: null, BusinessAddress: null, YearsOfPractice: null, Specialization: null, Skills: null,
             MemberType: MemberTypes.Regular);
 
@@ -302,10 +327,10 @@ public class MembersControllerTests : IClassFixture<CustomWebApplicationFactory>
             Birthdate: null, Gender: null, CivilStatus: null,
             EducationLevel: null, SchoolName: null, CourseYearGraduated: null, SpecifiedProfession: null,
             MobileNumber: null,
-            HouseNo: null, Street: null, Barangay: null, CityMunicipality: null, Province: null, ZipCode: null,
-            MailingHouseNo: null, MailingStreet: null, MailingBarangay: null, MailingCityMunicipality: null, MailingProvince: null, MailingZipCode: null,
-            HousePhone: null, Website: null, FacebookUrl: null, LinkedInUrl: null, XUrl: null, InstagramUrl: null,
-            PrcLicenseNo: null, PrcRegistrationDate: null, PrcValidUntilDate: null, PtrNumber: null, Tin: null, Chapter: Chapters.Davao,
+            HouseNo: null, Street: null, Barangay: null, CityMunicipality: null, Province: null, ZipCode: null, Country: null,
+            MailingHouseNo: null, MailingStreet: null, MailingBarangay: null, MailingCityMunicipality: null, MailingProvince: null, MailingZipCode: null, MailingCountry: null,
+            HousePhone: null,
+            PrcLicenseNo: null, PrcRegistrationDate: null, PrcValidUntilDate: null, PtrNumber: null, PtrPlaceIssued: null, PtrDateIssued: null, Tin: null, Chapter: Chapters.Davao, ChapterYear: null, ChapterPosition: null,
             EmploymentStatus: null, Company: null, Position: null, BusinessAddress: null, YearsOfPractice: null, Specialization: null, Skills: null,
             MemberType: MemberTypes.Regular);
 
@@ -328,13 +353,13 @@ public class MembersControllerTests : IClassFixture<CustomWebApplicationFactory>
             Birthdate: createdDto.Birthdate, Gender: createdDto.Gender, CivilStatus: createdDto.CivilStatus,
             EducationLevel: createdDto.EducationLevel, SchoolName: createdDto.SchoolName, CourseYearGraduated: createdDto.CourseYearGraduated, SpecifiedProfession: createdDto.SpecifiedProfession,
             MobileNumber: createdDto.MobileNumber,
-            HouseNo: createdDto.HouseNo, Street: createdDto.Street, Barangay: createdDto.Barangay, CityMunicipality: createdDto.CityMunicipality, Province: createdDto.Province, ZipCode: createdDto.ZipCode,
+            HouseNo: createdDto.HouseNo, Street: createdDto.Street, Barangay: createdDto.Barangay, CityMunicipality: createdDto.CityMunicipality, Province: createdDto.Province, ZipCode: createdDto.ZipCode, Country: createdDto.Country,
             MailingHouseNo: createdDto.MailingHouseNo, MailingStreet: createdDto.MailingStreet, MailingBarangay: createdDto.MailingBarangay,
-            MailingCityMunicipality: createdDto.MailingCityMunicipality, MailingProvince: createdDto.MailingProvince, MailingZipCode: createdDto.MailingZipCode,
-            HousePhone: null, Website: null, FacebookUrl: null, LinkedInUrl: null, XUrl: null, InstagramUrl: null,
+            MailingCityMunicipality: createdDto.MailingCityMunicipality, MailingProvince: createdDto.MailingProvince, MailingZipCode: createdDto.MailingZipCode, MailingCountry: createdDto.MailingCountry,
+            HousePhone: null,
             PrcLicenseNo: createdDto.PrcLicenseNo, PrcRegistrationDate: createdDto.PrcRegistrationDate, PrcValidUntilDate: createdDto.PrcValidUntilDate,
-            PtrNumber: createdDto.PtrNumber, Tin: createdDto.Tin,
-            Chapter: createdDto.Chapter,
+            PtrNumber: createdDto.PtrNumber, PtrPlaceIssued: createdDto.PtrPlaceIssued, PtrDateIssued: createdDto.PtrDateIssued, Tin: createdDto.Tin,
+            Chapter: createdDto.Chapter, ChapterYear: createdDto.ChapterYear, ChapterPosition: createdDto.ChapterPosition,
             EmploymentStatus: null, Company: createdDto.Company, Position: null, BusinessAddress: null,
             YearsOfPractice: null, Specialization: null, Skills: null,
             MemberType: createdDto.MemberType, Status: MembershipStatus.Active, RenewalDueDate: createdDto.RenewalDueDate,
@@ -357,10 +382,10 @@ public class MembersControllerTests : IClassFixture<CustomWebApplicationFactory>
             Birthdate: null, Gender: null, CivilStatus: null,
             EducationLevel: null, SchoolName: null, CourseYearGraduated: null, SpecifiedProfession: null,
             MobileNumber: null,
-            HouseNo: null, Street: null, Barangay: null, CityMunicipality: null, Province: null, ZipCode: null,
-            MailingHouseNo: null, MailingStreet: null, MailingBarangay: null, MailingCityMunicipality: null, MailingProvince: null, MailingZipCode: null,
-            HousePhone: null, Website: null, FacebookUrl: null, LinkedInUrl: null, XUrl: null, InstagramUrl: null,
-            PrcLicenseNo: null, PrcRegistrationDate: null, PrcValidUntilDate: null, PtrNumber: null, Tin: null, Chapter: Chapters.Ncr,
+            HouseNo: null, Street: null, Barangay: null, CityMunicipality: null, Province: null, ZipCode: null, Country: null,
+            MailingHouseNo: null, MailingStreet: null, MailingBarangay: null, MailingCityMunicipality: null, MailingProvince: null, MailingZipCode: null, MailingCountry: null,
+            HousePhone: null,
+            PrcLicenseNo: null, PrcRegistrationDate: null, PrcValidUntilDate: null, PtrNumber: null, PtrPlaceIssued: null, PtrDateIssued: null, Tin: null, Chapter: Chapters.Ncr, ChapterYear: null, ChapterPosition: null,
             EmploymentStatus: null, Company: null, Position: null, BusinessAddress: null,
             YearsOfPractice: null, Specialization: null, Skills: null,
             MemberType: MemberTypes.Regular, Status: MembershipStatus.Active, RenewalDueDate: null, NationalDuesReferenceNo: null);
@@ -395,14 +420,16 @@ public class MembersControllerTests : IClassFixture<CustomWebApplicationFactory>
         var createdDto = Assert.IsType<MemberDto>(Assert.IsType<OkObjectResult>(created.Result).Value);
         Assert.Null(createdDto.ApprovedAt);
 
-        var firstApprove = await controller.Approve(createdDto.Id, new ApproveMemberRequest("A-0001"), CancellationToken.None);
+        await VerifyRmpAsync(controller, createdDto.Id);
+
+        var firstApprove = await controller.Approve(createdDto.Id, ApproveWithPayment("A-0001"), CancellationToken.None);
         Assert.IsType<NoContentResult>(firstApprove);
 
         var afterFirst = await controller.GetById(createdDto.Id, CancellationToken.None);
         var afterFirstDto = Assert.IsType<MemberDto>(Assert.IsType<OkObjectResult>(afterFirst.Result).Value);
         Assert.NotNull(afterFirstDto.ApprovedAt);
 
-        var secondApprove = await controller.Approve(createdDto.Id, new ApproveMemberRequest("A-0002"), CancellationToken.None);
+        var secondApprove = await controller.Approve(createdDto.Id, ApproveWithPayment("A-0002"), CancellationToken.None);
         Assert.IsType<NoContentResult>(secondApprove);
 
         var afterSecond = await controller.GetById(createdDto.Id, CancellationToken.None);
@@ -411,6 +438,134 @@ public class MembersControllerTests : IClassFixture<CustomWebApplicationFactory>
         // The second call passed a different number on purpose: a repeat approval must not
         // renumber a live member.
         Assert.Equal("A-0001", afterSecondDto.MembershipNo);
+    }
+
+    /// <summary>
+    /// The reported scenario: a member sitting in both queues could be admitted to PSMPE while
+    /// their RMP licence had never been checked. Approving issues a control number, generates a
+    /// receipt and emails the member, so the licence has to be confirmed first.
+    /// </summary>
+    [Fact]
+    public async Task Approve_WithAnUnverifiedRmpLicence_IsRejectedAndDoesNotApprove()
+    {
+        var user = await CreateUserAsync();
+        var controller = CreateController();
+        var created = await controller.Create(BuildCreateRequest(user.Id), CancellationToken.None);
+        var createdDto = Assert.IsType<MemberDto>(Assert.IsType<OkObjectResult>(created.Result).Value);
+        Assert.False(createdDto.PrcIdVerified);
+
+        var result = await controller.Approve(createdDto.Id, ApproveWithPayment("RMP-GATE-1"), CancellationToken.None);
+
+        Assert.IsType<BadRequestObjectResult>(result);
+        var fetched = await controller.GetById(createdDto.Id, CancellationToken.None);
+        var dto = Assert.IsType<MemberDto>(Assert.IsType<OkObjectResult>(fetched.Result).Value);
+        Assert.Null(dto.ApprovedAt);
+        // The number must not be assigned either - a blocked approval leaves nothing behind.
+        Assert.NotEqual("RMP-GATE-1", dto.MembershipNo);
+    }
+
+    /// <summary>
+    /// Approval and payment are one act now. A member with no payment on record and none supplied
+    /// can't be admitted - otherwise the admin form would be a way to bypass payment entirely.
+    /// </summary>
+    [Fact]
+    public async Task Approve_WithNoPaymentOnRecordAndNoneSupplied_IsRejected()
+    {
+        var user = await CreateUserAsync();
+        var controller = CreateController();
+        var created = await controller.Create(BuildCreateRequest(user.Id), CancellationToken.None);
+        var dto = Assert.IsType<MemberDto>(Assert.IsType<OkObjectResult>(created.Result).Value);
+        await VerifyRmpAsync(controller, dto.Id);
+
+        var result = await controller.Approve(dto.Id, new ApproveMemberRequest("PAY-GATE-1"), CancellationToken.None);
+
+        Assert.IsType<BadRequestObjectResult>(result);
+        var fetched = await controller.GetById(dto.Id, CancellationToken.None);
+        var after = Assert.IsType<MemberDto>(Assert.IsType<OkObjectResult>(fetched.Result).Value);
+        Assert.Null(after.ApprovedAt);
+        Assert.NotEqual("PAY-GATE-1", after.MembershipNo);
+    }
+
+    /// <summary>
+    /// The whole point of doing both in one transaction: there is no observable state where the
+    /// member is approved but still unpaid.
+    /// </summary>
+    [Fact]
+    public async Task Approve_AcceptsTheRegistrationPaymentInTheSameTransaction()
+    {
+        var user = await CreateUserAsync();
+        var controller = CreateController();
+        var created = await controller.Create(BuildCreateRequest(user.Id), CancellationToken.None);
+        var dto = Assert.IsType<MemberDto>(Assert.IsType<OkObjectResult>(created.Result).Value);
+        await VerifyRmpAsync(controller, dto.Id);
+
+        Assert.IsType<NoContentResult>(
+            await controller.Approve(dto.Id, ApproveWithPayment("PAY-GATE-2"), CancellationToken.None));
+
+        var fetched = await controller.GetById(dto.Id, CancellationToken.None);
+        var after = Assert.IsType<MemberDto>(Assert.IsType<OkObjectResult>(fetched.Result).Value);
+        Assert.NotNull(after.ApprovedAt);
+        Assert.Equal(MembershipStatus.Active, after.Status);
+        // Set by the payment half of the same operation - proof both ran.
+        Assert.Equal(DateOnly.FromDateTime(after.ApprovedAt!.Value.UtcDateTime).AddYears(1), after.RenewalDueDate);
+
+        var payments = await _paymentService.GetForMemberAsync(dto.Id);
+        var payment = Assert.Single(payments);
+        Assert.Equal(PaymentStatus.Verified, payment.Status);
+        Assert.Equal(after.RenewalDueDate, payment.CoversUntil);
+    }
+
+    /// <summary>
+    /// A self-service applicant already has a payment (created at submit), so the admin reviews it
+    /// rather than entering one. Supplying details anyway is refused rather than silently dropped -
+    /// otherwise the admin would think they had corrected an amount that never changed.
+    /// </summary>
+    [Fact]
+    public async Task Approve_SupplyingAPaymentWhenOneAlreadyExists_IsRejected()
+    {
+        var user = await CreateUserAsync();
+        var controller = CreateController();
+        var created = await controller.Create(BuildCreateRequest(user.Id), CancellationToken.None);
+        var dto = Assert.IsType<MemberDto>(Assert.IsType<OkObjectResult>(created.Result).Value);
+        await VerifyRmpAsync(controller, dto.Id);
+
+        // Stands in for the self-service path, where submitting the application already created a
+        // NewMembership payment for the admin to review.
+        var db = _scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        db.Payments.Add(new Payment
+        {
+            MemberId = dto.Id,
+            Kind = PaymentKind.NewMembership,
+            Amount = 1700m,
+            PaidOn = DateOnly.FromDateTime(DateTime.UtcNow),
+            ProofStorageKey = "existing/proof.jpg",
+            Status = PaymentStatus.Submitted,
+        });
+        await db.SaveChangesAsync();
+
+        var result = await controller.Approve(dto.Id, ApproveWithPayment("PAY-GATE-3"), CancellationToken.None);
+
+        Assert.IsType<BadRequestObjectResult>(result);
+        var fetched = await controller.GetById(dto.Id, CancellationToken.None);
+        Assert.Null(Assert.IsType<MemberDto>(Assert.IsType<OkObjectResult>(fetched.Result).Value).ApprovedAt);
+    }
+
+    [Fact]
+    public async Task Approve_AfterVerifyingTheRmpLicence_Succeeds()
+    {
+        var user = await CreateUserAsync();
+        var controller = CreateController();
+        var created = await controller.Create(BuildCreateRequest(user.Id), CancellationToken.None);
+        var createdDto = Assert.IsType<MemberDto>(Assert.IsType<OkObjectResult>(created.Result).Value);
+
+        await VerifyRmpAsync(controller, createdDto.Id);
+        var result = await controller.Approve(createdDto.Id, ApproveWithPayment("RMP-GATE-2"), CancellationToken.None);
+
+        Assert.IsType<NoContentResult>(result);
+        var fetched = await controller.GetById(createdDto.Id, CancellationToken.None);
+        var dto = Assert.IsType<MemberDto>(Assert.IsType<OkObjectResult>(fetched.Result).Value);
+        Assert.NotNull(dto.ApprovedAt);
+        Assert.Equal("RMP-GATE-2", dto.MembershipNo);
     }
 
     [Fact]
@@ -422,7 +577,8 @@ public class MembersControllerTests : IClassFixture<CustomWebApplicationFactory>
         var createdDto = Assert.IsType<MemberDto>(Assert.IsType<OkObjectResult>(created.Result).Value);
 
         // Padded so the trim is exercised - admins paste these out of spreadsheets.
-        var result = await controller.Approve(createdDto.Id, new ApproveMemberRequest("  PSMPE-2026-000123  "), CancellationToken.None);
+        await VerifyRmpAsync(controller, createdDto.Id);
+        var result = await controller.Approve(createdDto.Id, ApproveWithPayment("  PSMPE-2026-000123  "), CancellationToken.None);
         Assert.IsType<NoContentResult>(result);
 
         var fetched = await controller.GetById(createdDto.Id, CancellationToken.None);
@@ -441,7 +597,9 @@ public class MembersControllerTests : IClassFixture<CustomWebApplicationFactory>
         var created = await controller.Create(BuildCreateRequest(user.Id), CancellationToken.None);
         var createdDto = Assert.IsType<MemberDto>(Assert.IsType<OkObjectResult>(created.Result).Value);
 
-        var result = await controller.Approve(createdDto.Id, new ApproveMemberRequest(membershipNo), CancellationToken.None);
+        await VerifyRmpAsync(controller, createdDto.Id);
+
+        var result = await controller.Approve(createdDto.Id, ApproveWithPayment(membershipNo), CancellationToken.None);
 
         Assert.IsType<BadRequestObjectResult>(result);
         var fetched = await controller.GetById(createdDto.Id, CancellationToken.None);
@@ -457,19 +615,104 @@ public class MembersControllerTests : IClassFixture<CustomWebApplicationFactory>
         var firstUser = await CreateUserAsync();
         var firstCreated = await controller.Create(BuildCreateRequest(firstUser.Id), CancellationToken.None);
         var firstDto = Assert.IsType<MemberDto>(Assert.IsType<OkObjectResult>(firstCreated.Result).Value);
+        await VerifyRmpAsync(controller, firstDto.Id);
         Assert.IsType<NoContentResult>(
-            await controller.Approve(firstDto.Id, new ApproveMemberRequest("DUPLICATE-1"), CancellationToken.None));
+            await controller.Approve(firstDto.Id, ApproveWithPayment("DUPLICATE-1"), CancellationToken.None));
 
         var secondUser = await CreateUserAsync();
         var secondCreated = await controller.Create(BuildCreateRequest(secondUser.Id), CancellationToken.None);
         var secondDto = Assert.IsType<MemberDto>(Assert.IsType<OkObjectResult>(secondCreated.Result).Value);
 
-        var result = await controller.Approve(secondDto.Id, new ApproveMemberRequest("DUPLICATE-1"), CancellationToken.None);
+        await VerifyRmpAsync(controller, secondDto.Id);
+
+        var result = await controller.Approve(secondDto.Id, ApproveWithPayment("DUPLICATE-1"), CancellationToken.None);
 
         Assert.IsType<ConflictObjectResult>(result);
         var fetched = await controller.GetById(secondDto.Id, CancellationToken.None);
         var dto = Assert.IsType<MemberDto>(Assert.IsType<OkObjectResult>(fetched.Result).Value);
         Assert.Null(dto.ApprovedAt);
+    }
+
+    /// <summary>
+    /// A control number differing only in case is the same number to every human reading it. The
+    /// original byte comparison let both through, putting two members on one ID.
+    /// </summary>
+    // Distinct number per case: this class shares one database across its tests, so reusing a
+    // single literal would make the second case collide with the first case's own seed.
+    [Theory]
+    [InlineData("PSMPE-CI1", "psmpe-ci1")]
+    [InlineData("psmpe-ci2", "PSMPE-CI2")]
+    [InlineData("PSMPE-CI3", "PsMpE-cI3")]
+    [InlineData("PSMPE-CI4", "  psmpe-ci4  ")]
+    public async Task Approve_WithAMembershipNoDifferingOnlyInCase_ReturnsConflict(string original, string secondAttempt)
+    {
+        var controller = CreateController();
+
+        var firstUser = await CreateUserAsync();
+        var firstCreated = await controller.Create(BuildCreateRequest(firstUser.Id), CancellationToken.None);
+        var firstDto = Assert.IsType<MemberDto>(Assert.IsType<OkObjectResult>(firstCreated.Result).Value);
+        await VerifyRmpAsync(controller, firstDto.Id);
+        Assert.IsType<NoContentResult>(
+            await controller.Approve(firstDto.Id, ApproveWithPayment(original), CancellationToken.None));
+
+        var secondUser = await CreateUserAsync();
+        var secondCreated = await controller.Create(BuildCreateRequest(secondUser.Id), CancellationToken.None);
+        var secondDto = Assert.IsType<MemberDto>(Assert.IsType<OkObjectResult>(secondCreated.Result).Value);
+
+        await VerifyRmpAsync(controller, secondDto.Id);
+
+        var result = await controller.Approve(secondDto.Id, ApproveWithPayment(secondAttempt), CancellationToken.None);
+
+        Assert.IsType<ConflictObjectResult>(result);
+        var fetched = await controller.GetById(secondDto.Id, CancellationToken.None);
+        var dto = Assert.IsType<MemberDto>(Assert.IsType<OkObjectResult>(fetched.Result).Value);
+        Assert.Null(dto.ApprovedAt);
+    }
+
+    [Fact]
+    public async Task CheckMembershipNoAvailability_ReportsFreeAndTakenNumbers()
+    {
+        var controller = CreateController();
+        var user = await CreateUserAsync();
+        var created = await controller.Create(BuildCreateRequest(user.Id), CancellationToken.None);
+        var dto = Assert.IsType<MemberDto>(Assert.IsType<OkObjectResult>(created.Result).Value);
+        await VerifyRmpAsync(controller, dto.Id);
+        await controller.Approve(dto.Id, ApproveWithPayment("PSMPE-777"), CancellationToken.None);
+
+        var free = await controller.CheckMembershipNoAvailability("PSMPE-778", null, CancellationToken.None);
+        Assert.True(Assert.IsType<MembershipNoAvailabilityDto>(Assert.IsType<OkObjectResult>(free.Result).Value).IsAvailable);
+
+        // Case-insensitive here too, or the dialog would say "available" for a number approve then
+        // rejects - worse than not checking at all.
+        var taken = await controller.CheckMembershipNoAvailability("psmpe-777", null, CancellationToken.None);
+        Assert.False(Assert.IsType<MembershipNoAvailabilityDto>(Assert.IsType<OkObjectResult>(taken.Result).Value).IsAvailable);
+
+        // Excluding the holder lets the correction path re-submit a member's own number unchanged.
+        var ownNumber = await controller.CheckMembershipNoAvailability("PSMPE-777", dto.Id, CancellationToken.None);
+        Assert.True(Assert.IsType<MembershipNoAvailabilityDto>(Assert.IsType<OkObjectResult>(ownNumber.Result).Value).IsAvailable);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    public async Task CheckMembershipNoAvailability_WithNothingToCheck_ReportsUnavailable(string value)
+    {
+        var controller = CreateController();
+
+        var result = await controller.CheckMembershipNoAvailability(value, null, CancellationToken.None);
+
+        // Not "available" - a blank ID can't be approved, and saying otherwise would be misleading.
+        Assert.False(Assert.IsType<MembershipNoAvailabilityDto>(Assert.IsType<OkObjectResult>(result.Result).Value).IsAvailable);
+    }
+
+    [Fact]
+    public async Task CheckMembershipNoAvailability_OverLengthValue_ReportsUnavailable()
+    {
+        var controller = CreateController();
+
+        var result = await controller.CheckMembershipNoAvailability(new string('X', 33), null, CancellationToken.None);
+
+        Assert.False(Assert.IsType<MembershipNoAvailabilityDto>(Assert.IsType<OkObjectResult>(result.Result).Value).IsAvailable);
     }
 
     [Fact]
@@ -483,7 +726,8 @@ public class MembersControllerTests : IClassFixture<CustomWebApplicationFactory>
         var beforeApprove = await CreateController(user.Id).GetMyReceipt(CancellationToken.None);
         Assert.IsType<NotFoundResult>(beforeApprove);
 
-        var approveResult = await adminController.Approve(createdDto.Id, new ApproveMemberRequest("A-0003"), CancellationToken.None);
+        await VerifyRmpAsync(adminController, createdDto.Id);
+        var approveResult = await adminController.Approve(createdDto.Id, ApproveWithPayment("A-0003"), CancellationToken.None);
         Assert.IsType<NoContentResult>(approveResult);
 
         var afterApprove = await CreateController(user.Id).GetMyReceipt(CancellationToken.None);
@@ -499,8 +743,9 @@ public class MembersControllerTests : IClassFixture<CustomWebApplicationFactory>
         var created = await adminController.Create(BuildCreateRequest(user.Id), CancellationToken.None);
         var createdDto = Assert.IsType<MemberDto>(Assert.IsType<OkObjectResult>(created.Result).Value);
 
-        Assert.IsType<NoContentResult>(await adminController.Approve(createdDto.Id, new ApproveMemberRequest(Guid.NewGuid().ToString("N")[..8]), CancellationToken.None));
-        Assert.IsType<NoContentResult>(await adminController.Approve(createdDto.Id, new ApproveMemberRequest(Guid.NewGuid().ToString("N")[..8]), CancellationToken.None));
+        await VerifyRmpAsync(adminController, createdDto.Id);
+        Assert.IsType<NoContentResult>(await adminController.Approve(createdDto.Id, ApproveWithPayment(Guid.NewGuid().ToString("N")[..8]), CancellationToken.None));
+        Assert.IsType<NoContentResult>(await adminController.Approve(createdDto.Id, ApproveWithPayment(Guid.NewGuid().ToString("N")[..8]), CancellationToken.None));
 
         var afterSecondApprove = await CreateController(user.Id).GetMyReceipt(CancellationToken.None);
         Assert.IsType<FileStreamResult>(afterSecondApprove);
@@ -511,7 +756,7 @@ public class MembersControllerTests : IClassFixture<CustomWebApplicationFactory>
     {
         var controller = CreateController();
 
-        var result = await controller.Approve(Guid.NewGuid(), new ApproveMemberRequest("A-0006"), CancellationToken.None);
+        var result = await controller.Approve(Guid.NewGuid(), ApproveWithPayment("A-0006"), CancellationToken.None);
 
         Assert.IsType<NotFoundObjectResult>(result);
     }
@@ -532,13 +777,13 @@ public class MembersControllerTests : IClassFixture<CustomWebApplicationFactory>
             Birthdate: activeDto.Birthdate, Gender: activeDto.Gender, CivilStatus: activeDto.CivilStatus,
             EducationLevel: activeDto.EducationLevel, SchoolName: activeDto.SchoolName, CourseYearGraduated: activeDto.CourseYearGraduated, SpecifiedProfession: activeDto.SpecifiedProfession,
             MobileNumber: activeDto.MobileNumber,
-            HouseNo: activeDto.HouseNo, Street: activeDto.Street, Barangay: activeDto.Barangay, CityMunicipality: activeDto.CityMunicipality, Province: activeDto.Province, ZipCode: activeDto.ZipCode,
+            HouseNo: activeDto.HouseNo, Street: activeDto.Street, Barangay: activeDto.Barangay, CityMunicipality: activeDto.CityMunicipality, Province: activeDto.Province, ZipCode: activeDto.ZipCode, Country: activeDto.Country,
             MailingHouseNo: activeDto.MailingHouseNo, MailingStreet: activeDto.MailingStreet, MailingBarangay: activeDto.MailingBarangay,
-            MailingCityMunicipality: activeDto.MailingCityMunicipality, MailingProvince: activeDto.MailingProvince, MailingZipCode: activeDto.MailingZipCode,
-            HousePhone: activeDto.HousePhone, Website: activeDto.Website, FacebookUrl: activeDto.FacebookUrl, LinkedInUrl: activeDto.LinkedInUrl, XUrl: activeDto.XUrl, InstagramUrl: activeDto.InstagramUrl,
+            MailingCityMunicipality: activeDto.MailingCityMunicipality, MailingProvince: activeDto.MailingProvince, MailingZipCode: activeDto.MailingZipCode, MailingCountry: activeDto.MailingCountry,
+            HousePhone: activeDto.HousePhone,
             PrcLicenseNo: activeDto.PrcLicenseNo, PrcRegistrationDate: activeDto.PrcRegistrationDate, PrcValidUntilDate: activeDto.PrcValidUntilDate,
-            PtrNumber: activeDto.PtrNumber, Tin: activeDto.Tin,
-            Chapter: activeDto.Chapter, EmploymentStatus: activeDto.EmploymentStatus, Company: activeDto.Company, Position: activeDto.Position, BusinessAddress: activeDto.BusinessAddress,
+            PtrNumber: activeDto.PtrNumber, PtrPlaceIssued: activeDto.PtrPlaceIssued, PtrDateIssued: activeDto.PtrDateIssued, Tin: activeDto.Tin,
+            Chapter: activeDto.Chapter, ChapterYear: activeDto.ChapterYear, ChapterPosition: activeDto.ChapterPosition, EmploymentStatus: activeDto.EmploymentStatus, Company: activeDto.Company, Position: activeDto.Position, BusinessAddress: activeDto.BusinessAddress,
             YearsOfPractice: activeDto.YearsOfPractice, Specialization: activeDto.Specialization, Skills: activeDto.Skills,
             MemberType: activeDto.MemberType, Status: MembershipStatus.Active,
             RenewalDueDate: activeDto.RenewalDueDate, NationalDuesReferenceNo: activeDto.NationalDuesReferenceNo);
@@ -562,7 +807,8 @@ public class MembersControllerTests : IClassFixture<CustomWebApplicationFactory>
         var unapprovedDto = Assert.IsType<MemberDto>(Assert.IsType<OkObjectResult>(unapprovedCreated.Result).Value);
         var approvedCreated = await controller.Create(BuildCreateRequest(approvedUser.Id), CancellationToken.None);
         var approvedDto = Assert.IsType<MemberDto>(Assert.IsType<OkObjectResult>(approvedCreated.Result).Value);
-        await controller.Approve(approvedDto.Id, new ApproveMemberRequest("A-0007"), CancellationToken.None);
+        await VerifyRmpAsync(controller, approvedDto.Id);
+        await controller.Approve(approvedDto.Id, ApproveWithPayment("A-0007"), CancellationToken.None);
 
         var result = await controller.GetAll(page: 1, pageSize: 1000, pendingApprovalOnly: true, cancellationToken: CancellationToken.None);
 
@@ -589,13 +835,13 @@ public class MembersControllerTests : IClassFixture<CustomWebApplicationFactory>
             Birthdate: createdDto.Birthdate, Gender: createdDto.Gender, CivilStatus: createdDto.CivilStatus,
             EducationLevel: createdDto.EducationLevel, SchoolName: createdDto.SchoolName, CourseYearGraduated: createdDto.CourseYearGraduated, SpecifiedProfession: createdDto.SpecifiedProfession,
             MobileNumber: createdDto.MobileNumber,
-            HouseNo: createdDto.HouseNo, Street: createdDto.Street, Barangay: createdDto.Barangay, CityMunicipality: createdDto.CityMunicipality, Province: createdDto.Province, ZipCode: createdDto.ZipCode,
+            HouseNo: createdDto.HouseNo, Street: createdDto.Street, Barangay: createdDto.Barangay, CityMunicipality: createdDto.CityMunicipality, Province: createdDto.Province, ZipCode: createdDto.ZipCode, Country: createdDto.Country,
             MailingHouseNo: createdDto.MailingHouseNo, MailingStreet: createdDto.MailingStreet, MailingBarangay: createdDto.MailingBarangay,
-            MailingCityMunicipality: createdDto.MailingCityMunicipality, MailingProvince: createdDto.MailingProvince, MailingZipCode: createdDto.MailingZipCode,
-            HousePhone: createdDto.HousePhone, Website: createdDto.Website, FacebookUrl: createdDto.FacebookUrl, LinkedInUrl: createdDto.LinkedInUrl, XUrl: createdDto.XUrl, InstagramUrl: createdDto.InstagramUrl,
+            MailingCityMunicipality: createdDto.MailingCityMunicipality, MailingProvince: createdDto.MailingProvince, MailingZipCode: createdDto.MailingZipCode, MailingCountry: createdDto.MailingCountry,
+            HousePhone: createdDto.HousePhone,
             PrcLicenseNo: createdDto.PrcLicenseNo, PrcRegistrationDate: createdDto.PrcRegistrationDate, PrcValidUntilDate: createdDto.PrcValidUntilDate,
-            PtrNumber: createdDto.PtrNumber, Tin: createdDto.Tin,
-            Chapter: createdDto.Chapter, EmploymentStatus: createdDto.EmploymentStatus, Company: createdDto.Company, Position: createdDto.Position, BusinessAddress: createdDto.BusinessAddress,
+            PtrNumber: createdDto.PtrNumber, PtrPlaceIssued: createdDto.PtrPlaceIssued, PtrDateIssued: createdDto.PtrDateIssued, Tin: createdDto.Tin,
+            Chapter: createdDto.Chapter, ChapterYear: createdDto.ChapterYear, ChapterPosition: createdDto.ChapterPosition, EmploymentStatus: createdDto.EmploymentStatus, Company: createdDto.Company, Position: createdDto.Position, BusinessAddress: createdDto.BusinessAddress,
             YearsOfPractice: createdDto.YearsOfPractice, Specialization: createdDto.Specialization, Skills: createdDto.Skills,
             MemberType: createdDto.MemberType, Status: MembershipStatus.Active,
             RenewalDueDate: dueDate, NationalDuesReferenceNo: createdDto.NationalDuesReferenceNo);
@@ -628,10 +874,10 @@ public class MembersControllerTests : IClassFixture<CustomWebApplicationFactory>
             Birthdate: null, Gender: null, CivilStatus: null,
             EducationLevel: null, SchoolName: null, CourseYearGraduated: null, SpecifiedProfession: null,
             MobileNumber: null,
-            HouseNo: null, Street: null, Barangay: null, CityMunicipality: null, Province: null, ZipCode: null,
-            MailingHouseNo: null, MailingStreet: null, MailingBarangay: null, MailingCityMunicipality: null, MailingProvince: null, MailingZipCode: null,
-            HousePhone: null, Website: null, FacebookUrl: null, LinkedInUrl: null, XUrl: null, InstagramUrl: null,
-            PrcLicenseNo: null, PrcRegistrationDate: null, PrcValidUntilDate: null, PtrNumber: null, Tin: null, Chapter: "",
+            HouseNo: null, Street: null, Barangay: null, CityMunicipality: null, Province: null, ZipCode: null, Country: null,
+            MailingHouseNo: null, MailingStreet: null, MailingBarangay: null, MailingCityMunicipality: null, MailingProvince: null, MailingZipCode: null, MailingCountry: null,
+            HousePhone: null,
+            PrcLicenseNo: null, PrcRegistrationDate: null, PrcValidUntilDate: null, PtrNumber: null, PtrPlaceIssued: null, PtrDateIssued: null, Tin: null, Chapter: "", ChapterYear: null, ChapterPosition: null,
             EmploymentStatus: null, Company: null, Position: null, BusinessAddress: null, YearsOfPractice: null, Specialization: null, Skills: null,
             MemberType: "");
         await controller.UpdateMyProfile(request, CancellationToken.None);
@@ -646,12 +892,12 @@ public class MembersControllerTests : IClassFixture<CustomWebApplicationFactory>
         Birthdate: birthdate, Gender: "Male", CivilStatus: "Single",
         EducationLevel: "College / University", SchoolName: "Sample University", CourseYearGraduated: "BSCE 2015", SpecifiedProfession: "Master Plumber",
         MobileNumber: "09171234567",
-        HouseNo: null, Street: "123 Sample St", Barangay: "Sample Barangay", CityMunicipality: "Sample City", Province: "Sample Province", ZipCode: "1000",
-        MailingHouseNo: null, MailingStreet: null, MailingBarangay: null, MailingCityMunicipality: null, MailingProvince: null, MailingZipCode: null,
-        HousePhone: null, Website: null, FacebookUrl: null, LinkedInUrl: null, XUrl: null, InstagramUrl: null,
+        HouseNo: null, Street: "123 Sample St", Barangay: "Sample Barangay", CityMunicipality: "Sample City", Province: "Sample Province", ZipCode: "1000", Country: "Philippines",
+        MailingHouseNo: null, MailingStreet: null, MailingBarangay: null, MailingCityMunicipality: null, MailingProvince: null, MailingZipCode: null, MailingCountry: null,
+        HousePhone: null,
         PrcLicenseNo: "MP 99999", PrcRegistrationDate: new DateOnly(2020, 1, 1), PrcValidUntilDate: new DateOnly(2030, 1, 1),
-        PtrNumber: "PTR-0099999", Tin: null,
-        Chapter: Chapters.Ncr,
+        PtrNumber: "PTR-0099999", PtrPlaceIssued: null, PtrDateIssued: null, Tin: null,
+        Chapter: Chapters.Ncr, ChapterYear: null, ChapterPosition: null,
         EmploymentStatus: null, Company: null, Position: null, BusinessAddress: null, YearsOfPractice: null, Specialization: null, Skills: null,
         MemberType: MemberTypes.Regular);
 
@@ -716,7 +962,6 @@ public class MembersControllerTests : IClassFixture<CustomWebApplicationFactory>
     [InlineData("civilStatus")]
     [InlineData("street")]
     [InlineData("mobileNumber")]
-    [InlineData("ptrNumber")]
     public async Task SubmitMyProfile_MissingAnyNewRequiredField_ReturnsBadRequest(string fieldToOmit)
     {
         var user = await CreateUserAsync();
@@ -729,7 +974,6 @@ public class MembersControllerTests : IClassFixture<CustomWebApplicationFactory>
             "civilStatus" => complete with { CivilStatus = null },
             "street" => complete with { Street = null },
             "mobileNumber" => complete with { MobileNumber = null },
-            "ptrNumber" => complete with { PtrNumber = null },
             _ => throw new ArgumentOutOfRangeException(nameof(fieldToOmit)),
         };
         await controller.UpdateMyProfile(request, CancellationToken.None);
@@ -740,6 +984,27 @@ public class MembersControllerTests : IClassFixture<CustomWebApplicationFactory>
         var result = await controller.SubmitMyProfile(CancellationToken.None);
 
         Assert.IsType<BadRequestObjectResult>(result);
+    }
+
+    /// <summary>
+    /// PTR Number used to be required to submit and no longer is, along with the rest of the
+    /// Additional Information step. Pins that, since the step now has no required field at all -
+    /// a regression here would silently start blocking applicants again.
+    /// </summary>
+    [Fact]
+    public async Task SubmitMyProfile_WithoutPtrNumber_Succeeds()
+    {
+        var user = await CreateUserAsync();
+        var controller = CreateController(user.Id);
+        var complete = BuildCompleteProfileRequest(new DateOnly(1990, 1, 1));
+        await controller.UpdateMyProfile(complete with { PtrNumber = null, Tin = null, Company = null }, CancellationToken.None);
+        await UploadFreshPrcIdAsync(user.Id);
+        await UploadPhotoAsync(user.Id);
+        await UploadProofOfPaymentAsync(user.Id);
+
+        var result = await controller.SubmitMyProfile(CancellationToken.None);
+
+        Assert.IsType<NoContentResult>(result);
     }
 
     [Fact]
@@ -779,10 +1044,10 @@ public class MembersControllerTests : IClassFixture<CustomWebApplicationFactory>
             Birthdate: null, Gender: null, CivilStatus: null,
             EducationLevel: null, SchoolName: null, CourseYearGraduated: null, SpecifiedProfession: null,
             MobileNumber: null,
-            HouseNo: null, Street: null, Barangay: null, CityMunicipality: null, Province: null, ZipCode: null,
-            MailingHouseNo: null, MailingStreet: null, MailingBarangay: null, MailingCityMunicipality: null, MailingProvince: null, MailingZipCode: null,
-            HousePhone: null, Website: null, FacebookUrl: null, LinkedInUrl: null, XUrl: null, InstagramUrl: null,
-            PrcLicenseNo: null, PrcRegistrationDate: null, PrcValidUntilDate: null, PtrNumber: null, Tin: null, Chapter: Chapters.Ncr,
+            HouseNo: null, Street: null, Barangay: null, CityMunicipality: null, Province: null, ZipCode: null, Country: null,
+            MailingHouseNo: null, MailingStreet: null, MailingBarangay: null, MailingCityMunicipality: null, MailingProvince: null, MailingZipCode: null, MailingCountry: null,
+            HousePhone: null,
+            PrcLicenseNo: null, PrcRegistrationDate: null, PrcValidUntilDate: null, PtrNumber: null, PtrPlaceIssued: null, PtrDateIssued: null, Tin: null, Chapter: Chapters.Ncr, ChapterYear: null, ChapterPosition: null,
             EmploymentStatus: null, Company: null, Position: null, BusinessAddress: null, YearsOfPractice: null, Specialization: null, Skills: null,
             MemberType: MemberTypes.Regular);
         var draftResult = await draftController.UpdateMyProfile(draftRequest, CancellationToken.None);
@@ -803,12 +1068,12 @@ public class MembersControllerTests : IClassFixture<CustomWebApplicationFactory>
         Birthdate: new DateOnly(1990, 1, 1), Gender: "Male", CivilStatus: "Single",
         EducationLevel: "College / University", SchoolName: "Sample University", CourseYearGraduated: "BSCE 2015", SpecifiedProfession: "Master Plumber",
         MobileNumber: "09171234567",
-        HouseNo: null, Street: "123 Main St", Barangay: "Sample Barangay", CityMunicipality: "Sample City", Province: "Sample Province", ZipCode: "1000",
-        MailingHouseNo: null, MailingStreet: null, MailingBarangay: null, MailingCityMunicipality: null, MailingProvince: null, MailingZipCode: null,
-        HousePhone: null, Website: null, FacebookUrl: null, LinkedInUrl: null, XUrl: null, InstagramUrl: null,
+        HouseNo: null, Street: "123 Main St", Barangay: "Sample Barangay", CityMunicipality: "Sample City", Province: "Sample Province", ZipCode: "1000", Country: "Philippines",
+        MailingHouseNo: null, MailingStreet: null, MailingBarangay: null, MailingCityMunicipality: null, MailingProvince: null, MailingZipCode: null, MailingCountry: null,
+        HousePhone: null,
         PrcLicenseNo: prcLicenseNo, PrcRegistrationDate: prcRegistrationDate ?? new DateOnly(2020, 1, 1), PrcValidUntilDate: prcValidUntilDate ?? new DateOnly(2030, 1, 1),
-        PtrNumber: "PTR-0012345", Tin: null,
-        Chapter: chapter,
+        PtrNumber: "PTR-0012345", PtrPlaceIssued: null, PtrDateIssued: null, Tin: null,
+        Chapter: chapter, ChapterYear: null, ChapterPosition: null,
         EmploymentStatus: null, Company: null, Position: null, BusinessAddress: null, YearsOfPractice: null, Specialization: null, Skills: null,
         MemberType: memberType,
         PrcIdReuploaded: prcIdReuploaded);
@@ -929,23 +1194,35 @@ public class MembersControllerTests : IClassFixture<CustomWebApplicationFactory>
             BuildProfileRequest(Chapters.Ncr, MemberTypes.Regular, prcLicenseNo: "MP-4", prcIdReuploaded: true), CancellationToken.None);
 
         var adminController = CreateController();
-        // PRC License No. is required for new self-service submissions, so "a submitted member
-        // with none at all" can no longer arise from the wizard - constructed here via the
-        // admin Create path instead (not subject to that self-service-only requirement) to keep
-        // covering the filter's exclusion of members with nothing to verify.
+        // A submitted member with no PRC License No. at all can no longer be created through *any*
+        // path - the wizard has always required it, and CreateAsync now does too, precisely so
+        // nobody can end up unverifiable and therefore unapprovable. Rows in that shape still exist
+        // in older data though, so the filter must still exclude them: seeded straight into the
+        // context here rather than through an API that would (correctly) refuse it.
         var noPrcUser = await CreateUserAsync();
-        var noPrcCreated = await adminController.Create(BuildCreateRequest(noPrcUser.Id) with { PrcLicenseNo = null }, CancellationToken.None);
-        var noPrcUserId = Assert.IsType<MemberDto>(Assert.IsType<OkObjectResult>(noPrcCreated.Result).Value).UserId;
+        var db = _scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var noPrcMember = new Member
+        {
+            UserId = noPrcUser.Id,
+            FirstName = "Legacy",
+            LastName = "NoLicence",
+            Chapter = Chapters.Ncr,
+            MemberType = MemberTypes.Regular,
+            PrcLicenseNo = null,
+            Status = MembershipStatus.Pending,
+            SubmittedAt = DateTimeOffset.UtcNow,
+        };
+        db.Members.Add(noPrcMember);
+        await db.SaveChangesAsync();
 
         var result = await adminController.GetAll(page: 1, pageSize: 1000, pendingPrcVerificationOnly: true, cancellationToken: CancellationToken.None);
 
         var ok = Assert.IsType<OkObjectResult>(result.Result);
         var paged = Assert.IsType<PagedResult<MemberDto>>(ok.Value);
         var neverVerifiedMemberId = (await _memberService.GetByUserIdAsync(neverVerifiedUserId))!.Id;
-        var noPrcMemberId = (await _memberService.GetByUserIdAsync(noPrcUserId))!.Id;
         Assert.Contains(paged.Items, m => m.Id == neverVerifiedMemberId);
         Assert.Contains(paged.Items, m => m.Id == pendingChangeMemberId);
-        Assert.DoesNotContain(paged.Items, m => m.Id == noPrcMemberId);
+        Assert.DoesNotContain(paged.Items, m => m.Id == noPrcMember.Id);
     }
 
     [Fact]
@@ -1016,10 +1293,10 @@ public class MembersControllerTests : IClassFixture<CustomWebApplicationFactory>
             Birthdate: null, Gender: null, CivilStatus: null,
             EducationLevel: null, SchoolName: null, CourseYearGraduated: null, SpecifiedProfession: null,
             MobileNumber: null,
-            HouseNo: null, Street: null, Barangay: null, CityMunicipality: null, Province: null, ZipCode: null,
-            MailingHouseNo: null, MailingStreet: null, MailingBarangay: null, MailingCityMunicipality: null, MailingProvince: null, MailingZipCode: null,
-            HousePhone: null, Website: null, FacebookUrl: null, LinkedInUrl: null, XUrl: null, InstagramUrl: null,
-            PrcLicenseNo: null, PrcRegistrationDate: null, PrcValidUntilDate: null, PtrNumber: null, Tin: null, Chapter: Chapters.Ncr,
+            HouseNo: null, Street: null, Barangay: null, CityMunicipality: null, Province: null, ZipCode: null, Country: null,
+            MailingHouseNo: null, MailingStreet: null, MailingBarangay: null, MailingCityMunicipality: null, MailingProvince: null, MailingZipCode: null, MailingCountry: null,
+            HousePhone: null,
+            PrcLicenseNo: null, PrcRegistrationDate: null, PrcValidUntilDate: null, PtrNumber: null, PtrPlaceIssued: null, PtrDateIssued: null, Tin: null, Chapter: Chapters.Ncr, ChapterYear: null, ChapterPosition: null,
             EmploymentStatus: null, Company: null, Position: null, BusinessAddress: null, YearsOfPractice: null, Specialization: null, Skills: null,
             MemberType: MemberTypes.Regular);
 

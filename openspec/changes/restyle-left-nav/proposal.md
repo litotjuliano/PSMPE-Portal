@@ -2,7 +2,10 @@
 
 ## Status
 
-**Ready for implementation.** Design approved 2026-08-07 against the supplied mockup.
+**Implemented and committed** (`591c856 Restyle the left navigation in PSMPE navy`). Design
+approved 2026-08-07 against the supplied mockup; code, lint, and build all verified — see
+`tasks.md` for what was checked and what remains only spot-checked rather than exhaustively
+re-verified against every item in `## 5. Verify`.
 
 ## Why
 

@@ -26,13 +26,14 @@ export const NotificationsList = ({ pendingApplications, pendingPrcVerifications
                 New membership application: {member.firstName} {member.lastName}
               </h6>
               <p className="text-default-500">
-                {member.chapter} - submitted {new Date(member.createdAt).toLocaleDateString()}
+                {member.chapter} - submitted{' '}
+                {member.submittedAt ? new Date(member.submittedAt).toLocaleDateString() : '-'}
               </p>
             </div>
           </Link>
         ))}
         {pendingPrcVerifications.map((member) => (
-          <Link key={member.id} to="/prc-verifications" className="flex gap-3 p-4 items-start hover:bg-default-150">
+          <Link key={member.id} to="/members?queue=rmp" className="flex gap-3 p-4 items-start hover:bg-default-150">
             <div className="size-10 rounded-md bg-default-100 flex justify-center items-center shrink-0">
               <LuBadgeCheck className="size-5 text-primary" />
             </div>

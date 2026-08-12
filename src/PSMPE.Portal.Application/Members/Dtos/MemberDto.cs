@@ -24,23 +24,22 @@ public record MemberDto(
     string? CityMunicipality,
     string? Province,
     string? ZipCode,
+    string? Country,
     string? MailingHouseNo,
     string? MailingStreet,
     string? MailingBarangay,
     string? MailingCityMunicipality,
     string? MailingProvince,
     string? MailingZipCode,
+    string? MailingCountry,
     string? HousePhone,
-    string? Website,
-    string? FacebookUrl,
-    string? LinkedInUrl,
-    string? XUrl,
-    string? InstagramUrl,
     string? MembershipNo,
     string? PrcLicenseNo,
     DateOnly? PrcRegistrationDate,
     DateOnly? PrcValidUntilDate,
     string? PtrNumber,
+    string? PtrPlaceIssued,
+    DateOnly? PtrDateIssued,
     string? Tin,
     bool PrcIdVerified,
     string? PendingPrcLicenseNo,
@@ -48,6 +47,8 @@ public record MemberDto(
     DateOnly? PendingPrcValidUntilDate,
     string? PrcVerificationRejectedReason,
     string Chapter,
+    int? ChapterYear,
+    string? ChapterPosition,
     string? EmploymentStatus,
     string? Company,
     string? Position,
@@ -62,6 +63,9 @@ public record MemberDto(
     DateTimeOffset? ApprovedAt,
     DateTimeOffset? SubmittedAt,
     bool IsInGracePeriod,
+    /// <summary>Past the renewal date and past the grace period. Derived, not stored - see
+    /// MemberService.ComputeIsExpired for why there is no automatic Status transition.</summary>
+    bool IsExpired,
     DateTimeOffset CreatedAt,
     DateTimeOffset? UpdatedAt);
 
@@ -91,24 +95,25 @@ public record CreateMemberRequest(
     string? CityMunicipality,
     string? Province,
     string? ZipCode,
+    string? Country,
     string? MailingHouseNo,
     string? MailingStreet,
     string? MailingBarangay,
     string? MailingCityMunicipality,
     string? MailingProvince,
     string? MailingZipCode,
+    string? MailingCountry,
     string? HousePhone,
-    string? Website,
-    string? FacebookUrl,
-    string? LinkedInUrl,
-    string? XUrl,
-    string? InstagramUrl,
     string? PrcLicenseNo,
     DateOnly? PrcRegistrationDate,
     DateOnly? PrcValidUntilDate,
     string? PtrNumber,
+    string? PtrPlaceIssued,
+    DateOnly? PtrDateIssued,
     string? Tin,
     string Chapter,
+    int? ChapterYear,
+    string? ChapterPosition,
     string? EmploymentStatus,
     string? Company,
     string? Position,
@@ -145,24 +150,25 @@ public record UpdateMemberRequest(
     string? CityMunicipality,
     string? Province,
     string? ZipCode,
+    string? Country,
     string? MailingHouseNo,
     string? MailingStreet,
     string? MailingBarangay,
     string? MailingCityMunicipality,
     string? MailingProvince,
     string? MailingZipCode,
+    string? MailingCountry,
     string? HousePhone,
-    string? Website,
-    string? FacebookUrl,
-    string? LinkedInUrl,
-    string? XUrl,
-    string? InstagramUrl,
     string? PrcLicenseNo,
     DateOnly? PrcRegistrationDate,
     DateOnly? PrcValidUntilDate,
     string? PtrNumber,
+    string? PtrPlaceIssued,
+    DateOnly? PtrDateIssued,
     string? Tin,
     string Chapter,
+    int? ChapterYear,
+    string? ChapterPosition,
     string? EmploymentStatus,
     string? Company,
     string? Position,
@@ -206,24 +212,25 @@ public record UpdateMyProfileRequest(
     string? CityMunicipality,
     string? Province,
     string? ZipCode,
+    string? Country,
     string? MailingHouseNo,
     string? MailingStreet,
     string? MailingBarangay,
     string? MailingCityMunicipality,
     string? MailingProvince,
     string? MailingZipCode,
+    string? MailingCountry,
     string? HousePhone,
-    string? Website,
-    string? FacebookUrl,
-    string? LinkedInUrl,
-    string? XUrl,
-    string? InstagramUrl,
     string? PrcLicenseNo,
     DateOnly? PrcRegistrationDate,
     DateOnly? PrcValidUntilDate,
     string? PtrNumber,
+    string? PtrPlaceIssued,
+    DateOnly? PtrDateIssued,
     string? Tin,
     string Chapter,
+    int? ChapterYear,
+    string? ChapterPosition,
     string? EmploymentStatus,
     string? Company,
     string? Position,
@@ -251,4 +258,24 @@ public record PrcVerificationHistoryDto(
 /// portal never generates. Free text (trimmed, max 32 chars) so the society's numbering scheme
 /// isn't second-guessed, but it must not already belong to another member.
 /// </summary>
-public record ApproveMemberRequest(string MembershipNo);
+/// <summary>
+/// Admits an application. Approval and payment are now one indivisible act: a member is never
+/// admitted without their registration payment being accepted in the same transaction, so nobody
+/// ends up approved-but-unpaid.
+///
+/// <para><paramref name="Payment"/> is only needed when the member has no payment on record - an
+/// admin-created profile, or a walk-in paying at the office. A self-service applicant already has
+/// one (created at submit), and the admin is reviewing rather than entering it, so this stays null.
+/// Supplying it when a payment already exists is rejected rather than silently ignored.</para>
+/// </summary>
+public record ApproveMemberRequest(string MembershipNo, RecordPaymentRequest? Payment = null);
+
+/// <summary>Payment details entered by an admin on a member's behalf.</summary>
+public record RecordPaymentRequest(decimal Amount, string? ReferenceNo, DateOnly PaidOn, string ProofStorageKey);
+
+/// <summary>
+/// Advisory answer for the approve dialog's live duplicate check. Echoes the trimmed value back so
+/// the caller can discard a response that arrived after the admin typed on (the request is fired
+/// per keystroke, debounced, and responses can land out of order).
+/// </summary>
+public record MembershipNoAvailabilityDto(string MembershipNo, bool IsAvailable);

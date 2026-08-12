@@ -56,3 +56,8 @@ TestResults/
 
 # Visual brainstorming companion scratch files
 .superpowers/
+
+# Local throwaway working files - one-off inspection scripts, extracted data, and database dumps.
+# Deliberately ignored rather than committed: scratch/backups/ holds pg_dump output containing
+# password hashes, member emails and addresses, which must never reach the repository.
+scratch/

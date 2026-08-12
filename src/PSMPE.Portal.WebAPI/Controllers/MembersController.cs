@@ -6,6 +6,7 @@ using PSMPE.Portal.Application.Common.Interfaces;
 using PSMPE.Portal.Application.Common.Models;
 using PSMPE.Portal.Application.Members;
 using PSMPE.Portal.Application.Members.Dtos;
+using PSMPE.Portal.Application.Payments;
 using PSMPE.Portal.Domain.Entities;
 using PSMPE.Portal.Domain.Enums;
 using PSMPE.Portal.Infrastructure.Authorization;
@@ -23,18 +24,18 @@ namespace PSMPE.Portal.WebAPI.Controllers;
 public class MembersController(
     IMemberService memberService, IMemberUploadService memberUploadService,
     IMemberCertificateService memberCertificateService, UserManager<ApplicationUser> userManager,
-    IEmailSender emailSender) : ControllerBase
+    IEmailSender emailSender, IPaymentService paymentService) : ControllerBase
 {
     [HttpGet]
     [RequirePermission(Permissions.Members.View)]
     public async Task<ActionResult<PagedResult<MemberDto>>> GetAll(
         int page = 1, int pageSize = 20, string sortBy = "lastName", string sortDir = "asc",
         MembershipStatus? status = null, bool? pendingApprovalOnly = null, bool? pendingPrcVerificationOnly = null,
-        CancellationToken cancellationToken = default)
+        string? search = null, CancellationToken cancellationToken = default)
     {
         var excludeUserIds = await GetSystemAccountUserIdsAsync();
         return Ok(await memberService.GetAllAsync(
-            page, pageSize, sortBy, sortDir, status, pendingApprovalOnly, pendingPrcVerificationOnly, excludeUserIds, cancellationToken));
+            page, pageSize, sortBy, sortDir, status, pendingApprovalOnly, pendingPrcVerificationOnly, search, excludeUserIds, cancellationToken));
     }
 
     [HttpGet("{id:guid}")]
@@ -160,8 +161,34 @@ public class MembersController(
         return ToActionResult(result);
     }
 
+    /// <summary>
+    /// Whether a Membership ID is free, so the approve dialog can say so before an admin commits
+    /// rather than after a rejected submit. Advisory only - it can always lose a race with a
+    /// concurrent approval, which is why ApproveAsync re-checks and the database holds a
+    /// case-insensitive unique index behind both.
+    ///
+    /// Same Manage permission as approving: it reports whether a control number is taken, which is
+    /// not something an unprivileged caller should be able to probe.
+    /// </summary>
+    [HttpGet("membership-no/availability")]
+    [RequirePermission(Permissions.Members.Manage, Permissions.Members.Approve)]
+    public async Task<ActionResult<MembershipNoAvailabilityDto>> CheckMembershipNoAvailability(
+        string value, Guid? excludeMemberId = null, CancellationToken cancellationToken = default)
+    {
+        var trimmed = value?.Trim() ?? string.Empty;
+        if (trimmed.Length == 0 || trimmed.Length > 32)
+        {
+            // Nothing to look up - the form reports blank/over-length on its own, and querying for
+            // them would only produce a misleading "available".
+            return Ok(new MembershipNoAvailabilityDto(trimmed, false));
+        }
+
+        var taken = await memberService.MembershipNoExistsAsync(trimmed, excludeMemberId, cancellationToken);
+        return Ok(new MembershipNoAvailabilityDto(trimmed, !taken));
+    }
+
     [HttpPost("{id:guid}/approve")]
-    [RequirePermission(Permissions.Members.Manage)]
+    [RequirePermission(Permissions.Members.Manage, Permissions.Members.Approve)]
     public async Task<IActionResult> Approve(Guid id, ApproveMemberRequest request, CancellationToken cancellationToken)
     {
         if (await IsHiddenMemberAsync(id, cancellationToken))
@@ -174,7 +201,13 @@ public class MembersController(
         // an already-approved member), which would otherwise regenerate/resend on every repeat call.
         var wasAlreadyApproved = (await memberService.GetByIdAsync(id, cancellationToken))?.ApprovedAt is not null;
 
-        var result = await memberService.ApproveAsync(id, request.MembershipNo, cancellationToken);
+        var decidedBy = CurrentUserId;
+        if (decidedBy is null)
+        {
+            return Unauthorized();
+        }
+
+        var result = await memberService.ApproveAsync(id, request, decidedBy.Value, cancellationToken);
         if (result.Succeeded && !wasAlreadyApproved)
         {
             var approvedMember = await memberService.GetByIdAsync(id, cancellationToken);
@@ -197,7 +230,9 @@ public class MembersController(
     /// </summary>
     private async Task IssueApprovalReceiptAsync(MemberDto member, CancellationToken cancellationToken)
     {
-        var receiptBytes = ReceiptGenerator.Generate(member);
+        // Fees come from SystemConfig now, so a receipt always shows what PSMPE currently charges.
+        var fees = await paymentService.GetFeesAsync(cancellationToken);
+        var receiptBytes = ReceiptGenerator.Generate(member, fees);
         await using (var stream = new MemoryStream(receiptBytes))
         {
             await memberUploadService.UploadAsync(member.UserId, UploadKind.Receipt, stream, "receipt.jpg", receiptBytes.Length, cancellationToken);
@@ -218,7 +253,7 @@ public class MembersController(
     }
 
     [HttpPost("{id:guid}/prc-verification/approve")]
-    [RequirePermission(Permissions.Members.Manage)]
+    [RequirePermission(Permissions.Members.Manage, Permissions.Members.Approve)]
     public async Task<IActionResult> ApprovePrcVerification(Guid id, CancellationToken cancellationToken)
     {
         var decidedByUserId = CurrentUserId;
@@ -237,7 +272,7 @@ public class MembersController(
     }
 
     [HttpPost("{id:guid}/prc-verification/reject")]
-    [RequirePermission(Permissions.Members.Manage)]
+    [RequirePermission(Permissions.Members.Manage, Permissions.Members.Approve)]
     public async Task<IActionResult> RejectPrcVerification(Guid id, RejectPrcVerificationRequest request, CancellationToken cancellationToken)
     {
         var decidedByUserId = CurrentUserId;
