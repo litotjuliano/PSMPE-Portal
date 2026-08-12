@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { LuEye } from 'react-icons/lu'
+import { LuEye, LuUpload } from 'react-icons/lu'
 import { memberApi } from '../../../../core/api/endpoints/memberApi'
 import { paymentApi, type MembershipFees, type Payment } from '../../../../core/api/endpoints/paymentApi'
 import { uploadApi } from '../../../../core/api/endpoints/uploadApi'
@@ -381,10 +381,19 @@ export const ApproveApplicationWizard = ({ member, onApproved, onCancel }: Appro
                       ref={proofInputRef}
                       type="file"
                       accept="image/jpeg,image/png,application/pdf"
-                      className="text-sm"
+                      className="hidden"
                       onChange={(e) => void handleProofSelected(e.target.files?.[0])}
                     />
-                    {uploadingProof && <span className="text-xs text-default-500">Uploading…</span>}
+                    <StandardButton
+                      variant="secondary"
+                      size="sm"
+                      icon={LuUpload}
+                      onClick={() => proofInputRef.current?.click()}
+                      loading={uploadingProof}
+                      loadingLabel="Uploading…"
+                    >
+                      Choose file
+                    </StandardButton>
                     {proofKey && !uploadingProof && <span className="text-xs text-success font-medium">Proof attached.</span>}
                   </div>
                   <p className="text-xs text-default-500">

@@ -202,18 +202,37 @@ public class AdminControllerTests : IClassFixture<CustomWebApplicationFactory>, 
     }
 
     [Fact]
-    public async Task GetUsers_WithRolesFilter_ReturnsUnionOfMatchingRoles()
+    public async Task GetUsers_WithASingleRoleFilter_ReturnsOnlyThatRole()
     {
-        var manager = await CreateUserAsync(RoleNames.Manager, displayName: "Role Filter Manager");
-        var accounts = await CreateUserAsync(RoleNames.Accounts, displayName: "Role Filter Accounts");
-        var member = await CreateUserAsync(RoleNames.Member, displayName: "Role Filter Member");
+        var manager = await CreateUserAsync(RoleNames.Manager, displayName: "Single Filter Manager");
+        var member = await CreateUserAsync(RoleNames.Member, displayName: "Single Filter Member");
+
+        var result = UnwrapPaged(await _controller.GetUsers(
+            page: 1, pageSize: 1000, roles: [RoleNames.Manager], cancellationToken: CancellationToken.None));
+
+        Assert.Contains(result.Items, u => u.Id == manager.Id);
+        Assert.DoesNotContain(result.Items, u => u.Id == member.Id);
+    }
+
+    /// <summary>
+    /// Selecting two roles means "holds both", so the list narrows as chips are added rather than
+    /// widening. This replaced a union - with two chips lit and a union behind them, the filter
+    /// looked like it was ignoring one of them.
+    /// </summary>
+    [Fact]
+    public async Task GetUsers_WithSeveralRolesFilter_RequiresAllOfThem()
+    {
+        var managerOnly = await CreateUserAsync(RoleNames.Manager, displayName: "Multi Filter Manager");
+        var accountsOnly = await CreateUserAsync(RoleNames.Accounts, displayName: "Multi Filter Accounts");
+        var both = await CreateUserAsync(RoleNames.Manager, displayName: "Multi Filter Both");
+        await _controller.AssignRole(both.Id, new AdminController.AssignRoleRequest(RoleNames.Accounts));
 
         var result = UnwrapPaged(await _controller.GetUsers(
             page: 1, pageSize: 1000, roles: [RoleNames.Manager, RoleNames.Accounts], cancellationToken: CancellationToken.None));
 
-        Assert.Contains(result.Items, u => u.Id == manager.Id);
-        Assert.Contains(result.Items, u => u.Id == accounts.Id);
-        Assert.DoesNotContain(result.Items, u => u.Id == member.Id);
+        Assert.Contains(result.Items, u => u.Id == both.Id);
+        Assert.DoesNotContain(result.Items, u => u.Id == managerOnly.Id);
+        Assert.DoesNotContain(result.Items, u => u.Id == accountsOnly.Id);
     }
 
     [Fact]

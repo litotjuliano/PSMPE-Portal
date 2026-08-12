@@ -112,7 +112,11 @@ export const AdminUsersTable = ({
         )}
       </div>
 
-      <div className="card-header flex flex-wrap items-center gap-3 border-t border-default-200">
+      {/* A plain toolbar, deliberately NOT a second .card-header - that class is bg-primary (navy),
+          and these controls are styled for a light surface, so the active chip (bg-primary) was
+          navy-on-navy and the inactive ones were dark grey on navy. Both were invisible, which also
+          made filtering look broken: you couldn't see which filters were on. */}
+      <div className="flex flex-wrap items-center gap-3 px-5 py-3 border-b border-default-200 bg-default-50">
         <input
           type="text"
           className="form-input max-w-xs"
@@ -120,22 +124,34 @@ export const AdminUsersTable = ({
           value={searchInput ?? ''}
           onChange={(e) => onSearchInputChange?.(e.target.value)}
         />
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {AssignableRoles.map((role) => {
             const active = roleFilter?.includes(role) ?? false
             return (
               <button
                 key={role}
                 type="button"
+                aria-pressed={active}
                 onClick={() => onRoleFilterToggle?.(role)}
                 className={`btn btn-sm whitespace-nowrap ${
-                  active ? 'bg-primary text-white' : 'border border-default-200 text-default-700'
+                  active
+                    ? 'bg-primary text-white border border-primary'
+                    : 'border border-default-300 text-default-700 bg-white hover:bg-default-100'
                 }`}
               >
                 {role}
               </button>
             )
           })}
+          {(roleFilter?.length ?? 0) > 0 && (
+            <button
+              type="button"
+              onClick={() => roleFilter?.forEach((role) => onRoleFilterToggle?.(role))}
+              className="btn btn-sm text-default-600 hover:text-default-900 underline underline-offset-2"
+            >
+              Clear
+            </button>
+          )}
         </div>
       </div>
 
@@ -292,7 +308,19 @@ export const AdminUsersTable = ({
                   {users.length === 0 && (
                     <tr>
                       <td colSpan={6} className="py-6 px-3.5 text-center text-default-500">
-                        No users yet.
+                        {/* Selecting two roles means "holds both". Most users hold exactly one, so
+                            this is the expected result rather than a fault - say so, or it reads as
+                            a broken filter. */}
+                        {(roleFilter?.length ?? 0) > 1 ? (
+                          <>
+                            No user holds all of {roleFilter!.join(' + ')}. Role filters narrow the list — select
+                            one at a time to see everyone with that role.
+                          </>
+                        ) : (roleFilter?.length ?? 0) === 1 || searchInput ? (
+                          <>No users match this filter.</>
+                        ) : (
+                          <>No users yet.</>
+                        )}
                       </td>
                     </tr>
                   )}

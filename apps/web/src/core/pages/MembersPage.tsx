@@ -88,11 +88,18 @@ export function MembersPage() {
     return () => clearTimeout(timer)
   }, [searchInput])
 
+  /**
+   * Applies the result unless `isStale()` says a newer request has superseded it. The staleness
+   * check has to live here rather than only in the caller, because this is where the state is
+   * written - a guard that only wrapped the caller's `.catch`/`.finally` would still let a late
+   * response repaint the table.
+   */
   const fetchList = useCallback(
-    async () => {
+    async (isStale: () => boolean = () => false) => {
       // The Payments tab is the one tab backed by a different entity and a different endpoint.
       if (isPayments) {
         const result = await paymentApi.getPayments({ page, pageSize: PAGE_SIZE, status: 'Submitted' })
+        if (isStale()) return
         setPayments(result.items)
         setTotalCount(result.totalCount)
         return
@@ -103,6 +110,7 @@ export function MembersPage() {
         ...(tabKey === 'all' && search ? { search } : {}),
         ...(tabKey === 'all' && statusFilter !== null ? { status: statusFilter } : {}),
       })
+      if (isStale()) return
       setMembers(result.items)
       setTotalCount(result.totalCount)
     },
@@ -130,11 +138,22 @@ export function MembersPage() {
   }, [])
 
   useEffect(() => {
+    // Guarded against out-of-order responses, same as the Users list: switching tabs quickly fires
+    // overlapping requests, and the slower one landing last would repaint with the wrong tab's rows.
+    let cancelled = false
     setLoading(true)
     setError(null)
-    fetchList()
-      .catch((err) => setError(describeError(err, 'Could not load this list. Please try again.')))
-      .finally(() => setLoading(false))
+    fetchList(() => cancelled)
+      .catch((err) => {
+        if (!cancelled) setError(describeError(err, 'Could not load this list. Please try again.'))
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false)
+      })
+
+    return () => {
+      cancelled = true
+    }
   }, [fetchList])
 
   useEffect(() => {

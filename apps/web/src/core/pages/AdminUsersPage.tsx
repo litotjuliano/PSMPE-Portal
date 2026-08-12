@@ -35,24 +35,42 @@ export function AdminUsersPage() {
     return () => clearTimeout(timer)
   }, [searchInput])
 
+  const fetchUsers = () =>
+    adminApi.getUsers({
+      page,
+      pageSize: PAGE_SIZE,
+      sortBy,
+      sortDir,
+      ...(search ? { search } : {}),
+      ...(roleFilter.length > 0 ? { roles: roleFilter } : {}),
+    })
+
+  /** Refetch for the current filters, used after a mutation. */
   const refetch = () =>
-    adminApi
-      .getUsers({
-        page,
-        pageSize: PAGE_SIZE,
-        sortBy,
-        sortDir,
-        ...(search ? { search } : {}),
-        ...(roleFilter.length > 0 ? { roles: roleFilter } : {}),
-      })
+    fetchUsers().then((result) => {
+      setUsers(result.items)
+      setTotalCount(result.totalCount)
+    })
+
+  useEffect(() => {
+    // Guarded against out-of-order responses: toggling two role chips quickly fires two requests,
+    // and without this the slower first one can land last and repaint the list with results for a
+    // filter that is no longer selected - which reads as "the filter is wrong".
+    let cancelled = false
+    setLoading(true)
+    fetchUsers()
       .then((result) => {
+        if (cancelled) return
         setUsers(result.items)
         setTotalCount(result.totalCount)
       })
+      .finally(() => {
+        if (!cancelled) setLoading(false)
+      })
 
-  useEffect(() => {
-    setLoading(true)
-    refetch().finally(() => setLoading(false))
+    return () => {
+      cancelled = true
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page, sortBy, sortDir, search, roleFilter])
 

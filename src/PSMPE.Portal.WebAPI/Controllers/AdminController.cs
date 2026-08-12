@@ -111,17 +111,33 @@ public class AdminController(
         {
             // Same shape as the superAdminIds check above: resolve matching ids via
             // UserManager.GetUsersInRoleAsync (a role isn't a queryable column on ApplicationUser),
-            // then filter the query by id. Unioned across every requested role.
-            var matchingIds = new HashSet<Guid>();
+            // then filter the query by id.
+            //
+            // Intersected, not unioned: selecting two roles means "holds both", so the filter
+            // narrows as you add chips rather than widening. Most users hold exactly one role, so
+            // a two-role selection is usually empty by design - the UI says so explicitly rather
+            // than leaving an unexplained blank table.
+            HashSet<Guid>? matchingIds = null;
             foreach (var role in roles)
             {
-                foreach (var user in await userManager.GetUsersInRoleAsync(role))
+                var idsWithRole = (await userManager.GetUsersInRoleAsync(role)).Select(u => u.Id).ToHashSet();
+                if (matchingIds is null)
                 {
-                    matchingIds.Add(user.Id);
+                    matchingIds = idsWithRole;
+                }
+                else
+                {
+                    matchingIds.IntersectWith(idsWithRole);
+                }
+
+                if (matchingIds.Count == 0)
+                {
+                    break;
                 }
             }
 
-            query = query.Where(u => matchingIds.Contains(u.Id));
+            var ids = matchingIds ?? [];
+            query = query.Where(u => ids.Contains(u.Id));
         }
 
         var descending = string.Equals(sortDir, "desc", StringComparison.OrdinalIgnoreCase);

@@ -44,13 +44,21 @@ public class AdminControllerHttpTests : IClassFixture<CustomWebApplicationFactor
         return Task.CompletedTask;
     }
 
+    /// <summary>
+    /// Two things at once: that the repeated bare-key form binds to the collection at all, and that
+    /// several roles are intersected rather than unioned. The binding half is the fragile one - it
+    /// broke once before - so it stays covered end to end over real HTTP.
+    /// </summary>
     [Fact]
-    public async Task GetUsers_OverHttp_WithRepeatedRolesQueryKey_FiltersToMatchingRoles()
+    public async Task GetUsers_OverHttp_WithRepeatedRolesQueryKey_RequiresAllOfThem()
     {
         var (_, token) = await _client.CreatePrivilegedUserAsync(_userManager, RoleNames.SuperAdmin);
-        var manager = await _client.CreatePrivilegedUserAsync(_userManager, RoleNames.Manager);
-        var accounts = await _client.CreatePrivilegedUserAsync(_userManager, RoleNames.Accounts);
-        var member = await _client.CreatePrivilegedUserAsync(_userManager, RoleNames.Member);
+        var managerOnly = await _client.CreatePrivilegedUserAsync(_userManager, RoleNames.Manager);
+        var accountsOnly = await _client.CreatePrivilegedUserAsync(_userManager, RoleNames.Accounts);
+        var both = await _client.CreatePrivilegedUserAsync(_userManager, RoleNames.Manager);
+
+        var bothUser = await _userManager.FindByIdAsync(both.UserId.ToString());
+        await _userManager.AddToRoleAsync(bothUser!, RoleNames.Accounts);
 
         // The repeated bare-key form (`roles=Manager&roles=Accounts`) is what
         // apiClient.ts's paramsSerializer (`indexes: null`) produces for a `roles: string[]` param.
@@ -63,8 +71,8 @@ public class AdminControllerHttpTests : IClassFixture<CustomWebApplicationFactor
         var result = await response.Content.ReadFromJsonAsync<PagedResult<AdminController.UserSummaryDto>>();
         var ids = result!.Items.Select(u => u.Id).ToHashSet();
 
-        Assert.Contains(manager.UserId, ids);
-        Assert.Contains(accounts.UserId, ids);
-        Assert.DoesNotContain(member.UserId, ids);
+        Assert.Contains(both.UserId, ids);
+        Assert.DoesNotContain(managerOnly.UserId, ids);
+        Assert.DoesNotContain(accountsOnly.UserId, ids);
     }
 }
