@@ -9,8 +9,8 @@ import { RegistrationTrendChart } from './RegistrationTrendChart'
 
 /**
  * Real Membership statistics dashboard, replacing the fully fake e-commerce dashboard shown to
- * Admin/staff users - see GET /api/members/stats (Members.View-gated). Not yet wired into
- * DashboardPage - a later task swaps it in and deletes the old dashboard/ folder.
+ * Admin/staff users - see GET /api/members/stats (Members.View-gated). Wired into DashboardPage,
+ * gated on `!isMember` there; the old fake dashboard/ folder it replaced has been deleted.
  */
 export function MembershipDashboard() {
   const [stats, setStats] = useState<MemberStats | null>(null)

@@ -2,11 +2,11 @@ import { Link } from 'react-router-dom'
 import { useAuth } from '../../../../core/auth/useAuth'
 
 /**
- * Trimmed, membership-flavored stand-in for the template's WelcomeUser
- * (components/dashboard/WelcomeUser.tsx) - same greeting and decorative background art, but the
- * CTA now points at /members (the primary admin action here) instead of the CMS-specific
- * /content/new. WelcomeUser itself is left untouched - a later task deletes the whole fake
- * dashboard/ folder wholesale, this just doesn't import from it.
+ * Trimmed, membership-flavored stand-in for the template's old WelcomeUser
+ * (formerly components/dashboard/WelcomeUser.tsx) - same greeting and decorative background art,
+ * but the CTA now points at /members (the primary admin action here) instead of the CMS-specific
+ * /content/new. The old fake dashboard/ folder (including WelcomeUser) has since been deleted;
+ * this component never imported from it and needed no changes when that happened.
  */
 export function MembershipWelcomeBanner() {
   const { user } = useAuth()
