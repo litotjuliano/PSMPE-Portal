@@ -1,3 +1,4 @@
+using System.Linq.Expressions;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using Microsoft.EntityFrameworkCore;
@@ -22,6 +23,17 @@ public class MemberService(IApplicationDbContext db, ICacheService? cache = null
     private const string GracePeriodConfigKey = "MembershipGracePeriodDays";
     private const int DefaultGracePeriodDays = 30;
     private const string GracePeriodCacheKey = "config:membership-grace-period-days";
+    private const int RenewalDueSoonDays = 60;
+
+    /// <summary>
+    /// Shared by GetAllAsync's pendingPrcVerificationOnly filter and GetStatsAsync's action-item
+    /// count, so the two can never silently desync - a proposed change to an already-verified value
+    /// (PendingPrcLicenseNo set), or a PRC No. that has never been reviewed at all (submitted at
+    /// registration, never since verified or changed), both need an admin decision.
+    /// </summary>
+    private static readonly Expression<Func<Member, bool>> PendingPrcVerificationPredicate =
+        m => m.PendingPrcLicenseNo != null
+            || (!m.PrcIdVerified && m.PrcLicenseNo != null && m.PendingPrcLicenseNo == null);
 
     private Task<int> GetGracePeriodDaysAsync(CancellationToken cancellationToken) =>
         // TTL-only expiry: nothing in the app writes *this* key (it's seeded at startup and changed
@@ -124,11 +136,7 @@ public class MemberService(IApplicationDbContext db, ICacheService? cache = null
 
         if (pendingPrcVerificationOnly == true)
         {
-            // Two cases: a proposed change to an already-verified value (PendingPrcLicenseNo set),
-            // or a PRC No. that has never been reviewed at all (submitted at registration, never
-            // since verified or changed) - both need an admin decision, so both show up here.
-            query = query.Where(m => m.PendingPrcLicenseNo != null
-                || (!m.PrcIdVerified && m.PrcLicenseNo != null && m.PendingPrcLicenseNo == null));
+            query = query.Where(PendingPrcVerificationPredicate);
         }
 
         if (!string.IsNullOrWhiteSpace(search))
@@ -161,8 +169,6 @@ public class MemberService(IApplicationDbContext db, ICacheService? cache = null
         var gracePeriodDays = await GetGracePeriodDaysAsync(cancellationToken);
         return new PagedResult<MemberDto>(items.Select(m => ToDto(m, gracePeriodDays)).ToList(), totalCount, page, pageSize);
     }
-
-    private const int RenewalDueSoonDays = 60;
 
     /// <summary>
     /// Aggregated counts/trends for the admin dashboard. Not cached (unlike GetGracePeriodDaysAsync
@@ -220,13 +226,7 @@ public class MemberService(IApplicationDbContext db, ICacheService? cache = null
         var byMemberType = MemberTypes.All.Select(t => new NamedCountDto(t, typeLookup.GetValueOrDefault(t))).ToList();
 
         var pendingApprovals = await baseQuery.CountAsync(m => m.ApprovedAt == null, cancellationToken);
-
-        // Same predicate GetAllAsync's pendingPrcVerificationOnly filter uses - kept in sync with it
-        // rather than reinvented, so this count always agrees with that queue's contents.
-        var pendingPrcVerification = await baseQuery.CountAsync(
-            m => m.PendingPrcLicenseNo != null
-                || (!m.PrcIdVerified && m.PrcLicenseNo != null && m.PendingPrcLicenseNo == null),
-            cancellationToken);
+        var pendingPrcVerification = await baseQuery.CountAsync(PendingPrcVerificationPredicate, cancellationToken);
 
         var today = DateOnly.FromDateTime(DateTime.UtcNow);
         var dueSoonThreshold = today.AddDays(RenewalDueSoonDays);

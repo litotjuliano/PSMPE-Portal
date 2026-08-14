@@ -5,13 +5,13 @@ namespace PSMPE.Portal.Application.Members.Dtos;
 /// fully fake e-commerce template dashboard. Reuses GetAllAsync's own submitted/exclude-user-ids
 /// filtering so the counts here always match what GetAllAsync's list would show.
 /// </summary>
+/// <param name="RegistrationTrend">Last 12 calendar months, oldest first, zero-filled for months with no submissions.</param>
+/// <param name="ByChapter">One row per Chapters.All, in that declared order, zero-filled for chapters with no members.</param>
+/// <param name="ByMemberType">One row per MemberTypes.All, in that declared order, zero-filled for types with no members.</param>
 public record MemberStatsDto(
     MemberStatusCountsDto StatusCounts,
-    /// <summary>Last 12 calendar months, oldest first, zero-filled for months with no submissions.</summary>
     IReadOnlyList<MonthlyRegistrationCountDto> RegistrationTrend,
-    /// <summary>One row per Chapters.All, in that declared order, zero-filled for chapters with no members.</summary>
     IReadOnlyList<NamedCountDto> ByChapter,
-    /// <summary>One row per MemberTypes.All, in that declared order, zero-filled for types with no members.</summary>
     IReadOnlyList<NamedCountDto> ByMemberType,
     MemberActionItemsDto ActionItems);
 

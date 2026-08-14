@@ -260,4 +260,53 @@ public class MemberServiceStatsTests
 
         Assert.Equal(0, stats.ActionItems.RenewalsDueSoon);
     }
+
+    /// <summary>Exercises the upper bound at exactly RenewalDueSoonDays (60) - the comparison is
+    /// &lt;=, so this must still count, not just values strictly inside the window.</summary>
+    [Fact]
+    public async Task GetStatsAsync_ActionItems_RenewalsDueSoon_MemberDueInExactly60Days_Counts()
+    {
+        using var db = TestDbContext.CreateInMemory();
+        var service = new MemberService(db);
+        var dueDate = DateOnly.FromDateTime(DateTime.UtcNow).AddDays(60);
+        db.Members.Add(BuildMember(status: MembershipStatus.Active, submittedAt: DateTimeOffset.UtcNow, renewalDueDate: dueDate));
+        await db.SaveChangesAsync();
+
+        var stats = await service.GetStatsAsync(null);
+
+        Assert.Equal(1, stats.ActionItems.RenewalsDueSoon);
+    }
+
+    /// <summary>Exercises the lower bound at exactly today (0 days out) - the comparison is
+    /// &gt;=, so a renewal due today must still count.</summary>
+    [Fact]
+    public async Task GetStatsAsync_ActionItems_RenewalsDueSoon_MemberDueToday_Counts()
+    {
+        using var db = TestDbContext.CreateInMemory();
+        var service = new MemberService(db);
+        var dueDate = DateOnly.FromDateTime(DateTime.UtcNow);
+        db.Members.Add(BuildMember(status: MembershipStatus.Active, submittedAt: DateTimeOffset.UtcNow, renewalDueDate: dueDate));
+        await db.SaveChangesAsync();
+
+        var stats = await service.GetStatsAsync(null);
+
+        Assert.Equal(1, stats.ActionItems.RenewalsDueSoon);
+    }
+
+    /// <summary>The lower bound must actually exclude past-due dates, not just accept everything up
+    /// to the upper bound - a member overdue by even one day is no longer "due soon", they're
+    /// already lapsed.</summary>
+    [Fact]
+    public async Task GetStatsAsync_ActionItems_RenewalsDueSoon_MemberOverdueByOneDay_DoesNotCount()
+    {
+        using var db = TestDbContext.CreateInMemory();
+        var service = new MemberService(db);
+        var dueDate = DateOnly.FromDateTime(DateTime.UtcNow).AddDays(-1);
+        db.Members.Add(BuildMember(status: MembershipStatus.Active, submittedAt: DateTimeOffset.UtcNow, renewalDueDate: dueDate));
+        await db.SaveChangesAsync();
+
+        var stats = await service.GetStatsAsync(null);
+
+        Assert.Equal(0, stats.ActionItems.RenewalsDueSoon);
+    }
 }
