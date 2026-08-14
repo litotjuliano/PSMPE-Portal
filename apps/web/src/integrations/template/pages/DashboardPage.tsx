@@ -158,13 +158,17 @@ export const DashboardPage = () => {
       <PageMeta title="Dashboard" />
       <main>
         <PageBreadcrumb title="Dashboard" />
-        <CompleteApplicationBanner />
-        {isMember && <ReceiptBanner />}
-        <ProfileCompletenessGauge />
-        {!isMember && <MembershipDashboard />}
-        <div className="grid lg:grid-cols-2 grid-cols-1 gap-5 mt-5">
-          <EventsPreviewWidget />
-          <NewsPreviewWidget />
+        <div className="grid lg:grid-cols-3 grid-cols-1 gap-5">
+          <div className="lg:col-span-2 col-span-1">
+            <CompleteApplicationBanner />
+            {isMember && <ReceiptBanner />}
+            <ProfileCompletenessGauge />
+            {!isMember && <MembershipDashboard />}
+          </div>
+          <div className="lg:col-span-1 col-span-1 flex flex-col gap-5">
+            <EventsPreviewWidget />
+            <NewsPreviewWidget />
+          </div>
         </div>
       </main>
     </>
