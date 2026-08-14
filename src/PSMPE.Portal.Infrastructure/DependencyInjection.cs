@@ -100,6 +100,7 @@ public static class DependencyInjection
         services.AddSingleton<ICacheService, MemoryCacheService>();
         services.AddSingleton<IEmailSendThrottle, MemoryCacheEmailSendThrottle>();
         services.AddScoped<IAuditLogService, AuditLogService>();
+        services.AddScoped<IErrorLogService, ErrorLogService>();
         services.AddScoped<ILogRetentionService, LogRetentionService>();
         services.AddHostedService<LogRetentionBackgroundService>();
 
