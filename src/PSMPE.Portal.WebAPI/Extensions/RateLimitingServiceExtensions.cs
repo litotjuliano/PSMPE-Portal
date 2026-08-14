@@ -30,6 +30,7 @@ public static class RateLimitingServiceExtensions
     public const string AuthIpPolicy = "auth-ip";
     public const string AuthEmailSendPolicy = "auth-email-send";
     public const string UsernameProbePolicy = "username-probe";
+    public const string ErrorReportPolicy = "error-report";
 
     private static int _proxyIpWarningLogged;
 
@@ -41,7 +42,7 @@ public static class RateLimitingServiceExtensions
     /// SMTP reputation, so it gets the same startup rejection as the rest.
     /// </summary>
     private static readonly string[] LimitSections =
-        ["AuthIp", "AuthEmailSend", "UsernameProbe", "Global", "EmailSendPerAddress"];
+        ["AuthIp", "AuthEmailSend", "UsernameProbe", "Global", "EmailSendPerAddress", "ErrorReport"];
 
     private static readonly string[] LimitSettings = ["PermitLimit", "WindowMinutes"];
 
@@ -72,6 +73,12 @@ public static class RateLimitingServiceExtensions
             AddFixedWindowPolicy(options, AuthIpPolicy, configuration, "AuthIp", 20, 5, enabled, knownNetworks);
             AddFixedWindowPolicy(options, AuthEmailSendPolicy, configuration, "AuthEmailSend", 10, 60, enabled, knownNetworks);
             AddFixedWindowPolicy(options, UsernameProbePolicy, configuration, "UsernameProbe", 30, 1, enabled, knownNetworks);
+
+            // Necessarily unauthenticated (an error can happen before login) and accepts
+            // free-text payloads - this is exactly the kind of endpoint this file exists to
+            // protect. Rejections here flow through the same shared OnRejected as every other
+            // policy, so they're audited too (auth.rate_limit.rejected, policy "error-report").
+            AddFixedWindowPolicy(options, ErrorReportPolicy, configuration, "ErrorReport", 30, 5, enabled, knownNetworks);
 
             // Applies on top of the endpoint policies above, as a blanket ceiling on everything else.
             options.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(context =>
