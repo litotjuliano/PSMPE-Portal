@@ -30,6 +30,18 @@ see Open questions/TODO for what's deferred.
   - **Always excludes drafts** (`SubmittedAt == null`) regardless of other filters — an
     in-progress, not-yet-submitted application is invisible here, not just unapproved.
   - Response: `PagedResult<MemberDto>`
+- `GET /api/members/stats` — aggregate counts for the Admin/staff Dashboard's Membership
+  statistics section
+  - Auth: `members:view` permission (same as the list endpoint above)
+  - No query parameters — always computed over the same base set `GET /api/members` uses
+    (submitted, non-draft members, with system/staff accounts excluded)
+  - Response: `MemberStatsDto` — `StatusCounts` (Pending/Active/Expired/Deactivated, all four
+    always present even at zero), `RegistrationTrend` (last 12 calendar months, oldest first,
+    zero-filled gaps), `ByChapter`/`ByMemberType` (one row per `Chapters.All`/`MemberTypes.All`
+    constant, in that declared order, zero-filled), and `ActionItems` (`PendingApprovals` —
+    `ApprovedAt == null`; `PendingPrcVerification` — same predicate as `pendingPrcVerificationOnly`
+    above; `RenewalsDueSoon` — Active members whose `RenewalDueDate` falls within 60 days)
+  - Not cached — this is one dashboard load, not a hot path like the grace-period lookup
 - `GET /api/members/{id}` — get one member profile
   - Auth: `members:view` permission
 - `GET /api/members/me` — the caller's own member profile
