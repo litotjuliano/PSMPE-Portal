@@ -3,16 +3,9 @@ import { Link } from 'react-router-dom'
 import { LuBadgeCheck, LuTriangleAlert } from 'react-icons/lu'
 import PageBreadcrumb from '../components/shared/PageBreadcrumb'
 import PageMeta from '../components/shared/PageMeta'
-import Audience from '../components/dashboard/Audience'
-import CustomerService from '../components/dashboard/CustomerService'
-import OrderStatistics from '../components/dashboard/OrderStatistics'
-import ProductOrderDetails from '../components/dashboard/ProductOrderDetails'
-import ProductOrders from '../components/dashboard/ProductOrders'
-import SalesRevenueOverview from '../components/dashboard/SalesRevenueOverview'
-import SalesThisMonth from '../components/dashboard/SalesThisMonth'
-import TopSellingProducts from '../components/dashboard/TopSellingProducts'
-import TrafficResources from '../components/dashboard/TrafficResources'
-import WelcomeUser from '../components/dashboard/WelcomeUser'
+import { MembershipDashboard } from '../components/dashboard-membership/MembershipDashboard'
+import { EventsPreviewWidget } from '../components/dashboard-previews/EventsPreviewWidget'
+import { NewsPreviewWidget } from '../components/dashboard-previews/NewsPreviewWidget'
 import { GaugeStat } from '../components/shared/GaugeStat'
 import { FilePreviewModal } from '../components/shared/FilePreviewModal'
 import { memberApi, type ProfileCompleteness } from '../../../core/api/endpoints/memberApi'
@@ -168,28 +161,11 @@ export const DashboardPage = () => {
         <CompleteApplicationBanner />
         {isMember && <ReceiptBanner />}
         <ProfileCompletenessGauge />
-        {!isMember && (
-          <>
-            <div className="grid lg:grid-cols-3 grid-cols-1 gap-5 mb-5">
-              <div className="lg:col-span-2 col-span-1">
-                <WelcomeUser />
-                <ProductOrderDetails />
-              </div>
-              <OrderStatistics />
-            </div>
-            <div className="grid lg:grid-cols-3 grid-cols-1 gap-5 mb-5">
-              <SalesRevenueOverview />
-              <TrafficResources />
-            </div>
-            <ProductOrders />
-            <div className="grid lg:grid-cols-4 grid-cols-1 gap-5">
-              <CustomerService />
-              <SalesThisMonth />
-              <TopSellingProducts />
-              <Audience />
-            </div>
-          </>
-        )}
+        {!isMember && <MembershipDashboard />}
+        <div className="grid lg:grid-cols-2 grid-cols-1 gap-5 mt-5">
+          <EventsPreviewWidget />
+          <NewsPreviewWidget />
+        </div>
       </main>
     </>
   )
