@@ -11,7 +11,9 @@ export function SystemLogsPage() {
 
   const [auditEntries, setAuditEntries] = useState<AuditLogEntry[]>([])
   const [errorEntries, setErrorEntries] = useState<ErrorLogEntry[]>([])
-  const [totalCount, setTotalCount] = useState(0)
+  const [auditTotalCount, setAuditTotalCount] = useState(0)
+  const [errorsTotalCount, setErrorsTotalCount] = useState(0)
+  const totalCount = activeTab === 'audit' ? auditTotalCount : errorsTotalCount
   const [page, setPage] = useState(1)
   const [auditLoading, setAuditLoading] = useState(true)
   const [errorsLoading, setErrorsLoading] = useState(true)
@@ -50,7 +52,7 @@ export function SystemLogsPage() {
       .then((result) => {
         if (cancelled) return
         setAuditEntries(result.items)
-        setTotalCount(result.totalCount)
+        setAuditTotalCount(result.totalCount)
       })
       .finally(() => {
         if (!cancelled) setAuditLoading(false)
@@ -76,7 +78,7 @@ export function SystemLogsPage() {
       .then((result) => {
         if (cancelled) return
         setErrorEntries(result.items)
-        setTotalCount(result.totalCount)
+        setErrorsTotalCount(result.totalCount)
       })
       .finally(() => {
         if (!cancelled) setErrorsLoading(false)

@@ -118,7 +118,7 @@ is exactly one job at exactly one interval). It runs once immediately on startup
     boundary wrapping the app, catches render-time errors via `componentDidCatch` and shows a
     generic "Something went wrong" / Reload fallback in place of a blank white screen.
   - `setupGlobalErrorHandlers` (`core/errorReporting/setupGlobalErrorHandlers.ts`), called once at
-    bootstrap in `App.tsx`, adds `window` listeners for `error` and `unhandledrejection` — the two
+    bootstrap in `main.tsx`, adds `window` listeners for `error` and `unhandledrejection` — the two
     categories a React error boundary cannot catch on its own (event handlers, timers, promise
     rejections outside render).
 

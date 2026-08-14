@@ -79,6 +79,23 @@ public class ErrorLogServiceTests : IClassFixture<CustomWebApplicationFactory>, 
     }
 
     [Fact]
+    public async Task RecordAsync_TruncatesOversizedExceptionType()
+    {
+        using var scope = _factory.Services.CreateScope();
+        var service = scope.ServiceProvider.GetRequiredService<IErrorLogService>();
+        var marker = Guid.NewGuid().ToString("N");
+
+        await service.RecordAsync(
+            ErrorSource.Backend, new string('e', 500), marker, stackTrace: null,
+            requestPath: null, requestMethod: null, url: null, userId: null,
+            userAgent: null, metadata: null);
+
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var row = Assert.Single(db.ErrorLogs, e => e.Message == marker);
+        Assert.Equal(256, row.ExceptionType!.Length);
+    }
+
+    [Fact]
     public async Task RecordAsync_WhenSaveFails_DoesNotThrow()
     {
         using var scope = _factory.Services.CreateScope();

@@ -9,6 +9,7 @@ namespace PSMPE.Portal.Infrastructure.Services;
 
 public class ErrorLogService(IApplicationDbContext db, ILogger<ErrorLogService> logger) : IErrorLogService
 {
+    private const int MaxExceptionTypeLength = 256;
     private const int MaxMessageLength = 2000;
     private const int MaxStackTraceLength = 8000;
     private const int MaxRequestPathOrUrlLength = 512;
@@ -25,7 +26,7 @@ public class ErrorLogService(IApplicationDbContext db, ILogger<ErrorLogService> 
             db.ErrorLogs.Add(new ErrorLog
             {
                 Source = source,
-                ExceptionType = exceptionType,
+                ExceptionType = Truncate(exceptionType, MaxExceptionTypeLength),
                 Message = Truncate(message, MaxMessageLength) ?? string.Empty,
                 StackTrace = Truncate(stackTrace, MaxStackTraceLength),
                 RequestPath = Truncate(requestPath, MaxRequestPathOrUrlLength),
