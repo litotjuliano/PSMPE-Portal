@@ -19,6 +19,7 @@ public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options
     public DbSet<Payment> Payments => Set<Payment>();
     public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
     public DbSet<ErrorLog> ErrorLogs => Set<ErrorLog>();
+    public DbSet<RenewalReminderLog> RenewalReminderLogs => Set<RenewalReminderLog>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {

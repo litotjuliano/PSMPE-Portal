@@ -60,6 +60,7 @@ public class MembersController(
     }
 
     [HttpGet("me")]
+    [AllowExpiredMember]
     public async Task<ActionResult<MemberDto>> GetMyProfile(CancellationToken cancellationToken)
     {
         var userId = CurrentUserId;
@@ -113,6 +114,7 @@ public class MembersController(
     }
 
     [HttpPut("me")]
+    [AllowExpiredMember]
     public async Task<ActionResult<MemberDto>> UpdateMyProfile(UpdateMyProfileRequest request, CancellationToken cancellationToken)
     {
         var userId = CurrentUserId;
@@ -144,6 +146,7 @@ public class MembersController(
     }
 
     [HttpPost("me/submit")]
+    [AllowExpiredMember]
     public async Task<IActionResult> SubmitMyProfile(CancellationToken cancellationToken)
     {
         var userId = CurrentUserId;
@@ -299,43 +302,54 @@ public class MembersController(
     }
 
     [HttpPost("me/photo")]
+    [AllowExpiredMember]
     public Task<IActionResult> UploadMyPhoto(IFormFile file, CancellationToken cancellationToken) =>
         UploadMyFileAsync(UploadKind.Photo, file, cancellationToken);
 
     [HttpPost("me/prc-id")]
+    [AllowExpiredMember]
     public Task<IActionResult> UploadMyPrcId(IFormFile file, CancellationToken cancellationToken) =>
         UploadMyFileAsync(UploadKind.PrcId, file, cancellationToken);
 
     [HttpPost("me/valid-government-id")]
+    [AllowExpiredMember]
     public Task<IActionResult> UploadMyValidGovernmentId(IFormFile file, CancellationToken cancellationToken) =>
         UploadMyFileAsync(UploadKind.ValidGovernmentId, file, cancellationToken);
 
     [HttpPost("me/signature")]
+    [AllowExpiredMember]
     public Task<IActionResult> UploadMySignature(IFormFile file, CancellationToken cancellationToken) =>
         UploadMyFileAsync(UploadKind.Signature, file, cancellationToken);
 
     [HttpPost("me/proof-of-payment")]
+    [AllowExpiredMember]
     public Task<IActionResult> UploadMyProofOfPayment(IFormFile file, CancellationToken cancellationToken) =>
         UploadMyFileAsync(UploadKind.ProofOfPayment, file, cancellationToken);
 
     [HttpGet("me/photo")]
+    [AllowExpiredMember]
     public Task<IActionResult> GetMyPhoto(CancellationToken cancellationToken) => GetMyFileAsync(UploadKind.Photo, cancellationToken);
 
     [HttpGet("me/prc-id")]
+    [AllowExpiredMember]
     public Task<IActionResult> GetMyPrcId(CancellationToken cancellationToken) => GetMyFileAsync(UploadKind.PrcId, cancellationToken);
 
     [HttpGet("me/valid-government-id")]
+    [AllowExpiredMember]
     public Task<IActionResult> GetMyValidGovernmentId(CancellationToken cancellationToken) => GetMyFileAsync(UploadKind.ValidGovernmentId, cancellationToken);
 
     [HttpGet("me/signature")]
+    [AllowExpiredMember]
     public Task<IActionResult> GetMySignature(CancellationToken cancellationToken) => GetMyFileAsync(UploadKind.Signature, cancellationToken);
 
     [HttpGet("me/proof-of-payment")]
+    [AllowExpiredMember]
     public Task<IActionResult> GetMyProofOfPayment(CancellationToken cancellationToken) => GetMyFileAsync(UploadKind.ProofOfPayment, cancellationToken);
 
     /// <summary>System-generated on approval (see Approve/IssueApprovalReceiptAsync) - there is no
     /// corresponding POST endpoint, members never upload this themselves.</summary>
     [HttpGet("me/receipt")]
+    [AllowExpiredMember]
     public Task<IActionResult> GetMyReceipt(CancellationToken cancellationToken) => GetMyFileAsync(UploadKind.Receipt, cancellationToken);
 
     [HttpGet("{id:guid}/photo")]
@@ -362,6 +376,7 @@ public class MembersController(
         GetMemberFileAsync(id, UploadKind.ProofOfPayment, cancellationToken);
 
     [HttpPost("me/certificates")]
+    [AllowExpiredMember]
     public async Task<IActionResult> UploadMyCertificate(IFormFile file, CancellationToken cancellationToken)
     {
         var userId = CurrentUserId;
@@ -376,6 +391,7 @@ public class MembersController(
     }
 
     [HttpGet("me/certificates")]
+    [AllowExpiredMember]
     public async Task<ActionResult<IReadOnlyList<MemberCertificateDto>>> GetMyCertificates(CancellationToken cancellationToken)
     {
         var userId = CurrentUserId;
@@ -388,6 +404,7 @@ public class MembersController(
     }
 
     [HttpGet("me/certificates/{certificateId:guid}")]
+    [AllowExpiredMember]
     public async Task<IActionResult> GetMyCertificate(Guid certificateId, CancellationToken cancellationToken)
     {
         var userId = CurrentUserId;
@@ -401,6 +418,7 @@ public class MembersController(
     }
 
     [HttpDelete("me/certificates/{certificateId:guid}")]
+    [AllowExpiredMember]
     public async Task<IActionResult> DeleteMyCertificate(Guid certificateId, CancellationToken cancellationToken)
     {
         var userId = CurrentUserId;
@@ -427,6 +445,7 @@ public class MembersController(
     }
 
     [HttpGet("me/completeness")]
+    [AllowExpiredMember]
     public async Task<ActionResult<ProfileCompletenessDto>> GetMyProfileCompleteness(CancellationToken cancellationToken)
     {
         var userId = CurrentUserId;

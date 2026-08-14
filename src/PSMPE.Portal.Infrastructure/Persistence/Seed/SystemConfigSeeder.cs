@@ -14,7 +14,7 @@ public static class SystemConfigSeeder
         ("SiteName", "PSMPE Portal", "Display name shown in the admin UI and page titles."),
         ("AllowPublicRegistration", "false", "Whether new users can self-register via /api/auth/register."),
         ("DefaultTheme", "light", "Default UI theme for new users."),
-        ("MembershipGracePeriodDays", "30", "Days after RenewalDueDate a member keeps limited portal access before being treated as fully Expired."),
+        ("MembershipGracePeriodDays", "7", "Days after RenewalDueDate a member keeps limited portal access before being treated as fully Expired."),
         .. MembershipFeeKeys.All.Select(f => (f.Key, f.Default.ToString(CultureInfo.InvariantCulture), f.Description)),
     ];
 

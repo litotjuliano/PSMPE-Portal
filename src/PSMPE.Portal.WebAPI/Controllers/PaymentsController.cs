@@ -33,6 +33,7 @@ public class PaymentsController(
 
     /// <summary>The caller's own payment history, including rejected ones and why.</summary>
     [HttpGet("me")]
+    [AllowExpiredMember]
     public async Task<ActionResult<IReadOnlyList<PaymentDto>>> GetMine(CancellationToken cancellationToken)
     {
         var userId = CurrentUserId;
@@ -53,6 +54,7 @@ public class PaymentsController(
         Ok(await paymentService.GetForMemberAsync(memberId, cancellationToken));
 
     [HttpPost("me")]
+    [AllowExpiredMember]
     public async Task<ActionResult<PaymentDto>> Submit(SubmitPaymentRequest request, CancellationToken cancellationToken)
     {
         var userId = CurrentUserId;
@@ -77,6 +79,7 @@ public class PaymentsController(
     /// from Submit because it's multipart - the same split the member document uploads already use.
     /// </summary>
     [HttpPost("{id:guid}/proof")]
+    [AllowExpiredMember]
     public async Task<IActionResult> UploadProof(Guid id, IFormFile file, CancellationToken cancellationToken)
     {
         var userId = CurrentUserId;
@@ -132,6 +135,7 @@ public class PaymentsController(
 
     /// <summary>Serves a payment's proof. Members may only fetch their own; staff need members:view.</summary>
     [HttpGet("{id:guid}/proof")]
+    [AllowExpiredMember]
     public async Task<IActionResult> GetProof(Guid id, CancellationToken cancellationToken)
     {
         var userId = CurrentUserId;
@@ -189,6 +193,7 @@ public class PaymentsController(
     /// <summary>Readable by any authenticated caller - the registration wizard shows the total to
     /// an applicant who has no permissions at all yet.</summary>
     [HttpGet("fees")]
+    [AllowExpiredMember]
     public async Task<ActionResult<MembershipFeesDto>> GetFees(CancellationToken cancellationToken) =>
         Ok(await paymentService.GetFeesAsync(cancellationToken));
 

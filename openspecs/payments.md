@@ -5,13 +5,15 @@
 Membership payments — the one-time fee at registration and annual renewal dues. Members declare
 what they paid and attach proof; an admin verifies or rejects it.
 
-**Verifying a payment is the only thing in the product that sets `MembershipStatus.Active` or moves
-`RenewalDueDate`.** Both used to be manual admin edits on the member record, which `members.md`
+**Verifying a payment sets `MembershipStatus.Active` and moves `RenewalDueDate`; the daily
+`MembershipLifecycleService` job is the only other thing that changes `Status`, flipping a lapsed
+member to `Expired`.** Both used to be manual admin edits on the member record, which `members.md`
 recorded as a deferred gap: *"Once a Payments domain exists, it should be the thing that flips
 `Status`, not manual admin edits."*
 
 Renewals did not exist at all before this: no member-facing UI, nothing advanced the due date, and
-`MembershipStatus.Expired` was never set by anything.
+`MembershipStatus.Expired` was never set by anything. See "Membership lifecycle" below for the
+reminder emails, grace period, and auto-expiry now built on top of it.
 
 ## Endpoints
 
@@ -157,16 +159,40 @@ reading them itself, so it stays a pure renderer with no database dependency.
   so any key added after the first deployment would never appear on an existing database. Each
   missing key is now filled independently and admin-edited values are left alone.
 
-## Expiry is computed, not scheduled
+## Membership lifecycle: reminders, grace period, and auto-expiry
 
-`MemberDto.IsExpired` is derived (past `RenewalDueDate` plus the grace period), alongside the
-existing `IsInGracePeriod`. The **stored** `Status` is left to the admin.
+The grace period is 7 days (`SystemConfig` key `MembershipGracePeriodDays`), after which a lapsed
+`Active` member is auto-transitioned to `Expired`. `MembershipLifecycleService`
+(`PSMPE.Portal.Infrastructure`), wrapped by `MembershipLifecycleBackgroundService` — a daily
+`PeriodicTimer`, the second scheduled job in this codebase after `LogRetentionBackgroundService`,
+same shape (runs once immediately on startup, then every 24h, its own DI scope per tick) — does two
+things on every tick:
 
-There is no background-job infrastructure in this product — no `IHostedService`, no scheduler — so
-an automatic `Active → Expired` transition has nothing to run on. Surfacing it as a derived flag
-keeps the UI honest today without pretending a scheduler exists, and without a write-on-read that
-would make a GET mutate data. **Adding the transition is a follow-up that requires a hosted
-service.**
+- **Sends renewal reminder emails** at fixed points: 30 days before `RenewalDueDate`, 7 days
+  before, on the due date itself, and once on the first day of the grace period (a single email,
+  not a daily repeat throughout the window). Idempotent via `RenewalReminderLog`
+  (`MemberId`/`ReminderType`/`ForRenewalDueDate`, unique-indexed) — keying on the due date the
+  reminder was sent *for*, not the date it was sent *on*, is what lets reminders fire again
+  automatically each renewal cycle with no cleanup job. A failed send for one member never blocks
+  the rest of the run.
+- **Auto-flips `Status: Active → Expired`** for every member whose `RenewalDueDate` plus the grace
+  period has passed, as a single bulk `ExecuteUpdateAsync` statement — not a per-row loop, so it
+  scales with membership size regardless of how many members lapse on a given day.
+
+`MemberDto.IsExpired`/`IsInGracePeriod` stay derived from `RenewalDueDate` (not read from `Status`)
+so they're accurate in the hours between ticks, not just after the daily job runs; they exclude
+`Deactivated` members, since deactivation is a distinct admin action, not a lapsed-payment state.
+`ComputeIsExpired`/`ComputeIsInGracePeriod` in `MemberService` are the single implementation both
+the member-facing DTO and (indirectly, via the same grace-period config) the background job rely
+on.
+
+**Past the grace period, a member's portal access is restricted** to an explicit allowlist of
+self-service endpoints — see `members.md`'s Authorization rules for the full mechanism
+(`MembershipAccessMiddleware`, `[AllowExpiredMember]`). Paying a renewal (`POST /api/payments/me`
+→ `POST /{id}/verify`) is itself always reachable, since `PaymentVerification.Apply` unconditionally
+sets `Status = Active` on every verify — a member flipped to `Expired` by the nightly job is
+restored to full access the moment their payment is verified, whether that happens the same day or
+months later.
 
 ## Admin UI
 
@@ -192,7 +218,6 @@ set yet. Paying early is fine; showing it eleven months out would be noise.
 
 ## Not built
 
-- **Automatic `Status → Expired`** — needs a scheduler (above).
 - **Online payment gateway.** Members upload proof of an out-of-band transfer.
 - **Partial payments, refunds, invoices.** One payment covers one period.
 - **Amount validation against the configured fee.** Under- and overpayments both happen; the admin

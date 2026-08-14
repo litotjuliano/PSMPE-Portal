@@ -103,6 +103,8 @@ public static class DependencyInjection
         services.AddScoped<IErrorLogService, ErrorLogService>();
         services.AddScoped<ILogRetentionService, LogRetentionService>();
         services.AddHostedService<LogRetentionBackgroundService>();
+        services.AddScoped<IMembershipLifecycleService, MembershipLifecycleService>();
+        services.AddHostedService<MembershipLifecycleBackgroundService>();
 
         // Falls back to logging-only when no real SMTP host is configured, so local dev keeps
         // working without real credentials - see ConsoleEmailSender / SmtpEmailSender.

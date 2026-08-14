@@ -2,6 +2,7 @@ import { createBrowserRouter, Navigate } from 'react-router-dom'
 import { AppShell, DashboardPage, LoginPage } from '../../integrations/template'
 import { ProtectedRoute } from '../auth/ProtectedRoute'
 import { DataPrivacyConsentGate } from '../auth/DataPrivacyConsentGate'
+import { ExpiredMembershipGate } from '../auth/ExpiredMembershipGate'
 import { ContentListPage } from '../pages/ContentListPage'
 import { ContentEditPage } from '../pages/ContentEditPage'
 import { AdminUsersPage } from '../pages/AdminUsersPage'
@@ -34,32 +35,39 @@ export const router = createBrowserRouter([
         element: <DataPrivacyConsentGate />,
         children: [
           {
-            element: <AppShell />,
+            // Consent resolves first, then membership access - a fully Expired member is
+            // redirected to /profile from any other route. See ExpiredMembershipGate.
+            element: <ExpiredMembershipGate />,
             children: [
-              { path: '/', element: <DashboardPage /> },
-              { path: '/content', element: <ContentListPage /> },
-              { path: '/content/:id', element: <ContentEditPage /> },
-              { path: '/profile', element: <MyProfilePage /> },
               {
-                element: <ProtectedRoute requiredRoles={[Roles.Admin, Roles.SuperAdmin, Roles.Approval]} />,
+                element: <AppShell />,
                 children: [
-                  { path: '/admin/users', element: <AdminUsersPage /> },
-                  { path: '/admin/users/:id', element: <AdminUserFormPage /> },
-                  { path: '/admin/roles', element: <AdminRolesPage /> },
-                  { path: '/members', element: <MembersPage /> },
-                  { path: '/members/:id', element: <MemberFormPage /> },
-                  // Both queues folded into MembersPage's tabs. Kept as redirects rather than
-                  // deleted so bookmarks and any older in-app link still land somewhere useful.
-                  { path: '/membership-approvals', element: <Navigate to="/members?queue=approval" replace /> },
-                  { path: '/prc-verifications', element: <Navigate to="/members?queue=rmp" replace /> },
-                  { path: '/membership-fees', element: <MembershipFeesPage /> },
-                  { path: '/notifications', element: <NotificationsPage /> },
-                ],
-              },
-              {
-                element: <ProtectedRoute requiredRoles={[Roles.SuperAdmin]} />,
-                children: [
-                  { path: '/admin/system-logs', element: <SystemLogsPage /> },
+                  { path: '/', element: <DashboardPage /> },
+                  { path: '/content', element: <ContentListPage /> },
+                  { path: '/content/:id', element: <ContentEditPage /> },
+                  { path: '/profile', element: <MyProfilePage /> },
+                  {
+                    element: <ProtectedRoute requiredRoles={[Roles.Admin, Roles.SuperAdmin, Roles.Approval]} />,
+                    children: [
+                      { path: '/admin/users', element: <AdminUsersPage /> },
+                      { path: '/admin/users/:id', element: <AdminUserFormPage /> },
+                      { path: '/admin/roles', element: <AdminRolesPage /> },
+                      { path: '/members', element: <MembersPage /> },
+                      { path: '/members/:id', element: <MemberFormPage /> },
+                      // Both queues folded into MembersPage's tabs. Kept as redirects rather than
+                      // deleted so bookmarks and any older in-app link still land somewhere useful.
+                      { path: '/membership-approvals', element: <Navigate to="/members?queue=approval" replace /> },
+                      { path: '/prc-verifications', element: <Navigate to="/members?queue=rmp" replace /> },
+                      { path: '/membership-fees', element: <MembershipFeesPage /> },
+                      { path: '/notifications', element: <NotificationsPage /> },
+                    ],
+                  },
+                  {
+                    element: <ProtectedRoute requiredRoles={[Roles.SuperAdmin]} />,
+                    children: [
+                      { path: '/admin/system-logs', element: <SystemLogsPage /> },
+                    ],
+                  },
                 ],
               },
             ],
