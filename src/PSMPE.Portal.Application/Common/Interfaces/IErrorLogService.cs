@@ -12,4 +12,8 @@ public interface IErrorLogService
         ErrorSource source, string? exceptionType, string message, string? stackTrace,
         string? requestPath, string? requestMethod, string? url, Guid? userId, string? userAgent,
         string? metadata, CancellationToken cancellationToken = default);
+
+    Task<PagedResult<ErrorLogDto>> GetPagedAsync(
+        int page, int pageSize, string? search, ErrorSource? source, DateTimeOffset? from, DateTimeOffset? to,
+        CancellationToken cancellationToken = default);
 }

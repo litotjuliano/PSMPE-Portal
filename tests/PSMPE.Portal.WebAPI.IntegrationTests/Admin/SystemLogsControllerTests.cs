@@ -99,4 +99,76 @@ public class SystemLogsControllerTests : IClassFixture<CustomWebApplicationFacto
         Assert.Equal(System.Text.Json.JsonValueKind.Null, item.GetProperty("actorEmail").ValueKind);
         Assert.Equal(System.Text.Json.JsonValueKind.Null, item.GetProperty("actorUserId").ValueKind);
     }
+
+    [Fact]
+    public async Task GetErrorLog_WithoutSuperAdmin_Returns403()
+    {
+        using var setupScope = _factory.Services.CreateScope();
+        var userManager = setupScope.ServiceProvider.GetRequiredService<UserManager<ApplicationUser>>();
+        var (_, token) = await _client.CreatePrivilegedUserAsync(userManager, RoleNames.Admin);
+
+        var response = await _client.SendAsync(
+            new HttpRequestMessage(HttpMethod.Get, "/api/admin/error-log").WithBearer(token));
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task GetErrorLog_AsSuperAdmin_ResolvesUserEmail()
+    {
+        using var setupScope = _factory.Services.CreateScope();
+        var userManager = setupScope.ServiceProvider.GetRequiredService<UserManager<ApplicationUser>>();
+        var (_, token) = await _client.CreatePrivilegedUserAsync(userManager, RoleNames.SuperAdmin);
+
+        var errorUser = new ApplicationUser { UserName = "erroruser@example.com", Email = "erroruser@example.com", DisplayName = "Error User", EmailConfirmed = true };
+        await userManager.CreateAsync(errorUser, "Password123!");
+
+        var marker = Guid.NewGuid().ToString("N");
+        using (var seedScope = _factory.Services.CreateScope())
+        {
+            var db = seedScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            db.ErrorLogs.Add(new ErrorLog { Source = ErrorSource.Backend, Message = marker, UserId = errorUser.Id });
+            await db.SaveChangesAsync();
+        }
+
+        var response = await _client.SendAsync(
+            new HttpRequestMessage(HttpMethod.Get, "/api/admin/error-log").WithBearer(token));
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var body = await response.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>();
+        // This is currently the only test in this class that seeds ErrorLog rows, but find by the
+        // marker message rather than assuming index [0], matching the discipline used above for
+        // AuditLog rows once more than one seeding test existed in this class.
+        var item = body.GetProperty("items").EnumerateArray()
+            .Single(i => i.GetProperty("message").GetString() == marker);
+        Assert.Equal("erroruser@example.com", item.GetProperty("userEmail").GetString());
+    }
+
+    [Fact]
+    public async Task GetErrorLog_AsSuperAdmin_NullUser_ReturnsNullUserEmail()
+    {
+        using var setupScope = _factory.Services.CreateScope();
+        var userManager = setupScope.ServiceProvider.GetRequiredService<UserManager<ApplicationUser>>();
+        var (_, token) = await _client.CreatePrivilegedUserAsync(userManager, RoleNames.SuperAdmin);
+
+        var marker = Guid.NewGuid().ToString("N");
+        using (var seedScope = _factory.Services.CreateScope())
+        {
+            var db = seedScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            db.ErrorLogs.Add(new ErrorLog { Source = ErrorSource.Backend, Message = marker, UserId = null });
+            await db.SaveChangesAsync();
+        }
+
+        var response = await _client.SendAsync(
+            new HttpRequestMessage(HttpMethod.Get, "/api/admin/error-log").WithBearer(token));
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var body = await response.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>();
+        // Now that a second ErrorLog-seeding test exists in this class, find this test's own row by
+        // its marker message rather than assuming index [0], same discipline as the AuditLog tests.
+        var item = body.GetProperty("items").EnumerateArray()
+            .Single(i => i.GetProperty("message").GetString() == marker);
+        Assert.Equal(System.Text.Json.JsonValueKind.Null, item.GetProperty("userEmail").ValueKind);
+        Assert.Equal(System.Text.Json.JsonValueKind.Null, item.GetProperty("userId").ValueKind);
+    }
 }

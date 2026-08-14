@@ -5,6 +5,7 @@ using Microsoft.EntityFrameworkCore;
 using PSMPE.Portal.Application.Common.Interfaces;
 using PSMPE.Portal.Application.Common.Models;
 using PSMPE.Portal.Domain.Entities;
+using PSMPE.Portal.Domain.Enums;
 using PSMPE.Portal.Infrastructure.Authorization.Policies;
 
 namespace PSMPE.Portal.WebAPI.Controllers;
@@ -19,6 +20,7 @@ namespace PSMPE.Portal.WebAPI.Controllers;
 [Authorize(Policy = PolicyNames.RequireSuperAdmin)]
 public class SystemLogsController(
     IAuditLogService auditLogService,
+    IErrorLogService errorLogService,
     UserManager<ApplicationUser> userManager) : ControllerBase
 {
     public record AuditLogEntryDto(
@@ -56,5 +58,28 @@ public class SystemLogsController(
         return await userManager.Users
             .Where(u => ids.Contains(u.Id))
             .ToDictionaryAsync(u => u.Id, u => u.Email ?? string.Empty);
+    }
+
+    public record ErrorLogEntryDto(
+        Guid Id, ErrorSource Source, string? ExceptionType, string Message, string? StackTrace,
+        string? RequestPath, string? RequestMethod, string? Url, Guid? UserId, string? UserEmail,
+        string? UserAgent, string? Metadata, DateTimeOffset CreatedAt);
+
+    [HttpGet("error-log")]
+    public async Task<ActionResult<PagedResult<ErrorLogEntryDto>>> GetErrorLog(
+        int page = 1, int pageSize = 20, string? search = null, ErrorSource? source = null,
+        DateTimeOffset? from = null, DateTimeOffset? to = null, CancellationToken cancellationToken = default)
+    {
+        var result = await errorLogService.GetPagedAsync(page, pageSize, search, source, from, to, cancellationToken);
+        var userEmails = await ResolveEmailsAsync(result.Items.Select(e => e.UserId));
+
+        var entries = result.Items
+            .Select(e => new ErrorLogEntryDto(
+                e.Id, e.Source, e.ExceptionType, e.Message, e.StackTrace, e.RequestPath, e.RequestMethod,
+                e.Url, e.UserId, e.UserId is { } userId ? userEmails.GetValueOrDefault(userId) : null,
+                e.UserAgent, e.Metadata, e.CreatedAt))
+            .ToList();
+
+        return Ok(new PagedResult<ErrorLogEntryDto>(entries, result.TotalCount, result.Page, result.PageSize));
     }
 }

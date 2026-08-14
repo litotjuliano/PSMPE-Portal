@@ -1,5 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
 using PSMPE.Portal.Application.Common.Interfaces;
+using PSMPE.Portal.Domain.Entities;
 using PSMPE.Portal.Domain.Enums;
 using PSMPE.Portal.Infrastructure.Persistence;
 using Xunit;
@@ -89,5 +90,73 @@ public class ErrorLogServiceTests : IClassFixture<CustomWebApplicationFactory>, 
             service.RecordAsync(ErrorSource.Backend, null, "boom", null, null, null, null, null, null, null));
 
         Assert.Null(exception);
+    }
+
+    [Fact]
+    public async Task GetPagedAsync_FiltersBySourceAndSearchesMessage()
+    {
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var marker = Guid.NewGuid().ToString("N");
+        db.ErrorLogs.AddRange(
+            new ErrorLog { Source = ErrorSource.Backend, Message = marker + " Null reference in MemberService" },
+            new ErrorLog { Source = ErrorSource.Frontend, Message = "Cannot read properties of undefined " + marker });
+        await db.SaveChangesAsync();
+        var service = scope.ServiceProvider.GetRequiredService<IErrorLogService>();
+
+        // Source + marker together narrow to exactly the Backend row seeded above, regardless of
+        // how many other ErrorLog rows accumulate from other tests sharing this fixture's database.
+        var backendOnly = await service.GetPagedAsync(1, 20, search: marker, source: ErrorSource.Backend, from: null, to: null);
+        Assert.Single(backendOnly.Items);
+
+        // "undefined <marker>" as one contiguous substring only appears in the Frontend row above -
+        // the Backend row's marker isn't adjacent to "undefined", and no other test's message can
+        // contain this specific marker.
+        var searched = await service.GetPagedAsync(1, 20, search: "undefined " + marker, source: null, from: null, to: null);
+        Assert.Single(searched.Items);
+    }
+
+    [Fact]
+    public async Task GetPagedAsync_OrdersNewestFirst()
+    {
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var marker = Guid.NewGuid().ToString("N");
+        var now = DateTimeOffset.UtcNow;
+        db.ErrorLogs.AddRange(
+            new ErrorLog { Source = ErrorSource.Backend, Message = $"{marker}-oldest", CreatedAt = now.AddDays(-3) },
+            new ErrorLog { Source = ErrorSource.Backend, Message = $"{marker}-middle", CreatedAt = now.AddDays(-2) },
+            new ErrorLog { Source = ErrorSource.Backend, Message = $"{marker}-newest", CreatedAt = now.AddDays(-1) });
+        await db.SaveChangesAsync();
+        var service = scope.ServiceProvider.GetRequiredService<IErrorLogService>();
+
+        // search: marker scopes results to just this test's own seeded rows, since other tests'
+        // ErrorLog rows share this fixture's database and source/from/to alone wouldn't isolate.
+        var result = await service.GetPagedAsync(page: 1, pageSize: 20, search: marker, source: null, from: null, to: null);
+
+        Assert.Equal(3, result.TotalCount);
+        Assert.Equal($"{marker}-newest", result.Items[0].Message);
+        Assert.Equal($"{marker}-oldest", result.Items[2].Message);
+    }
+
+    [Fact]
+    public async Task GetPagedAsync_FiltersByDateRange()
+    {
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var marker = Guid.NewGuid().ToString("N");
+        var now = DateTimeOffset.UtcNow;
+        db.ErrorLogs.AddRange(
+            new ErrorLog { Source = ErrorSource.Backend, Message = $"{marker}-in-range-1", CreatedAt = now.AddDays(-1) },
+            new ErrorLog { Source = ErrorSource.Backend, Message = $"{marker}-in-range-2", CreatedAt = now.AddDays(-2) },
+            new ErrorLog { Source = ErrorSource.Backend, Message = $"{marker}-out-of-range", CreatedAt = now.AddDays(-3) });
+        await db.SaveChangesAsync();
+        var service = scope.ServiceProvider.GetRequiredService<IErrorLogService>();
+
+        var result = await service.GetPagedAsync(
+            page: 1, pageSize: 20, search: marker, source: null,
+            from: now.AddDays(-2).AddHours(-1), to: now.AddDays(-1).AddHours(1));
+
+        Assert.Equal(2, result.TotalCount); // excludes this test's own -3 day row
     }
 }

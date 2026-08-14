@@ -1,5 +1,7 @@
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using PSMPE.Portal.Application.Common.Interfaces;
+using PSMPE.Portal.Application.Common.Models;
 using PSMPE.Portal.Domain.Entities;
 using PSMPE.Portal.Domain.Enums;
 
@@ -45,4 +47,50 @@ public class ErrorLogService(IApplicationDbContext db, ILogger<ErrorLogService> 
 
     private static string? Truncate(string? value, int maxLength) =>
         value is null ? null : value.Length <= maxLength ? value : value[..maxLength];
+
+    public async Task<PagedResult<ErrorLogDto>> GetPagedAsync(
+        int page, int pageSize, string? search, ErrorSource? source, DateTimeOffset? from, DateTimeOffset? to,
+        CancellationToken cancellationToken = default)
+    {
+        page = Math.Max(page, 1);
+        pageSize = Math.Clamp(pageSize, 1, 100);
+
+        IQueryable<ErrorLog> query = db.ErrorLogs.AsNoTracking();
+
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var normalized = search.Trim().ToLower();
+            query = query.Where(e =>
+                e.Message.ToLower().Contains(normalized)
+                || (e.ExceptionType != null && e.ExceptionType.ToLower().Contains(normalized))
+                || (e.Url != null && e.Url.ToLower().Contains(normalized))
+                || (e.RequestPath != null && e.RequestPath.ToLower().Contains(normalized)));
+        }
+
+        if (source is not null)
+        {
+            query = query.Where(e => e.Source == source);
+        }
+
+        if (from is not null)
+        {
+            query = query.Where(e => e.CreatedAt >= from);
+        }
+
+        if (to is not null)
+        {
+            query = query.Where(e => e.CreatedAt <= to);
+        }
+
+        query = query.OrderByDescending(e => e.CreatedAt);
+
+        var totalCount = await query.CountAsync(cancellationToken);
+        var items = await query.Skip((page - 1) * pageSize).Take(pageSize)
+            .Select(e => new ErrorLogDto(
+                e.Id, e.Source, e.ExceptionType, e.Message, e.StackTrace, e.RequestPath, e.RequestMethod,
+                e.Url, e.UserId, e.UserAgent, e.Metadata, e.CreatedAt))
+            .ToListAsync(cancellationToken);
+
+        return new PagedResult<ErrorLogDto>(items, totalCount, page, pageSize);
+    }
 }
