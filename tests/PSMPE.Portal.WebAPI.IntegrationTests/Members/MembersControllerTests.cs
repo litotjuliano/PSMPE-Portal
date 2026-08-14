@@ -819,7 +819,9 @@ public class MembersControllerTests : IClassFixture<CustomWebApplicationFactory>
     }
 
     [Theory]
-    [InlineData(-10, true)]
+    // Grace period is 7 days (MembershipGracePeriod.DefaultDays) - -3 is inside the window, -40 is
+    // well past it, +10 hasn't lapsed yet.
+    [InlineData(-3, true)]
     [InlineData(-40, false)]
     [InlineData(10, false)]
     public async Task GetById_IsInGracePeriod_ReflectsRenewalDueDateWindow(int dueDateOffsetDays, bool expectedInGrace)

@@ -18,6 +18,7 @@ public class TestDbContext(DbContextOptions<TestDbContext> options) : DbContext(
     public DbSet<Payment> Payments => Set<Payment>();
     public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
     public DbSet<ErrorLog> ErrorLogs => Set<ErrorLog>();
+    public DbSet<RenewalReminderLog> RenewalReminderLogs => Set<RenewalReminderLog>();
 
     public static TestDbContext CreateInMemory()
     {

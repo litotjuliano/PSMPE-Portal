@@ -63,8 +63,10 @@ public record MemberDto(
     DateTimeOffset? ApprovedAt,
     DateTimeOffset? SubmittedAt,
     bool IsInGracePeriod,
-    /// <summary>Past the renewal date and past the grace period. Derived, not stored - see
-    /// MemberService.ComputeIsExpired for why there is no automatic Status transition.</summary>
+    /// <summary>Past the renewal date and past the grace period. Status auto-transitions to Expired
+    /// once a day via MembershipLifecycleService; this flag is still derived from RenewalDueDate
+    /// rather than trusted from Status alone so it stays same-day-accurate in the hours between
+    /// ticks. See MemberService.ComputeIsExpired.</summary>
     bool IsExpired,
     DateTimeOffset CreatedAt,
     DateTimeOffset? UpdatedAt);

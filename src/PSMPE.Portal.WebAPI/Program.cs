@@ -115,6 +115,8 @@ app.UseRateLimiter();
 app.UseAuthentication();
 app.UseAuthorization();
 
+app.UseMiddleware<MembershipAccessMiddleware>();
+
 app.MapControllers();
 
 // Unauthenticated liveness probe used by the DigitalOcean App Platform health check

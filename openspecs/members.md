@@ -532,6 +532,17 @@ repeat call doesn't regenerate/resend):
 - Self-service (`/me` endpoints) requires no permission claim, only authentication — anyone can
   view/edit their *own* profile once linked, roles/permissions only gate viewing/editing *other*
   people's profiles.
+- **A fully Expired member is restricted to an explicit allowlist of self-service endpoints** —
+  `MembershipAccessMiddleware` (`PSMPE.Portal.WebAPI`) blocks every other endpoint with `403
+  MEMBERSHIP_EXPIRED` once `Status == Expired`. The allowlist is every `/me`-prefixed action on this
+  controller, plus `AccountController`'s two self-service actions and `PaymentsController`'s
+  `me`/`fees`/`proof` endpoints (see `payments.md`) — exactly what a member needs to view their
+  profile and pay their way back to `Active`. Marked with `[AllowExpiredMember]`, a plain marker
+  attribute the middleware reads off endpoint metadata (not an authorization policy). Staff/admin
+  roles (any role other than exactly `Member`) are never gated, and Active/grace-period members are
+  unaffected. The frontend (`ExpiredMembershipGate`) mirrors this by redirecting an Expired member
+  to `/profile` and hiding the rest of the nav, but that is UX only — the middleware is the actual
+  enforcement.
 
 ## Open questions / TODO
 
@@ -543,9 +554,10 @@ repeat call doesn't regenerate/resend):
   style), not a database-editable entity — no mockup or requirement showed chapter CRUD.
   Revisit as a real entity+table if admins ever need to add/rename chapters without a deploy.
 - ~~**Payments/Dues domain doesn't exist yet**~~ — **built**, see `payments.md`. Verifying a payment
-  is now the only thing that sets `Status = Active` or moves `RenewalDueDate`. What remains deferred
-  from it: automatic `Active → Expired` (needs a scheduler this product doesn't have — `IsExpired`
-  is computed and surfaced instead), an online payment gateway, and refunds/partial payments.
+  is now the only thing that sets `Status = Active` or moves `RenewalDueDate`. `Status` also now
+  auto-transitions `Active → Expired` once the grace period ends (`MembershipLifecycleService`,
+  see `payments.md`). What remains deferred: an online payment gateway, and refunds/partial
+  payments.
 - No audit log for profile/status changes yet (same gap noted for role changes in `roles.md`) —
   `AuditLog` exists for other events (rate-limit rejections, lockouts, membership approvals), see
   `system-logs.md`; profile/status changes just aren't wired into it.

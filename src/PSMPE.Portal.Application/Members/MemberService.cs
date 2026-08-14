@@ -20,9 +20,6 @@ public class MemberService(IApplicationDbContext db, ICacheService? cache = null
     // ContentService for the same pattern/rationale, and docs/caching-strategy.md.
     private ICacheService Cache => cache ?? NoOpCacheService.Instance;
 
-    private const string GracePeriodConfigKey = "MembershipGracePeriodDays";
-    private const int DefaultGracePeriodDays = 30;
-    private const string GracePeriodCacheKey = "config:membership-grace-period-days";
     private const int RenewalDueSoonDays = 60;
 
     /// <summary>
@@ -35,25 +32,20 @@ public class MemberService(IApplicationDbContext db, ICacheService? cache = null
         m => m.PendingPrcLicenseNo != null
             || (!m.PrcIdVerified && m.PrcLicenseNo != null && m.PendingPrcLicenseNo == null);
 
-    private Task<int> GetGracePeriodDaysAsync(CancellationToken cancellationToken) =>
-        // TTL-only expiry: nothing in the app writes *this* key (it's seeded at startup and changed
-        // only by editing the row directly). PaymentService.UpdateFeesAsync is now a write path to
-        // SystemConfigs, but it evicts its own cache entry - if a grace-period editor is ever added
-        // it must do the same here.
-        Cache.GetOrCreateAsync(GracePeriodCacheKey, "Cache:GracePeriodDurationSeconds", 600, async () =>
-        {
-            var config = await db.SystemConfigs.AsNoTracking()
-                .FirstOrDefaultAsync(c => c.Key == GracePeriodConfigKey, cancellationToken);
-            return config is not null && int.TryParse(config.Value, out var days) ? days : DefaultGracePeriodDays;
-        });
-
     /// <summary>
     /// A member keeps limited portal access for GracePeriodDays after RenewalDueDate lapses,
     /// rather than losing access the instant it passes.
+    ///
+    /// Computed purely from RenewalDueDate rather than gated on Status == Active, so this stays
+    /// correct both before and after MembershipLifecycleService's daily job flips a lapsed member's
+    /// Status to Expired - Status is no longer a reliable signal of "hasn't lapsed yet" once that
+    /// job exists. Deactivated is excluded explicitly: it's a distinct admin action (not a
+    /// lapsed-payment state), so a Deactivated member with a stale due date must not show the same
+    /// "renew now" messaging a normal lapsed member gets.
     /// </summary>
     private static bool ComputeIsInGracePeriod(Member m, int gracePeriodDays)
     {
-        if (m.Status != MembershipStatus.Active || m.RenewalDueDate is null)
+        if (m.Status == MembershipStatus.Deactivated || m.RenewalDueDate is null)
         {
             return false;
         }
@@ -68,14 +60,15 @@ public class MemberService(IApplicationDbContext db, ICacheService? cache = null
     }
 
     /// <summary>
-    /// Past the renewal date *and* past the grace period. Computed rather than stored: flipping the
-    /// persisted Status on a schedule would need a background service, and this product has none
-    /// (no IHostedService anywhere). Surfacing it as a derived flag keeps the UI honest today
-    /// without pretending a scheduler exists - the stored Status stays admin-controlled.
+    /// Past the renewal date *and* past the grace period. Still derived rather than trusted from
+    /// Status alone - MembershipLifecycleService's daily tick keeps persisted Status in sync, but
+    /// this DTO flag stays same-day-accurate for the hours between ticks. See
+    /// ComputeIsInGracePeriod's doc comment for why Status == Active is no longer a guard here, and
+    /// why Deactivated is still excluded.
     /// </summary>
     private static bool ComputeIsExpired(Member m, int gracePeriodDays)
     {
-        if (m.Status != MembershipStatus.Active || m.RenewalDueDate is null)
+        if (m.Status == MembershipStatus.Deactivated || m.RenewalDueDate is null)
         {
             return false;
         }
@@ -166,12 +159,12 @@ public class MemberService(IApplicationDbContext db, ICacheService? cache = null
         var totalCount = await query.CountAsync(cancellationToken);
         var items = await query.Skip((page - 1) * pageSize).Take(pageSize).ToListAsync(cancellationToken);
 
-        var gracePeriodDays = await GetGracePeriodDaysAsync(cancellationToken);
+        var gracePeriodDays = await MembershipGracePeriod.GetDaysAsync(db, Cache, cancellationToken);
         return new PagedResult<MemberDto>(items.Select(m => ToDto(m, gracePeriodDays)).ToList(), totalCount, page, pageSize);
     }
 
     /// <summary>
-    /// Aggregated counts/trends for the admin dashboard. Not cached (unlike GetGracePeriodDaysAsync
+    /// Aggregated counts/trends for the admin dashboard. Not cached (unlike MembershipGracePeriod.GetDaysAsync
     /// above) - this is one dashboard load, not a hot path.
     /// </summary>
     public async Task<MemberStatsDto> GetStatsAsync(IReadOnlyCollection<Guid>? excludeUserIds, CancellationToken cancellationToken = default)
@@ -250,7 +243,7 @@ public class MemberService(IApplicationDbContext db, ICacheService? cache = null
             return null;
         }
 
-        var gracePeriodDays = await GetGracePeriodDaysAsync(cancellationToken);
+        var gracePeriodDays = await MembershipGracePeriod.GetDaysAsync(db, Cache, cancellationToken);
         return ToDto(member, gracePeriodDays);
     }
 
@@ -262,7 +255,7 @@ public class MemberService(IApplicationDbContext db, ICacheService? cache = null
             return null;
         }
 
-        var gracePeriodDays = await GetGracePeriodDaysAsync(cancellationToken);
+        var gracePeriodDays = await MembershipGracePeriod.GetDaysAsync(db, Cache, cancellationToken);
         return ToDto(member, gracePeriodDays);
     }
 

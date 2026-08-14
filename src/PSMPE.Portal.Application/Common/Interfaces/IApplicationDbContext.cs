@@ -19,6 +19,7 @@ public interface IApplicationDbContext
     DbSet<Payment> Payments { get; }
     DbSet<AuditLog> AuditLogs { get; }
     DbSet<ErrorLog> ErrorLogs { get; }
+    DbSet<RenewalReminderLog> RenewalReminderLogs { get; }
 
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
 }
