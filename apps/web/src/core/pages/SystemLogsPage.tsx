@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { systemLogsApi, type AuditLogEntry } from '../api/endpoints/systemLogsApi'
-import { PageBreadcrumb, PageMeta, AuditLogTable } from '../../integrations/template'
+import { systemLogsApi, type AuditLogEntry, type ErrorLogEntry } from '../api/endpoints/systemLogsApi'
+import { PageBreadcrumb, PageMeta, AuditLogTable, ErrorLogTable } from '../../integrations/template'
 
 const PAGE_SIZE = 20
 
@@ -10,13 +10,17 @@ export function SystemLogsPage() {
   const activeTab = searchParams.get('tab') === 'errors' ? 'errors' : 'audit'
 
   const [auditEntries, setAuditEntries] = useState<AuditLogEntry[]>([])
+  const [errorEntries, setErrorEntries] = useState<ErrorLogEntry[]>([])
   const [totalCount, setTotalCount] = useState(0)
   const [page, setPage] = useState(1)
-  const [loading, setLoading] = useState(true)
+  const [auditLoading, setAuditLoading] = useState(true)
+  const [errorsLoading, setErrorsLoading] = useState(true)
+  const loading = activeTab === 'audit' ? auditLoading : errorsLoading
 
   const [searchInput, setSearchInput] = useState('')
   const [search, setSearch] = useState('')
   const [eventTypeFilter, setEventTypeFilter] = useState('')
+  const [sourceFilter, setSourceFilter] = useState('')
   const [from, setFrom] = useState('')
   const [to, setTo] = useState('')
 
@@ -31,12 +35,9 @@ export function SystemLogsPage() {
   }, [searchInput])
 
   useEffect(() => {
-    if (activeTab !== 'audit') {
-      setLoading(false)
-      return
-    }
+    if (activeTab !== 'audit') return
     let cancelled = false
-    setLoading(true)
+    setAuditLoading(true)
     systemLogsApi
       .getAuditLog({
         page,
@@ -52,12 +53,38 @@ export function SystemLogsPage() {
         setTotalCount(result.totalCount)
       })
       .finally(() => {
-        if (!cancelled) setLoading(false)
+        if (!cancelled) setAuditLoading(false)
       })
     return () => {
       cancelled = true
     }
   }, [activeTab, page, search, eventTypeFilter, from, to])
+
+  useEffect(() => {
+    if (activeTab !== 'errors') return
+    let cancelled = false
+    setErrorsLoading(true)
+    systemLogsApi
+      .getErrorLog({
+        page,
+        pageSize: PAGE_SIZE,
+        ...(search ? { search } : {}),
+        ...(sourceFilter ? { source: Number(sourceFilter) as 0 | 1 } : {}),
+        ...(from ? { from } : {}),
+        ...(to ? { to } : {}),
+      })
+      .then((result) => {
+        if (cancelled) return
+        setErrorEntries(result.items)
+        setTotalCount(result.totalCount)
+      })
+      .finally(() => {
+        if (!cancelled) setErrorsLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [activeTab, page, search, sourceFilter, from, to])
 
   const handleTabChange = (tab: 'audit' | 'errors') => {
     setSearchParams(tab === 'audit' ? {} : { tab })
@@ -92,7 +119,7 @@ export function SystemLogsPage() {
         {loading ? (
           <p className="text-sm text-default-500">Loading…</p>
         ) : (
-          activeTab === 'audit' && (
+          activeTab === 'audit' ? (
             <AuditLogTable
               entries={auditEntries}
               searchInput={searchInput}
@@ -100,6 +127,31 @@ export function SystemLogsPage() {
               eventTypeFilter={eventTypeFilter}
               onEventTypeFilterChange={(value) => {
                 setEventTypeFilter(value)
+                setPage(1)
+              }}
+              from={from}
+              to={to}
+              onFromChange={(value) => {
+                setFrom(value)
+                setPage(1)
+              }}
+              onToChange={(value) => {
+                setTo(value)
+                setPage(1)
+              }}
+              page={page}
+              pageSize={PAGE_SIZE}
+              totalCount={totalCount}
+              onPageChange={setPage}
+            />
+          ) : (
+            <ErrorLogTable
+              entries={errorEntries}
+              searchInput={searchInput}
+              onSearchInputChange={setSearchInput}
+              sourceFilter={sourceFilter}
+              onSourceFilterChange={(value) => {
+                setSourceFilter(value)
                 setPage(1)
               }}
               from={from}

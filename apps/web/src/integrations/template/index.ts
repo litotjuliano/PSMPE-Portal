@@ -17,6 +17,7 @@ export {
 export { ContentListCard } from './pages/ContentListCard'
 export { ContentEditCard } from './pages/ContentEditCard'
 export { AuditLogTable } from './pages/AuditLogTable'
+export { ErrorLogTable } from './pages/ErrorLogTable'
 export { default as PageBreadcrumb } from './components/shared/PageBreadcrumb'
 export { default as PageMeta } from './components/shared/PageMeta'
 export { StandardButton, type StandardButtonVariant } from './components/shared/StandardButton'
