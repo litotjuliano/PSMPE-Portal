@@ -61,3 +61,6 @@ TestResults/
 # Deliberately ignored rather than committed: scratch/backups/ holds pg_dump output containing
 # password hashes, member emails and addresses, which must never reach the repository.
 scratch/
+
+# Isolated workspaces for subagent-driven feature work (superpowers:using-git-worktrees)
+.worktrees/
