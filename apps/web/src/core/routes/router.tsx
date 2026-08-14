@@ -16,6 +16,7 @@ import { VerifyEmailPage } from '../pages/VerifyEmailPage'
 import { ForgotPasswordPage } from '../pages/ForgotPasswordPage'
 import { ResetPasswordPage } from '../pages/ResetPasswordPage'
 import { NotificationsPage } from '../pages/NotificationsPage'
+import { SystemLogsPage } from '../pages/SystemLogsPage'
 import { Roles } from '../types/auth'
 
 export const router = createBrowserRouter([
@@ -53,6 +54,12 @@ export const router = createBrowserRouter([
                   { path: '/prc-verifications', element: <Navigate to="/members?queue=rmp" replace /> },
                   { path: '/membership-fees', element: <MembershipFeesPage /> },
                   { path: '/notifications', element: <NotificationsPage /> },
+                ],
+              },
+              {
+                element: <ProtectedRoute requiredRoles={[Roles.SuperAdmin]} />,
+                children: [
+                  { path: '/admin/system-logs', element: <SystemLogsPage /> },
                 ],
               },
             ],
