@@ -3,6 +3,8 @@ import { LuCalendarClock, LuClipboardCheck, LuShieldCheck } from 'react-icons/lu
 import { StatTile } from '../shared/StatTile'
 import type { MemberStats } from '../../../../core/api/endpoints/memberApi'
 
+type ActionItems = MemberStats['actionItems']
+
 /**
  * Three work-queue counts, each linking into the Members page. Pending Approvals and Pending PRC
  * Verification map onto MembersPage's existing `?queue=approval` / `?queue=rmp` tabs - the same
@@ -11,7 +13,7 @@ import type { MemberStats } from '../../../../core/api/endpoints/memberApi'
  * no matching tab/filter on MembersPage, so it links to the plain member list rather than inventing
  * new query-param filtering there.
  */
-export function ActionItemsWidget({ actionItems }: { actionItems: MemberStats['actionItems'] }) {
+export function ActionItemsWidget({ actionItems }: { actionItems: ActionItems }) {
   return (
     <div className="card h-full">
       <div className="card-header">
