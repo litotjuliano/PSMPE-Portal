@@ -10,6 +10,10 @@ public interface IMemberService
         int page, int pageSize, string sortBy, string sortDir, MembershipStatus? status,
         bool? pendingApprovalOnly = null, bool? pendingPrcVerificationOnly = null, string? search = null,
         IReadOnlyCollection<Guid>? excludeUserIds = null, CancellationToken cancellationToken = default);
+    /// <summary>Aggregated counts/trends for the admin dashboard - reuses GetAllAsync's own
+    /// submitted/exclude-user-ids filtering, so these numbers always agree with what GetAllAsync's
+    /// list would show.</summary>
+    Task<MemberStatsDto> GetStatsAsync(IReadOnlyCollection<Guid>? excludeUserIds, CancellationToken cancellationToken = default);
     Task<MemberDto?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default);
     Task<MemberDto?> GetByUserIdAsync(Guid userId, CancellationToken cancellationToken = default);
     Task<bool> MembershipNoExistsAsync(string membershipNo, Guid? excludeMemberId = null, CancellationToken cancellationToken = default);

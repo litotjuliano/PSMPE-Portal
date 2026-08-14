@@ -162,6 +162,86 @@ public class MemberService(IApplicationDbContext db, ICacheService? cache = null
         return new PagedResult<MemberDto>(items.Select(m => ToDto(m, gracePeriodDays)).ToList(), totalCount, page, pageSize);
     }
 
+    private const int RenewalDueSoonDays = 60;
+
+    /// <summary>
+    /// Aggregated counts/trends for the admin dashboard. Not cached (unlike GetGracePeriodDaysAsync
+    /// above) - this is one dashboard load, not a hot path.
+    /// </summary>
+    public async Task<MemberStatsDto> GetStatsAsync(IReadOnlyCollection<Guid>? excludeUserIds, CancellationToken cancellationToken = default)
+    {
+        // Same base filter as GetAllAsync: drafts are invisible, and administrative/staff accounts
+        // never belong in Member-facing counts.
+        IQueryable<Member> baseQuery = db.Members.AsNoTracking().Where(m => m.SubmittedAt != null);
+        if (excludeUserIds is { Count: > 0 })
+        {
+            baseQuery = baseQuery.Where(m => !excludeUserIds.Contains(m.UserId));
+        }
+
+        var statusGroups = await baseQuery
+            .GroupBy(m => m.Status)
+            .Select(g => new { Status = g.Key, Count = g.Count() })
+            .ToListAsync(cancellationToken);
+        var statusCounts = statusGroups.ToDictionary(g => g.Status, g => g.Count);
+        var statusCountsDto = new MemberStatusCountsDto(
+            statusCounts.GetValueOrDefault(MembershipStatus.Pending),
+            statusCounts.GetValueOrDefault(MembershipStatus.Active),
+            statusCounts.GetValueOrDefault(MembershipStatus.Expired),
+            statusCounts.GetValueOrDefault(MembershipStatus.Deactivated));
+
+        // Dataset is tiny, so the 12-month zero-fill happens in code rather than generating a SQL
+        // calendar - the grouping itself still runs in the database.
+        var monthlyGroups = await baseQuery
+            .GroupBy(m => new { m.SubmittedAt!.Value.Year, m.SubmittedAt.Value.Month })
+            .Select(g => new { g.Key.Year, g.Key.Month, Count = g.Count() })
+            .ToListAsync(cancellationToken);
+        var monthlyLookup = monthlyGroups.ToDictionary(g => (g.Year, g.Month), g => g.Count);
+        var currentMonth = new DateTime(DateTimeOffset.UtcNow.Year, DateTimeOffset.UtcNow.Month, 1);
+        var registrationTrend = new List<MonthlyRegistrationCountDto>(12);
+        for (var i = 11; i >= 0; i--)
+        {
+            var month = currentMonth.AddMonths(-i);
+            registrationTrend.Add(new MonthlyRegistrationCountDto(
+                month.Year, month.Month, monthlyLookup.GetValueOrDefault((month.Year, month.Month))));
+        }
+
+        var chapterGroups = await baseQuery
+            .GroupBy(m => m.Chapter)
+            .Select(g => new { Chapter = g.Key, Count = g.Count() })
+            .ToListAsync(cancellationToken);
+        var chapterLookup = chapterGroups.ToDictionary(g => g.Chapter, g => g.Count);
+        var byChapter = Chapters.All.Select(c => new NamedCountDto(c, chapterLookup.GetValueOrDefault(c))).ToList();
+
+        var typeGroups = await baseQuery
+            .GroupBy(m => m.MemberType)
+            .Select(g => new { MemberType = g.Key, Count = g.Count() })
+            .ToListAsync(cancellationToken);
+        var typeLookup = typeGroups.ToDictionary(g => g.MemberType, g => g.Count);
+        var byMemberType = MemberTypes.All.Select(t => new NamedCountDto(t, typeLookup.GetValueOrDefault(t))).ToList();
+
+        var pendingApprovals = await baseQuery.CountAsync(m => m.ApprovedAt == null, cancellationToken);
+
+        // Same predicate GetAllAsync's pendingPrcVerificationOnly filter uses - kept in sync with it
+        // rather than reinvented, so this count always agrees with that queue's contents.
+        var pendingPrcVerification = await baseQuery.CountAsync(
+            m => m.PendingPrcLicenseNo != null
+                || (!m.PrcIdVerified && m.PrcLicenseNo != null && m.PendingPrcLicenseNo == null),
+            cancellationToken);
+
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var dueSoonThreshold = today.AddDays(RenewalDueSoonDays);
+        var renewalsDueSoon = await baseQuery.CountAsync(
+            m => m.Status == MembershipStatus.Active
+                && m.RenewalDueDate != null
+                && m.RenewalDueDate >= today
+                && m.RenewalDueDate <= dueSoonThreshold,
+            cancellationToken);
+
+        var actionItems = new MemberActionItemsDto(pendingApprovals, pendingPrcVerification, renewalsDueSoon);
+
+        return new MemberStatsDto(statusCountsDto, registrationTrend, byChapter, byMemberType, actionItems);
+    }
+
     public async Task<MemberDto?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default)
     {
         var member = await db.Members.AsNoTracking().Include(m => m.User).FirstOrDefaultAsync(m => m.Id == id, cancellationToken);

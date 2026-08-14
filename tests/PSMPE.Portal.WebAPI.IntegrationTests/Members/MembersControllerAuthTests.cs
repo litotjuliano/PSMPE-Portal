@@ -57,6 +57,7 @@ public class MembersControllerAuthTests : IClassFixture<CustomWebApplicationFact
     {
         var id = Guid.NewGuid();
         yield return [HttpMethod.Get, "/api/members", null!];
+        yield return [HttpMethod.Get, "/api/members/stats", null!];
         yield return [HttpMethod.Put, $"/api/members/{id}", new
         {
             firstName = "X", middleName = (string?)null, lastName = "Y", suffix = (string?)null,
@@ -101,6 +102,16 @@ public class MembersControllerAuthTests : IClassFixture<CustomWebApplicationFact
         var (_, adminToken) = await _client.CreatePrivilegedUserAsync(_userManager, RoleNames.Admin);
 
         var response = await _client.SendAsync(Request(HttpMethod.Get, "/api/members", adminToken));
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task GetStats_AsAdmin_ReturnsOk()
+    {
+        var (_, adminToken) = await _client.CreatePrivilegedUserAsync(_userManager, RoleNames.Admin);
+
+        var response = await _client.SendAsync(Request(HttpMethod.Get, "/api/members/stats", adminToken));
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
