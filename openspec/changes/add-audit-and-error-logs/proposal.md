@@ -2,7 +2,16 @@
 
 ## Status
 
-**Proposed.** Designed via brainstorming; not yet built.
+**Implemented.** Built via subagent-driven development, with spec-compliance and code-quality
+review after each task. Backend build clean, **366 tests passing**. Frontend typecheck/lint/build
+clean. Manual browser verification of the System Logs UI (both tabs: search, filters, pagination,
+details modal) has NOT been performed in this environment — no browser-automation tooling was
+available to any task in this implementation, only `npx tsc -b`/`npx eslint .` and careful code
+reading. This should be done before merging to production.
+
+Note: the `tasks.md` implementation-plan file used to drive this work was never committed to this
+repository — it existed only as a local working file outside any git history, so there is nothing
+to check off here. Reconstructing one (if wanted for the record) is a separate decision.
 
 ## Why
 

@@ -1,8 +1,10 @@
 using System.Globalization;
 using System.Net;
+using System.Text.Json;
 using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
+using PSMPE.Portal.Application.Common.Interfaces;
 
 namespace PSMPE.Portal.WebAPI.Extensions;
 
@@ -28,6 +30,7 @@ public static class RateLimitingServiceExtensions
     public const string AuthIpPolicy = "auth-ip";
     public const string AuthEmailSendPolicy = "auth-email-send";
     public const string UsernameProbePolicy = "username-probe";
+    public const string ErrorReportPolicy = "error-report";
 
     private static int _proxyIpWarningLogged;
 
@@ -39,7 +42,7 @@ public static class RateLimitingServiceExtensions
     /// SMTP reputation, so it gets the same startup rejection as the rest.
     /// </summary>
     private static readonly string[] LimitSections =
-        ["AuthIp", "AuthEmailSend", "UsernameProbe", "Global", "EmailSendPerAddress"];
+        ["AuthIp", "AuthEmailSend", "UsernameProbe", "Global", "EmailSendPerAddress", "ErrorReport"];
 
     private static readonly string[] LimitSettings = ["PermitLimit", "WindowMinutes"];
 
@@ -71,6 +74,12 @@ public static class RateLimitingServiceExtensions
             AddFixedWindowPolicy(options, AuthEmailSendPolicy, configuration, "AuthEmailSend", 10, 60, enabled, knownNetworks);
             AddFixedWindowPolicy(options, UsernameProbePolicy, configuration, "UsernameProbe", 30, 1, enabled, knownNetworks);
 
+            // Necessarily unauthenticated (an error can happen before login) and accepts
+            // free-text payloads - this is exactly the kind of endpoint this file exists to
+            // protect. Rejections here flow through the same shared OnRejected as every other
+            // policy, so they're audited too (auth.rate_limit.rejected, policy "error-report").
+            AddFixedWindowPolicy(options, ErrorReportPolicy, configuration, "ErrorReport", 30, 5, enabled, knownNetworks);
+
             // Applies on top of the endpoint policies above, as a blanket ceiling on everything else.
             options.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(context =>
             {
@@ -92,6 +101,29 @@ public static class RateLimitingServiceExtensions
             // Matches ExceptionHandlingMiddleware's shape so the API has one error contract.
             options.OnRejected = async (context, cancellationToken) =>
             {
+                // Best-effort attribution, not a guarantee: an endpoint with a named policy
+                // always gets labeled with that policy's name here, even on the (rarer) rejection
+                // that was actually caused by the global ceiling rather than the named policy's
+                // own bucket. OnRejectedContext doesn't expose which limiter in a chained
+                // (named + global) rejection actually produced the failing lease - only the
+                // endpoint's static [EnableRateLimiting] metadata. Only a bare endpoint with no
+                // named policy is unambiguous, which is exactly when this reports "global".
+                var policyName = context.HttpContext.GetEndpoint()?.Metadata
+                    .GetMetadata<EnableRateLimitingAttribute>()?.PolicyName ?? "global";
+                var actorIp = ClientIpPartitionKey(context.HttpContext, knownNetworks.Value);
+
+                // ActorUserId is always null here - UseRateLimiter() runs before
+                // UseAuthentication() in Program.cs (deliberately, so the global ceiling
+                // protects the auth surface itself), so no authenticated identity is ever
+                // available yet at this point in the pipeline, regardless of caller or policy.
+                // One row per rejection, including under a sustained flood - a deliberate
+                // simplicity-over-throttling tradeoff, see proposal.md's "429s get a DB row like
+                // everything else" decision.
+                await context.HttpContext.RequestServices.GetRequiredService<IAuditLogService>()
+                    .RecordAsync(
+                        "auth.rate_limit.rejected", actorUserId: null, actorIp, targetType: null, targetId: null,
+                        JsonSerializer.Serialize(new { policy = policyName }), cancellationToken);
+
                 if (context.Lease.TryGetMetadata(MetadataName.RetryAfter, out var retryAfter))
                 {
                     // Round up, never down, and never below 1 - a "Retry-After: 0" would tell a

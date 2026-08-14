@@ -1,3 +1,4 @@
+using System.Text.Json;
 using System.Text.RegularExpressions;
 using Microsoft.EntityFrameworkCore;
 using PSMPE.Portal.Application.Common.Caching;
@@ -466,6 +467,17 @@ public class MemberService(IApplicationDbContext db, ICacheService? cache = null
 
         // Applied after ApprovedAt is set - the NewMembership due-date arithmetic reads it.
         PaymentVerification.Apply(paymentResult.Value!, member, decidedByUserId);
+
+        // Added to the same SaveChangesAsync call, not a separate IAuditLogService write, so the
+        // audit row is atomically all-or-nothing with the approval itself.
+        db.AuditLogs.Add(new AuditLog
+        {
+            EventType = "membership.approved",
+            ActorUserId = decidedByUserId,
+            TargetType = "Member",
+            TargetId = member.Id,
+            Metadata = JsonSerializer.Serialize(new { membershipNo = trimmed }),
+        });
 
         await db.SaveChangesAsync(cancellationToken);
 

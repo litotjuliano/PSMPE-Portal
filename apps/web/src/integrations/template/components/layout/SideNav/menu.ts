@@ -1,5 +1,15 @@
 import type { IconType } from 'react-icons/lib'
-import { LuBanknote, LuBellRing, LuFileText, LuMonitorDot, LuShieldCheck, LuSquareUserRound, LuUserRound, LuUsers } from 'react-icons/lu'
+import {
+  LuBanknote,
+  LuBellRing,
+  LuFileClock,
+  LuFileText,
+  LuMonitorDot,
+  LuShieldCheck,
+  LuSquareUserRound,
+  LuUserRound,
+  LuUsers,
+} from 'react-icons/lu'
 
 export type MenuItemType = {
   key: string
@@ -94,5 +104,12 @@ export const menuItemsData: MenuItemType[] = [
     icon: LuShieldCheck,
     href: '/admin/roles',
     requiredRoles: ['Admin', 'Super Admin', 'Approval'],
+  },
+  {
+    key: 'SystemLogs',
+    label: 'System Logs',
+    icon: LuFileClock,
+    href: '/admin/system-logs',
+    requiredRoles: ['Super Admin'],
   },
 ]

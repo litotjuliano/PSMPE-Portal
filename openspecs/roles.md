@@ -137,4 +137,5 @@ the seeder never clobbers permissions a Super Admin edits later via `/admin/role
 - Per-permission frontend UI gating is not implemented — route/nav visibility stays role-based
   (`ProtectedRoute`, `AppMenu.filterByRole`); only the backend enforces permissions granularly.
 - No audit log for role/permission changes yet (same gap noted for `POST /api/admin/users/{id}/roles`
-  in `auth.md`).
+  in `auth.md`) — `AuditLog` exists for other events (rate-limit rejections, lockouts, membership
+  approvals), see `system-logs.md`; role/permission changes just aren't wired into it.

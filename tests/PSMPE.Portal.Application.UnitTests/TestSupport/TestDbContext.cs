@@ -16,6 +16,8 @@ public class TestDbContext(DbContextOptions<TestDbContext> options) : DbContext(
     public DbSet<MemberCertificate> MemberCertificates => Set<MemberCertificate>();
     public DbSet<PrcVerificationHistory> PrcVerificationHistories => Set<PrcVerificationHistory>();
     public DbSet<Payment> Payments => Set<Payment>();
+    public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
+    public DbSet<ErrorLog> ErrorLogs => Set<ErrorLog>();
 
     public static TestDbContext CreateInMemory()
     {

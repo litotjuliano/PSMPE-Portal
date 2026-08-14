@@ -534,7 +534,9 @@ repeat call doesn't regenerate/resend):
   is now the only thing that sets `Status = Active` or moves `RenewalDueDate`. What remains deferred
   from it: automatic `Active → Expired` (needs a scheduler this product doesn't have — `IsExpired`
   is computed and surfaced instead), an online payment gateway, and refunds/partial payments.
-- No audit log for profile/status changes yet (same gap noted for role changes in `roles.md`).
+- No audit log for profile/status changes yet (same gap noted for role changes in `roles.md`) —
+  `AuditLog` exists for other events (rate-limit rejections, lockouts, membership approvals), see
+  `system-logs.md`; profile/status changes just aren't wired into it.
 - **Semi-automated, AI/OCR-assisted PRC License verification is a deferred future feature** - a
   full OpenSpec proposal already exists at `openspec/changes/add-prc-ai-verification/` (admin-
   triggered vision-LLM extraction from the uploaded PRC ID, entered-vs-extracted comparison,
