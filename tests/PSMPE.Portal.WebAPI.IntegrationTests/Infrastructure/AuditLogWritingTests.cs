@@ -113,4 +113,30 @@ public class AuditLogWritingTests : IClassFixture<CustomWebApplicationFactory>, 
         await _client.SendAsync(extra);
         Assert.Single(db.AuditLogs, a => a.EventType == "auth.account.locked_out");
     }
+
+    [Fact]
+    public async Task ExceedingTheEmailSendThrottle_WritesAuditLogRow()
+    {
+        using var setupScope = _factory.Services.CreateScope();
+        var userManager = setupScope.ServiceProvider.GetRequiredService<UserManager<ApplicationUser>>();
+        var email = $"{Guid.NewGuid()}@example.com";
+        var user = new ApplicationUser { UserName = email, Email = email, DisplayName = "Throttle Test", EmailConfirmed = true };
+        await userManager.CreateAsync(user, "Password123!");
+
+        // Default RateLimit:EmailSendPerAddress:PermitLimit is 3 - see MemoryCacheEmailSendThrottle.
+        for (var i = 0; i < 4; i++)
+        {
+            var request = new HttpRequestMessage(HttpMethod.Post, "/api/auth/forgot-password")
+            {
+                Content = System.Net.Http.Json.JsonContent.Create(new ForgotPasswordRequest(email))
+            };
+            request.Headers.Add("X-Forwarded-For", UniqueIp());
+            await _client.SendAsync(request);
+        }
+
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var row = Assert.Single(db.AuditLogs, a => a.EventType == "auth.email_throttle.blocked");
+        Assert.Contains(email, row.Metadata);
+    }
 }

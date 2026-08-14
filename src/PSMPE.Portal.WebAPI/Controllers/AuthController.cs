@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
@@ -172,6 +173,9 @@ public class AuthController(
 
         if (!emailSendThrottle.TryRecordSend(request.Email))
         {
+            await auditLogService.RecordAsync(
+                "auth.email_throttle.blocked", user.Id, actorIp: null, targetType: null, targetId: null,
+                JsonSerializer.Serialize(new { email = request.Email }));
             return Ok(new ResendVerificationEmailResponse(genericMessage));
         }
 
@@ -204,6 +208,9 @@ public class AuthController(
         {
             // Same generic response as every other path here - a throttled caller must not be
             // able to tell they were throttled, let alone that the account exists.
+            await auditLogService.RecordAsync(
+                "auth.email_throttle.blocked", user.Id, actorIp: null, targetType: null, targetId: null,
+                JsonSerializer.Serialize(new { email = request.Email }));
             return Ok(new ForgotPasswordResponse(genericMessage));
         }
 
