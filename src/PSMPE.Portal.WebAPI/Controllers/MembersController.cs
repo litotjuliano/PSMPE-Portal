@@ -38,6 +38,14 @@ public class MembersController(
             page, pageSize, sortBy, sortDir, status, pendingApprovalOnly, pendingPrcVerificationOnly, search, excludeUserIds, cancellationToken));
     }
 
+    [HttpGet("stats")]
+    [RequirePermission(Permissions.Members.View)]
+    public async Task<ActionResult<MemberStatsDto>> GetStats(CancellationToken cancellationToken)
+    {
+        var excludeUserIds = await GetSystemAccountUserIdsAsync();
+        return Ok(await memberService.GetStatsAsync(excludeUserIds, cancellationToken));
+    }
+
     [HttpGet("{id:guid}")]
     [RequirePermission(Permissions.Members.View)]
     public async Task<ActionResult<MemberDto>> GetById(Guid id, CancellationToken cancellationToken)

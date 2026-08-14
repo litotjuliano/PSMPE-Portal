@@ -1,26 +1,26 @@
 import { Link } from 'react-router-dom'
-import dashboardImg from '../../assets/images/dashboard.png'
 import { useAuth } from '../../../../core/auth/useAuth'
 
-const WelcomeUser = () => {
+/**
+ * Trimmed, membership-flavored stand-in for the template's old WelcomeUser
+ * (formerly components/dashboard/WelcomeUser.tsx) - same greeting and decorative background art,
+ * but the CTA now points at /members (the primary admin action here) instead of the CMS-specific
+ * /content/new. The old fake dashboard/ folder (including WelcomeUser) has since been deleted;
+ * this component never imported from it and needed no changes when that happened.
+ */
+export function MembershipWelcomeBanner() {
   const { user } = useAuth()
 
   return (
     <div className="card-body relative overflow-hidden bg-zinc-900 rounded-md mb-5">
-      <div className="relative z-10 grid grid-cols-12 items-center">
-        <div className="lg:col-span-8 col-span-12">
-          <h5 className="mb-3 text-lg text-white">Welcome {user?.displayName} 🎉</h5>
-          <p className="mb-5 text-white/70 text-sm">
-            An overview dashboard for PSMPE Portal — key content and activity at a glance.
-          </p>
-          <Link to="/content/new" className="btn bg-primary text-white">
-            New Content
-          </Link>
-        </div>
-
-        <div className="col-span-4 ms-auto lg:block hidden">
-          <img src={dashboardImg} alt="" className="h-40" width={160} height={160} />
-        </div>
+      <div className="relative z-10">
+        <h5 className="mb-3 text-lg text-white">Welcome {user?.displayName} 🎉</h5>
+        <p className="mb-5 text-white/70 text-sm max-w-lg">
+          Here's how PSMPE membership is trending - status, registrations, and what needs your attention.
+        </p>
+        <Link to="/members" className="btn bg-primary text-white">
+          View Members
+        </Link>
       </div>
 
       <div className="absolute inset-0">
@@ -174,5 +174,3 @@ const WelcomeUser = () => {
     </div>
   )
 }
-
-export default WelcomeUser
