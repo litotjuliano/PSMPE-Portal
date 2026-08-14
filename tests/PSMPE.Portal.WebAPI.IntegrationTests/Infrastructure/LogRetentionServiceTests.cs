@@ -1,6 +1,7 @@
 using Microsoft.Extensions.DependencyInjection;
 using PSMPE.Portal.Application.Common.Interfaces;
 using PSMPE.Portal.Domain.Entities;
+using PSMPE.Portal.Domain.Enums;
 using PSMPE.Portal.Infrastructure.Persistence;
 using Xunit;
 
@@ -35,5 +36,25 @@ public class LogRetentionServiceTests : IClassFixture<CustomWebApplicationFactor
         Assert.DoesNotContain(oldRejection.Id, remaining);
         Assert.Contains(recentRejection.Id, remaining);
         Assert.Contains(oldApproval.Id, remaining);
+    }
+
+    [Fact]
+    public async Task PruneAsync_DeletesErrorLogRowsOlderThan30Days_KeepsRecentOnes()
+    {
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var now = DateTimeOffset.UtcNow;
+
+        var old = new ErrorLog { Source = ErrorSource.Backend, Message = "old", CreatedAt = now.AddDays(-31) };
+        var recent = new ErrorLog { Source = ErrorSource.Frontend, Message = "recent", CreatedAt = now.AddDays(-29) };
+        db.ErrorLogs.AddRange(old, recent);
+        await db.SaveChangesAsync();
+
+        var retentionService = scope.ServiceProvider.GetRequiredService<ILogRetentionService>();
+        await retentionService.PruneAsync();
+
+        var remaining = db.ErrorLogs.Select(e => e.Id).ToList();
+        Assert.DoesNotContain(old.Id, remaining);
+        Assert.Contains(recent.Id, remaining);
     }
 }
