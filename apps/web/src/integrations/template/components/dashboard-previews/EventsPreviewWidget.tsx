@@ -30,7 +30,7 @@ export function EventsPreviewWidget() {
           <LuCalendarClock className="size-4 shrink-0" />
           Event Management
         </h6>
-        <span className="inline-flex items-center gap-1 py-0.5 px-2.5 rounded-full text-xs font-semibold bg-white text-warning shrink-0">
+        <span className="inline-flex items-center gap-1 py-0.5 px-2.5 rounded-full text-xs font-semibold bg-warning/10 text-warning dark:bg-warning/15 shrink-0">
           <LuSparkles className="size-3" />
           Preview · Coming Soon
         </span>
