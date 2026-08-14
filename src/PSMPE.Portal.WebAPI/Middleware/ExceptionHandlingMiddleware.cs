@@ -1,5 +1,7 @@
 using System.Net;
 using Microsoft.AspNetCore.Mvc;
+using PSMPE.Portal.Application.Common.Interfaces;
+using PSMPE.Portal.Domain.Enums;
 
 namespace PSMPE.Portal.WebAPI.Middleware;
 
@@ -14,6 +16,13 @@ public class ExceptionHandlingMiddleware(RequestDelegate next, ILogger<Exception
         catch (Exception ex)
         {
             logger.LogError(ex, "Unhandled exception processing {Method} {Path}", context.Request.Method, context.Request.Path);
+
+            var errorLogService = context.RequestServices.GetRequiredService<IErrorLogService>();
+            var userId = context.RequestServices.GetRequiredService<ICurrentUserService>().UserId;
+            await errorLogService.RecordAsync(
+                ErrorSource.Backend, ex.GetType().FullName, ex.Message, ex.StackTrace,
+                context.Request.Path, context.Request.Method, url: null, userId,
+                context.Request.Headers.UserAgent.ToString(), metadata: null);
 
             var problem = new ProblemDetails
             {
