@@ -1000,4 +1000,57 @@ public class MemberServiceTests
 
         Assert.False(await service.HasPrcVerificationHistoryAsync(Guid.NewGuid()));
     }
+
+    [Fact]
+    public async Task ApproveAsync_WritesAuditLogRow()
+    {
+        using var db = TestDbContext.CreateInMemory();
+        var member = await SeedSubmittedMemberAsync(db);
+        member.PrcIdVerified = true;
+        await db.SaveChangesAsync();
+        var service = new MemberService(db);
+        var adminId = Guid.NewGuid();
+        var payment = new RecordPaymentRequest(500m, "REF-001", DateOnly.FromDateTime(DateTime.UtcNow), "uploads/proof.jpg");
+
+        await service.ApproveAsync(member.Id, new ApproveMemberRequest("000123", payment), adminId, CancellationToken.None);
+
+        var row = Assert.Single(db.AuditLogs);
+        Assert.Equal("membership.approved", row.EventType);
+        Assert.Equal(adminId, row.ActorUserId);
+        Assert.Equal("Member", row.TargetType);
+        Assert.Equal(member.Id, row.TargetId);
+        Assert.Contains("000123", row.Metadata);
+    }
+
+    [Fact]
+    public async Task ApproveAsync_ReApprovingAlreadyApprovedMember_WritesNoAdditionalAuditLogRow()
+    {
+        using var db = TestDbContext.CreateInMemory();
+        var member = await SeedSubmittedMemberAsync(db);
+        member.PrcIdVerified = true;
+        await db.SaveChangesAsync();
+        var service = new MemberService(db);
+        var adminId = Guid.NewGuid();
+        var payment = new RecordPaymentRequest(500m, "REF-001", DateOnly.FromDateTime(DateTime.UtcNow), "uploads/proof.jpg");
+        await service.ApproveAsync(member.Id, new ApproveMemberRequest("000123", payment), adminId, CancellationToken.None);
+
+        // Second call: the member now has an existing (accepted) payment, so pass Payment: null -
+        // ApproveAsync's short-circuit on an already-approved member returns before that matters.
+        await service.ApproveAsync(member.Id, new ApproveMemberRequest("000123", null), adminId, CancellationToken.None);
+
+        Assert.Single(db.AuditLogs);
+    }
+
+    [Fact]
+    public async Task ApproveAsync_FailedValidation_WritesNoAuditLogRow()
+    {
+        using var db = TestDbContext.CreateInMemory();
+        var member = await SeedSubmittedMemberAsync(db); // PrcIdVerified left false
+        var service = new MemberService(db);
+        var payment = new RecordPaymentRequest(500m, "REF-001", DateOnly.FromDateTime(DateTime.UtcNow), "uploads/proof.jpg");
+
+        await service.ApproveAsync(member.Id, new ApproveMemberRequest("000123", payment), Guid.NewGuid(), CancellationToken.None);
+
+        Assert.Empty(db.AuditLogs);
+    }
 }
