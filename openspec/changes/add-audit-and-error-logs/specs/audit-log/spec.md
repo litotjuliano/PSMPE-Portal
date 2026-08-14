@@ -22,10 +22,13 @@ retention pruning job.
 Every request rejected by a named rate-limit policy (`auth-ip`, `auth-email-send`,
 `username-probe`) or the global ceiling SHALL write an `AuditLog` row of type
 `auth.rate_limit.rejected`, recording which policy rejected the request (or `"global"`) and the
-resolved client IP as `ActorIp`. `ActorUserId` SHALL be populated from the request's authenticated
-user when a valid session is present (the global ceiling can reject an already-logged-in caller,
-unlike the auth-only named policies) and SHALL be null otherwise. This write SHALL be best-effort:
-a failure to record the event SHALL NOT prevent the 429 response from being returned.
+resolved client IP as `ActorIp`. `ActorUserId` SHALL always be null for this event type: rate
+limiting (`app.UseRateLimiter()`) runs before authentication (`app.UseAuthentication()`) in the
+request pipeline, deliberately, so that the global ceiling protects the authentication surface
+itself rather than only requests that already passed it — which means no request has an
+authenticated identity available yet at the point a rejection occurs, regardless of which policy
+rejected it. This write SHALL be best-effort: a failure to record the event SHALL NOT prevent the
+429 response from being returned.
 
 #### Scenario: An IP exceeding the login rate limit is audited
 
@@ -34,11 +37,11 @@ a failure to record the event SHALL NOT prevent the 429 response from being retu
 - **AND** an `AuditLog` row of type `auth.rate_limit.rejected` is written with the client's IP and
   the policy name `auth-ip`
 
-#### Scenario: An authenticated caller hitting the global ceiling is audited with their identity
+#### Scenario: An already-logged-in caller hitting the global ceiling is still audited without an identity
 
 - **WHEN** an already-logged-in user's requests are rejected by the global rate-limit ceiling
-- **THEN** an `AuditLog` row of type `auth.rate_limit.rejected` is written with `ActorUserId` set
-  to that user and the policy name `"global"`
+- **THEN** an `AuditLog` row of type `auth.rate_limit.rejected` is written with `ActorIp` set and
+  `ActorUserId` null, and the policy name `"global"`
 
 #### Scenario: Audit write failure does not break the 429 response
 
