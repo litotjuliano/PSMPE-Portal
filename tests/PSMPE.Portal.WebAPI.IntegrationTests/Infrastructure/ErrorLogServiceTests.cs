@@ -58,6 +58,26 @@ public class ErrorLogServiceTests : IClassFixture<CustomWebApplicationFactory>, 
     }
 
     [Fact]
+    public async Task RecordAsync_TruncatesOversizedUserAgentRequestPathUrlAndRequestMethod()
+    {
+        using var scope = _factory.Services.CreateScope();
+        var service = scope.ServiceProvider.GetRequiredService<IErrorLogService>();
+        var marker = Guid.NewGuid().ToString("N");
+
+        await service.RecordAsync(
+            ErrorSource.Frontend, exceptionType: null, marker, stackTrace: null,
+            requestPath: new string('p', 600), requestMethod: new string('m', 100),
+            url: new string('u', 600), userId: null, userAgent: new string('a', 600), metadata: null);
+
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var row = Assert.Single(db.ErrorLogs, e => e.Message == marker);
+        Assert.Equal(512, row.RequestPath!.Length);
+        Assert.Equal(16, row.RequestMethod!.Length);
+        Assert.Equal(512, row.Url!.Length);
+        Assert.Equal(512, row.UserAgent!.Length);
+    }
+
+    [Fact]
     public async Task RecordAsync_WhenSaveFails_DoesNotThrow()
     {
         using var scope = _factory.Services.CreateScope();

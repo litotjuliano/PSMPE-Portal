@@ -9,6 +9,9 @@ public class ErrorLogService(IApplicationDbContext db, ILogger<ErrorLogService> 
 {
     private const int MaxMessageLength = 2000;
     private const int MaxStackTraceLength = 8000;
+    private const int MaxRequestPathOrUrlLength = 512;
+    private const int MaxUserAgentLength = 512;
+    private const int MaxRequestMethodLength = 16;
 
     public async Task RecordAsync(
         ErrorSource source, string? exceptionType, string message, string? stackTrace,
@@ -23,11 +26,11 @@ public class ErrorLogService(IApplicationDbContext db, ILogger<ErrorLogService> 
                 ExceptionType = exceptionType,
                 Message = Truncate(message, MaxMessageLength) ?? string.Empty,
                 StackTrace = Truncate(stackTrace, MaxStackTraceLength),
-                RequestPath = requestPath,
-                RequestMethod = requestMethod,
-                Url = url,
+                RequestPath = Truncate(requestPath, MaxRequestPathOrUrlLength),
+                RequestMethod = Truncate(requestMethod, MaxRequestMethodLength),
+                Url = Truncate(url, MaxRequestPathOrUrlLength),
                 UserId = userId,
-                UserAgent = userAgent,
+                UserAgent = Truncate(userAgent, MaxUserAgentLength),
                 Metadata = metadata,
             });
             await db.SaveChangesAsync(cancellationToken);
