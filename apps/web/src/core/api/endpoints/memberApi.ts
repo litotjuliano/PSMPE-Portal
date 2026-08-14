@@ -207,11 +207,26 @@ export interface MembershipNoAvailability {
   isAvailable: boolean
 }
 
+/** Mirrors MemberStatsDto - aggregated Membership statistics for the admin dashboard.
+ *  See GET /api/members/stats (Members.View-gated). */
+export interface MemberStats {
+  statusCounts: { pending: number; active: number; expired: number; deactivated: number }
+  /** Last 12 calendar months, oldest first, zero-filled for months with no submissions. */
+  registrationTrend: { year: number; month: number; count: number }[]
+  /** One row per chapter, zero-filled for chapters with no members. */
+  byChapter: { name: string; count: number }[]
+  /** One row per member type, zero-filled for types with no members. */
+  byMemberType: { name: string; count: number }[]
+  actionItems: { pendingApprovals: number; pendingPrcVerification: number; renewalsDueSoon: number }
+}
+
 export const memberApi = {
   getMembers: (params: GetMembersParams = {}) =>
     apiClient.get<PagedResult<Member>>('/api/members', { params }).then((res) => res.data),
 
   getMemberById: (id: string) => apiClient.get<Member>(`/api/members/${id}`).then((res) => res.data),
+
+  getStats: () => apiClient.get<MemberStats>('/api/members/stats').then((res) => res.data),
 
   getMyProfile: () => apiClient.get<Member>('/api/members/me').then((res) => res.data),
 
