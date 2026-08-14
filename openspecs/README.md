@@ -37,5 +37,6 @@ Anything deliberately deferred.
 - [ai-prompt-execution.md](./ai-prompt-execution.md) — OpenAI prompt execution endpoint
 - [roles.md](./roles.md) — role and permission administration
 - [members.md](./members.md) — PSMPE membership profiles (distinct from Users)
+- [system-logs.md](./system-logs.md) — audit trail and error log, System Logs admin page
 
 Add a new file here whenever a new feature area is added to the API.
