@@ -77,4 +77,40 @@ public class AuditLogWritingTests : IClassFixture<CustomWebApplicationFactory>, 
         Assert.Null(row.ActorUserId);
         Assert.Contains("global", row.Metadata);
     }
+
+    [Fact]
+    public async Task TrippingTheLockoutThreshold_WritesExactlyOneAuditLogRow()
+    {
+        using var setupScope = _factory.Services.CreateScope();
+        var userManager = setupScope.ServiceProvider.GetRequiredService<UserManager<ApplicationUser>>();
+        var email = $"{Guid.NewGuid()}@example.com";
+        var user = new ApplicationUser { UserName = email, Email = email, DisplayName = "Lockout Test", EmailConfirmed = true };
+        await userManager.CreateAsync(user, "Password123!");
+
+        // Default MaxFailedAccessAttempts is 5 - see DependencyInjection.cs's Lockout options.
+        for (var i = 0; i < 5; i++)
+        {
+            var ip = UniqueIp();
+            var request = new HttpRequestMessage(HttpMethod.Post, "/api/auth/login")
+            {
+                Content = System.Net.Http.Json.JsonContent.Create(new LoginRequest(email, "WrongPassword!"))
+            };
+            request.Headers.Add("X-Forwarded-For", ip);
+            await _client.SendAsync(request);
+        }
+
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var row = Assert.Single(db.AuditLogs, a => a.EventType == "auth.account.locked_out");
+        Assert.Equal(user.Id, row.ActorUserId);
+
+        // A follow-up attempt against the now-locked account must not write a second row.
+        var extra = new HttpRequestMessage(HttpMethod.Post, "/api/auth/login")
+        {
+            Content = System.Net.Http.Json.JsonContent.Create(new LoginRequest(email, "WrongPassword!"))
+        };
+        extra.Headers.Add("X-Forwarded-For", UniqueIp());
+        await _client.SendAsync(extra);
+        Assert.Single(db.AuditLogs, a => a.EventType == "auth.account.locked_out");
+    }
 }

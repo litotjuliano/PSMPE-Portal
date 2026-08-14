@@ -18,6 +18,7 @@ public class AuthController(
     IJwtTokenGenerator jwtTokenGenerator,
     IEmailSender emailSender,
     IEmailSendThrottle emailSendThrottle,
+    IAuditLogService auditLogService,
     IConfiguration configuration,
     IWebHostEnvironment env) : ControllerBase
 {
@@ -346,9 +347,13 @@ public class AuthController(
             await userManager.AccessFailedAsync(user);
 
             // Re-checked immediately so the attempt that trips the threshold says so, rather
-            // than returning a plain 401 and only reporting the lockout on the next try.
+            // than returning a plain 401 and only reporting the lockout on the next try. This is
+            // also the only place that writes auth.account.locked_out - the check at the top of
+            // this method (an already-locked account) never reaches here.
             if (await userManager.IsLockedOutAsync(user))
             {
+                await auditLogService.RecordAsync(
+                    "auth.account.locked_out", user.Id, actorIp: null, targetType: null, targetId: null, metadata: null);
                 return StatusCode(403, new { message = lockedMessage, code = "ACCOUNT_LOCKED" });
             }
 
