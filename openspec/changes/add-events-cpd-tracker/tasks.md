@@ -1,5 +1,16 @@
 # Tasks: add-events-cpd-tracker
 
+> **STALE — do not execute as-is.** `proposal.md` and `specs/events/spec.md` in this folder were
+> revised 2026-08-24 against a stakeholder interview, and the design below no longer matches them:
+> `Event.CpdUnits` is now two independent fields (`CpdUnitsOnsite`/`CpdUnitsOnline`), attendance is
+> per-`EventSession` via admin roster reconciliation (not member self-check-in) with a new
+> `EventAttendance` join entity, `EventRegistration` gained a `Mode` field, CPD credit is now
+> prorated by sessions attended, and Payment integration gained an admin cash-payment path. Every
+> task below touching `Event`/`EventRegistration` schema, attendance, CPD computation, payment, the
+> roster screen, or certificate generation needs to be regenerated against the revised proposal/spec
+> before this plan is executed — treat this file as a reference for task *structure and sequencing*
+> only, not as accurate implementation steps.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Build Event Management and the CPD Credit Tracker together — members register for a

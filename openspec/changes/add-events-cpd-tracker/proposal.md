@@ -8,6 +8,13 @@ user's own best judgment standing in for the actual PSMPE client — each is cal
 under "Open Questions For The Client" below and should be confirmed before implementation starts.
 No code exists for any of this yet.
 
+**Revised 2026-08-24** against a stakeholder interview transcript (PSMPE admin staff walking through
+their real event/CPD workflow). The interview confirmed the core architecture below is sound, but
+corrected several assumptions the original brainstorm got wrong: events run in two modalities at
+once with independently accredited CPD units, attendance is per-lecture and prorates credit rather
+than being a single whole-event flag, and most face-to-face attendees pay cash on-site rather than
+through a proof-upload flow. See the updated Decisions, What Changes, and Not Built sections below.
+
 ## Why
 
 PSMPE holds events and workshops (national conventions, chapter seminars, technical workshops) that
@@ -39,18 +46,42 @@ Each resolved by the user during brainstorming:
 - **Completion = attendance + a member-submitted post-event evaluation form** (not a quiz with a
   passing score, not a bare one-click self-certify). The evaluation is a fixed set of fields
   (rating, comments), not admin-configurable per event, to keep this pass scoped.
-- **Attendance = member self check-in on the day, with admin override/correction** for no-shows,
-  walk-ins, or check-in problems — not purely staff-driven, not purely self-service.
-- **CPD units are not fixed when the event is created.** `Event.CpdUnits` is nullable and shown as
-  "TBD" until an admin sets it — which can happen before *or* after the event, since the actual
-  accredited unit count is often only confirmed close to (or following) the session. Registration,
-  payment, attendance, and evaluation all proceed normally regardless of whether units are set yet.
-- **CPD credit is computed at read time, never stored.** A registration's earned credit is
-  `Event.CpdUnits` once it's set, counted only if that registration reached `EvaluationSubmitted`.
-  This mirrors `Payment.IsExpired` (a computed property, not a background job — there is no
-  scheduler/`IHostedService` anywhere in this codebase apart from log retention). It also means a
-  `CpdUnits` value set or corrected after the fact is instantly correct for every attendee, with no
-  backfill step.
+- **Attendance = admin roster reconciliation after the event, not member self check-in.** PSMPE
+  staff already reconcile a hard-copy PRC sign-in sheet against every event's attendee list as part
+  of their existing compliance process; the portal mirrors that instead of inventing a separate
+  self-check-in mechanism members would have to use mid-event. An Admin opens a per-event roster
+  after the event and marks, per registrant, which sessions they attended. *Confirmed by stakeholder
+  interview (2026-08-24), superseding the original self-check-in decision.*
+- **Events span multiple sessions/lectures, and attendance is per-session.** A multi-day event with
+  several lectures issues one certificate per attendee, but the certificate — and the CPD credit —
+  reflects only the sessions actually attended, prorated from the event's total units (e.g. attended
+  3 of 6 lectures on an 8-unit event earns a fraction of 8, not the full 8 and not zero). This
+  matches PSMPE's actual certificate practice, including their existing "consideration" exception
+  for members who leave early due to an emergency — they still get credited for the sessions they
+  did attend, using the same prorating rule, not a special case. *Confirmed by stakeholder interview
+  (2026-08-24) — the original brainstorm had no session concept at all.*
+- **CPD units are not fixed when the event is created, and are tracked per modality.** Every PSMPE
+  event runs face-to-face and via Zoom simultaneously, and each modality is accredited through its
+  own separate CPDAS submission with its own approved unit count (Zoom typically ends up lower than
+  face-to-face, but not by a fixed ratio PSMPE relies on — it's whatever each submission comes back
+  approved for). `Event.CpdUnitsOnsite` and `Event.CpdUnitsOnline` are both independently nullable
+  and shown as "TBD" until an admin sets them — which can happen before *or* after the event, since
+  PSMPE's own CPDAS approval can take anywhere from under a week to two or three weeks, and the
+  event proceeds on its own schedule regardless of where that approval stands. Registration,
+  payment, attendance, and evaluation all proceed normally regardless of whether either value is set
+  yet. *Revised 2026-08-24: originally a single `Event.CpdUnits` field; the stakeholder interview
+  confirmed the two modalities need independent values, not a derived ratio.*
+- **A registration records which modality the member attended (`Mode`: Onsite or Online).** This
+  determines which of the two per-event unit values applies when computing that registration's
+  credit.
+- **CPD credit is computed at read time, never stored, and is prorated by attendance.** A
+  registration's earned credit is `(sessions attended / total sessions) × (Event.CpdUnitsOnsite or
+  Event.CpdUnitsOnline, based on the registration's Mode)`, counted only if that registration reached
+  `EvaluationSubmitted` and the relevant modality's unit value is set. This still mirrors
+  `Payment.IsExpired` (a computed property, not a background job — this codebase's only two
+  `IHostedService`s, log retention and the newer membership-lifecycle scheduler, aren't a fit for
+  per-registration computation like this). It also means a unit value set or corrected after the
+  fact is instantly correct for every attendee, with no backfill step.
 - **No CPD target/renewal-cycle progress tracking in this pass.** Members and admins see a running
   total of units earned, not a "9 / 15 required this cycle" comparison. Deferred per the user
   ("can be determined later") — the required-units-per-cycle number and how it maps to
@@ -62,61 +93,95 @@ Each resolved by the user during brainstorming:
   `EventRegistration` case and `Payment` gains a nullable `EventRegistrationId` FK; submission and
   admin verification work exactly as they do for membership dues today. See the flagged assumption
   below — this was the user's specific choice over a "mixed free/paid" option.
+- **On-site cash payments can be recorded directly by an admin, without a proof upload.** Most
+  face-to-face attendees pay cash at the venue rather than transferring money and uploading proof —
+  only online/Zoom registrants realistically fit the existing proof-upload pattern. An admin can mark
+  a registration's `Payment` as verified directly for a cash payer; it converges on the same
+  `PaymentVerified` state as the proof-upload path, so nothing downstream needs to know which path was
+  used. *Confirmed by stakeholder interview (2026-08-24).*
+- **Bulk-onboarding PSMPE's ~2,000 existing members who don't yet have a portal account is out of
+  scope for this proposal.** This design assumes every event registrant already has a `Member` +
+  `ApplicationUser` account. How legacy, off-portal members get onboarded is a separate, unresolved
+  problem — still being discussed with the client — and will be its own future proposal.
 - **Certificate: a downloadable PDF, generated on demand**, only once the credit condition above is
-  true (`EvaluationSubmitted` + `CpdUnits` set) — not pre-generated or stored ahead of time, so a
-  corrected `CpdUnits` never leaves a stale certificate in circulation.
+  true (`EvaluationSubmitted` + the relevant modality's unit value set) — not pre-generated or stored
+  ahead of time, so a corrected unit value never leaves a stale certificate in circulation. The PDF
+  lists which sessions the member attended and the prorated CPD units earned, matching PSMPE's
+  existing certificate practice of only listing the lectures a member actually attended.
 
 ## What Changes
 
 ### 1. New `Event` entity (Domain)
 
 `Title`, `Description`, `Chapter`, `Venue`, `StartsAt`, `EndsAt`, `Capacity` (int), `Fee` (decimal,
-settable to 0 for a free event), `CpdUnits` (nullable int — null means "TBD").
+settable to 0 for a free event), `CpdUnitsOnsite` (nullable decimal — null means "TBD"),
+`CpdUnitsOnline` (nullable decimal — null means "TBD", independent of `CpdUnitsOnsite`).
 
-### 2. New `EventRegistration` entity (Domain)
+### 2. New `EventSession` entity (Domain)
 
-FKs to `Member` and `Event`. `Status` enum: `Registered`, `PaymentSubmitted`, `PaymentVerified`,
-`Attended`, `EvaluationSubmitted`, `Rejected`, `Cancelled`. Evaluation fields captured directly on
-the row: `EvaluationRating`, `EvaluationComments`, `EvaluationSubmittedAt`. `AttendedAt`,
-`AttendedBy` (nullable — null when self check-in, set to the admin's user id on override) for an
-audit trail of who marked attendance.
+FK to `Event`. `Title`, `StartsAt`, `EndsAt`, `Order` (int, for display sequencing). Represents one
+lecture/segment of a (possibly multi-day) event — the unit attendance is actually tracked against.
+An event with no separate lectures still gets exactly one `EventSession` covering the whole event, so
+the attendance/credit model below doesn't need a special case for single-session events.
 
-### 3. Payment integration
+### 3. New `EventRegistration` entity (Domain)
+
+FKs to `Member` and `Event`. `Mode` enum: `Onsite`, `Online` — chosen at registration, determines
+which of `Event.CpdUnitsOnsite` / `Event.CpdUnitsOnline` applies to this registration's credit.
+`Status` enum: `Registered`, `PaymentSubmitted`, `PaymentVerified`, `Attended`,
+`EvaluationSubmitted`, `Rejected`, `Cancelled`. Evaluation fields captured directly on the row:
+`EvaluationRating`, `EvaluationComments`, `EvaluationSubmittedAt`.
+
+### 4. New `EventAttendance` entity (Domain)
+
+Join row: FKs to `EventRegistration` and `EventSession`, plus `RecordedBy` (the admin who reconciled
+it) and `RecordedAt`. One row per session a registrant is confirmed to have attended. This is what
+"attended" now means structurally — replacing the single `AttendedAt`/`AttendedBy` flag from the
+original design. `EventRegistration.Status` moves to `Attended` once an admin records the first
+`EventAttendance` row for that registration during roster reconciliation.
+
+### 5. Payment integration
 
 `Payment.Kind` gains an `EventRegistration` case; `Payment` gains a nullable
 `EventRegistrationId` FK (mirrors how `Payment.MemberId` already works). The existing
 `POST /api/payments/{id}/verify` endpoint is extended: when `Kind == EventRegistration`, verifying
 advances the linked `EventRegistration.Status` from `PaymentSubmitted` to `PaymentVerified`, the
-same way verifying a membership payment today flips `Member.Status` to `Active`.
+same way verifying a membership payment today flips `Member.Status` to `Active`. A new admin-only
+action records a cash payment directly — creating and verifying a `Payment` in one step, with no
+proof file — for on-site registrants who paid in cash at the venue.
 
-### 4. API endpoints
+### 6. API endpoints
 
 | Endpoint | Role | Purpose |
 |---|---|---|
 | `GET /api/events` | Any authenticated | List events (upcoming/past) |
-| `POST /api/events` | Admin | Create event (`CpdUnits` starts null) |
-| `PUT /api/events/{id}` | Admin | Edit event details, including setting/correcting `CpdUnits` |
-| `POST /api/events/{id}/register` | Member | Create `EventRegistration` (→ `Registered`) |
+| `POST /api/events` | Admin | Create event (`CpdUnitsOnsite`/`CpdUnitsOnline` start null) |
+| `PUT /api/events/{id}` | Admin | Edit event details, including setting/correcting either CPD unit value; manage `EventSession`s |
+| `POST /api/events/{id}/register` | Member | Create `EventRegistration` with a chosen `Mode` (→ `Registered`) |
 | `POST /api/events/registrations/{id}/payment` | Member | Submit proof (reuses payment-submit pattern) |
-| `POST /api/events/registrations/{id}/check-in` | Member (self) or Admin | → `Attended` |
+| `POST /api/events/registrations/{id}/payment/cash` | Admin | Record a cash payment directly (→ `PaymentVerified`, no proof) |
+| `POST /api/events/{id}/roster/attendance` | Admin | Bulk-record which sessions each registrant attended (roster reconciliation, → `Attended`) |
 | `POST /api/events/registrations/{id}/evaluation` | Member | → `EvaluationSubmitted` |
-| `GET /api/events/{id}/roster` | Admin | Full attendee list with per-stage status, for event-day/attendance work |
-| `GET /api/members/me/cpd` | Member | Own registrations plus computed credit total |
+| `GET /api/events/{id}/roster` | Admin | Full attendee list with per-session attendance, payment, and evaluation status |
+| `GET /api/members/me/cpd` | Member | Own registrations plus computed, prorated credit total |
 | `GET /api/events/registrations/{id}/certificate` | Member (own) / Admin | Streams the generated PDF |
 
-### 5. Frontend
+### 7. Frontend
 
 - Real Events list/detail/register pages, replacing `EventsPreviewWidget.tsx`'s static mock per its
-  own comment.
-- Admin event roster screen: per-attendee payment/attendance/evaluation status, a "Set CPD units"
-  action, and manual attendance override.
-- Member "My CPD" page: credit history per event, running total, certificate download once earned.
+  own comment. Registration includes choosing Onsite or Online.
+- Admin event roster screen: per-attendee payment status (including a cash-payment action),
+  per-session attendance checkboxes for reconciliation, evaluation status, and a "Set CPD units"
+  action for each modality.
+- Member "My CPD" page: credit history per event (with modality and sessions attended), running
+  total, certificate download once earned.
 
-### 6. Certificate generation
+### 8. Certificate generation
 
-PDF generated on demand at request time, not stored. Library choice (e.g. `QuestPDF`, the closest
-fit for a .NET 8 codebase with no existing PDF-generation code) is left open for the implementation
-plan — not decided here, since it has no bearing on the data model or API shape.
+PDF generated on demand at request time, not stored, listing the sessions attended and the prorated
+credit earned. Library choice (e.g. `QuestPDF`, the closest fit for a .NET 8 codebase with no
+existing PDF-generation code) is left open for the implementation plan — not decided here, since it
+has no bearing on the data model or API shape.
 
 ## Error Handling / Edge Cases
 
@@ -127,7 +192,13 @@ plan — not decided here, since it has no bearing on the data model or API shap
   rejected membership payment today.
 - **Evaluation submitted before `Attended`** is refused — completion cannot precede attendance.
 - **Certificate requested before the credit condition is true** (not yet `EvaluationSubmitted`, or
-  `CpdUnits` still null) returns a clear "not yet available" response, not a broken or empty PDF.
+  the relevant modality's unit value still null) returns a clear "not yet available" response, not a
+  broken or empty PDF.
+- **Attendance recorded for a session that doesn't belong to the event** is refused — an
+  `EventAttendance` row must reference an `EventSession` of the same `Event` as the registration.
+- **Cash payment recorded for a registration that already has a submitted proof payment** is refused
+  — a registration has exactly one `Payment`, regardless of which path (proof upload or admin cash
+  entry) reaches `PaymentVerified`.
 - **Event cancellation** (and any resulting refund/notification flow) is explicitly out of scope for
   this pass — see Not Built.
 
@@ -140,19 +211,36 @@ plan — not decided here, since it has no bearing on the data model or API shap
 - **Per-event configurable evaluation forms** — the evaluation is a fixed field set in this pass.
 - **Any CPD credit from outside PSMPE-run events** — this feature only tracks credit earned through
   events this system manages, not member-self-reported external CPD activity.
+- **CPDAS/PRC submission integration** — PSMPE applies for CPD accreditation on PRC's CPDAS platform
+  directly, outside this system entirely. This feature never talks to CPDAS/PRC; it only records
+  whatever unit values an admin enters once PSMPE's own accreditation process resolves.
+  *Confirmed out of scope by stakeholder interview (2026-08-24).*
+- **Hard-copy PRC attendance sheet digitization** — PSMPE is required to keep a physical,
+  PRC-formatted sign-in sheet as part of their submission package; this system does not scan, upload,
+  or replace that document. Admin roster reconciliation in the portal is a separate, lighter-weight
+  record for the portal's own purposes. *Confirmed out of scope by stakeholder interview
+  (2026-08-24).*
+- **Completion report generation** — the PDF package (completion form, attendance sheet, lecturer
+  profiles, lecture materials) PSMPE submits to PRC after each event is assembled entirely outside
+  this system. *Confirmed out of scope by stakeholder interview (2026-08-24).*
+- **Bulk onboarding of existing, off-portal members** (PSMPE's ~2,000-member legacy list) — every
+  registrant in this design already has a `Member` + `ApplicationUser` account. How legacy members
+  get imported or invited is unresolved and deferred to a future proposal.
 
 ## Impact
 
 - Affected specs: `events` (**new** capability, delta spec in this folder), `payments` (**modified**
   — `Kind` gains an `EventRegistration` case)
 - Affected code:
-  - `Domain`: new `Event`, `EventRegistration` entities; `Payment.Kind` enum extended
-  - `Application`: new event/registration/CPD DTOs and service methods; `PaymentService.VerifyAsync`
-    extended to drive `EventRegistration.Status`
-  - `Infrastructure`: EF configurations + migration for the two new tables and the `Payment` FK
+  - `Domain`: new `Event`, `EventSession`, `EventRegistration`, `EventAttendance` entities;
+    `Payment.Kind` enum extended
+  - `Application`: new event/session/registration/attendance/CPD DTOs and service methods;
+    `PaymentService.VerifyAsync` extended to drive `EventRegistration.Status`; new cash-payment
+    service method
+  - `Infrastructure`: EF configurations + migration for the four new tables and the `Payment` FK
   - `WebAPI`: new `EventsController`; `PaymentsController`'s verify endpoint extended
-  - `Web`: new Events pages, admin roster screen, member "My CPD" page;
-    `EventsPreviewWidget.tsx` removed/replaced
+  - `Web`: new Events pages, admin roster screen (with per-session reconciliation and cash-payment
+    action), member "My CPD" page; `EventsPreviewWidget.tsx` removed/replaced
 
 ## Open Questions For The Client
 
@@ -167,3 +255,11 @@ here so they get a real answer before (or during) implementation rather than bei
    `PrcValidUntilDate`? Needed before target/cycle tracking (currently deferred) can be built.
 3. **Does event cancellation need to be supported** in the first version, including any refund
    handling for already-verified payments?
+4. **What audit trail does an admin-recorded cash payment need?** This proposal has admin marking a
+   registration paid directly with no proof file — does that need a receipt/reference number field,
+   or is the existing `Payment` audit trail (who verified it, when) sufficient for PSMPE's
+   bookkeeping?
+5. **How should PSMPE's ~2,000 existing, off-portal members be onboarded?** Raised in the stakeholder
+   interview but not resolved (discussion was interrupted mid-call) — still being discussed with the
+   client. Out of scope for this proposal; will need its own future proposal covering bulk
+   import/invitation of legacy members who don't yet have a portal account.
