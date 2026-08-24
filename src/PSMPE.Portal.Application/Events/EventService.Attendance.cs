@@ -41,13 +41,17 @@ public partial class EventService
             }
         }
 
+        var existingByRegistration = (await db.EventAttendances
+            .Where(a => registrationIds.Contains(a.EventRegistrationId))
+            .ToListAsync(cancellationToken))
+            .GroupBy(a => a.EventRegistrationId)
+            .ToDictionary(g => g.Key, g => g.ToList());
+
         foreach (var registrant in registrants)
         {
             var registration = registrations[registrant.RegistrationId];
 
-            var existing = await db.EventAttendances
-                .Where(a => a.EventRegistrationId == registrant.RegistrationId)
-                .ToListAsync(cancellationToken);
+            var existing = existingByRegistration.GetValueOrDefault(registrant.RegistrationId, []);
             db.EventAttendances.RemoveRange(existing);
 
             foreach (var sessionId in registrant.SessionIds.Distinct())

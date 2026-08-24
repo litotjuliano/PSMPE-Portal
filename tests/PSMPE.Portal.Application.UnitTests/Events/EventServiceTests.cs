@@ -436,6 +436,48 @@ public class EventServiceTests
         Assert.Equal(2, db.EventAttendances.Count(a => a.EventRegistrationId == registration.Id));
     }
 
+    /// <summary>Guards the batched-and-grouped attendance lookup in RecordAttendanceAsync: with two
+    /// registrants each having pre-existing attendance rows, a single call replacing both sets must
+    /// isolate each registrant's rows correctly rather than cross-contaminating them.</summary>
+    [Fact]
+    public async Task RecordAttendanceAsync_MultipleRegistrantsWithExistingRows_ReplacesEachIndependently()
+    {
+        using var db = TestDbContext.CreateInMemory();
+        var service = new EventService(db);
+        var created = (await service.CreateAsync(ValidCreateRequest())).Value!;
+        var twoSessions = new List<EventSessionRequest>
+        {
+            new(created.Sessions[0].Id, "Lecture 1", created.StartsAt, created.StartsAt.AddHours(1), 1),
+            new(null, "Lecture 2", created.StartsAt.AddHours(1), created.EndsAt, 2),
+        };
+        var @event = (await service.UpdateAsync(created.Id, ToUpdateRequest(created) with { Sessions = twoSessions })).Value!;
+        var member1 = await SeedMemberForEventTestsAsync(db);
+        var member2 = await SeedMemberForEventTestsAsync(db);
+        var registration1 = (await service.RegisterAsync(member1.UserId, @event.Id, "Onsite")).Value!;
+        var registration2 = (await service.RegisterAsync(member2.UserId, @event.Id, "Onsite")).Value!;
+        await MarkPaymentVerifiedAsync(db, registration1.Id);
+        await MarkPaymentVerifiedAsync(db, registration2.Id);
+        await service.RecordAttendanceAsync(@event.Id,
+            [
+                new RegistrantAttendanceRequest(registration1.Id, [@event.Sessions[0].Id]),
+                new RegistrantAttendanceRequest(registration2.Id, [@event.Sessions[0].Id]),
+            ], Guid.NewGuid());
+
+        var result = await service.RecordAttendanceAsync(@event.Id,
+            [
+                new RegistrantAttendanceRequest(registration1.Id, [@event.Sessions[1].Id]),
+                new RegistrantAttendanceRequest(registration2.Id, [@event.Sessions[0].Id, @event.Sessions[1].Id]),
+            ], Guid.NewGuid());
+
+        Assert.True(result.Succeeded);
+        var registration1Sessions = db.EventAttendances.Where(a => a.EventRegistrationId == registration1.Id).Select(a => a.EventSessionId).ToList();
+        var registration2Sessions = db.EventAttendances.Where(a => a.EventRegistrationId == registration2.Id).Select(a => a.EventSessionId).ToList();
+        Assert.Equal([@event.Sessions[1].Id], registration1Sessions);
+        Assert.Equal(2, registration2Sessions.Count);
+        Assert.Contains(@event.Sessions[0].Id, registration2Sessions);
+        Assert.Contains(@event.Sessions[1].Id, registration2Sessions);
+    }
+
     private static async Task MarkPaymentVerifiedAsync(TestDbContext db, Guid registrationId)
     {
         var registration = await db.EventRegistrations.FindAsync(registrationId);
