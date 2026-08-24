@@ -1,3 +1,4 @@
+using PSMPE.Portal.Application.Common.Models;
 using PSMPE.Portal.Application.Events;
 using PSMPE.Portal.Application.Events.Dtos;
 using PSMPE.Portal.Application.UnitTests.TestSupport;
@@ -220,6 +221,100 @@ public class EventServiceTests
         new(e.Title, e.Description, e.Chapter, e.Venue, e.StartsAt, e.EndsAt, e.Capacity, e.Fee,
             e.CpdUnitsOnsite, e.CpdUnitsOnline,
             e.Sessions.Select(s => new EventSessionRequest(s.Id, s.Title, s.StartsAt, s.EndsAt, s.Order)).ToList());
+
+    [Fact]
+    public async Task RegisterAsync_ValidMode_CreatesRegistrationInRegisteredStatus()
+    {
+        using var db = TestDbContext.CreateInMemory();
+        var service = new EventService(db);
+        var @event = (await service.CreateAsync(ValidCreateRequest())).Value!;
+        var member = await SeedMemberForEventTestsAsync(db);
+
+        var result = await service.RegisterAsync(member.UserId, @event.Id, "Online");
+
+        Assert.True(result.Succeeded);
+        Assert.Equal("Registered", result.Value!.Status);
+        Assert.Equal("Online", result.Value.Mode);
+    }
+
+    [Fact]
+    public async Task RegisterAsync_UnrecognizedMode_Fails()
+    {
+        using var db = TestDbContext.CreateInMemory();
+        var service = new EventService(db);
+        var @event = (await service.CreateAsync(ValidCreateRequest())).Value!;
+        var member = await SeedMemberForEventTestsAsync(db);
+
+        var result = await service.RegisterAsync(member.UserId, @event.Id, "InPerson");
+
+        Assert.False(result.Succeeded);
+    }
+
+    /// <summary>Matches spec.md's "A member cannot register twice for the same event" - even under
+    /// a different Mode.</summary>
+    [Fact]
+    public async Task RegisterAsync_Twice_SecondCallFailsEvenUnderADifferentMode()
+    {
+        using var db = TestDbContext.CreateInMemory();
+        var service = new EventService(db);
+        var @event = (await service.CreateAsync(ValidCreateRequest())).Value!;
+        var member = await SeedMemberForEventTestsAsync(db);
+        await service.RegisterAsync(member.UserId, @event.Id, "Onsite");
+
+        var result = await service.RegisterAsync(member.UserId, @event.Id, "Online");
+
+        Assert.False(result.Succeeded);
+    }
+
+    /// <summary>A cancelled registration frees the member to register again - this is what makes
+    /// Cancelled a real off-ramp rather than a dead end.</summary>
+    [Fact]
+    public async Task RegisterAsync_AfterCancelling_Succeeds()
+    {
+        using var db = TestDbContext.CreateInMemory();
+        var service = new EventService(db);
+        var @event = (await service.CreateAsync(ValidCreateRequest())).Value!;
+        var member = await SeedMemberForEventTestsAsync(db);
+        var first = await service.RegisterAsync(member.UserId, @event.Id, "Onsite");
+        await service.CancelRegistrationAsync(member.UserId, first.Value!.Id);
+
+        var result = await service.RegisterAsync(member.UserId, @event.Id, "Onsite");
+
+        Assert.True(result.Succeeded);
+    }
+
+    [Fact]
+    public async Task CancelRegistrationAsync_NotOwner_Forbidden()
+    {
+        using var db = TestDbContext.CreateInMemory();
+        var service = new EventService(db);
+        var @event = (await service.CreateAsync(ValidCreateRequest())).Value!;
+        var member = await SeedMemberForEventTestsAsync(db);
+        var registration = (await service.RegisterAsync(member.UserId, @event.Id, "Onsite")).Value!;
+        var otherUserId = Guid.NewGuid();
+
+        var result = await service.CancelRegistrationAsync(otherUserId, registration.Id);
+
+        Assert.False(result.Succeeded);
+        Assert.Equal(ResultErrorType.Forbidden, result.ErrorType);
+    }
+
+    [Fact]
+    public async Task CancelRegistrationAsync_AfterPaymentVerified_Fails()
+    {
+        using var db = TestDbContext.CreateInMemory();
+        var service = new EventService(db);
+        var @event = (await service.CreateAsync(ValidCreateRequest())).Value!;
+        var member = await SeedMemberForEventTestsAsync(db);
+        var registration = (await service.RegisterAsync(member.UserId, @event.Id, "Onsite")).Value!;
+        var entity = await db.EventRegistrations.FindAsync(registration.Id);
+        entity!.Status = EventRegistrationStatus.PaymentVerified;
+        await db.SaveChangesAsync();
+
+        var result = await service.CancelRegistrationAsync(member.UserId, registration.Id);
+
+        Assert.False(result.Succeeded);
+    }
 
     internal static async Task<Member> SeedMemberForEventTestsAsync(TestDbContext db, string? email = null)
     {

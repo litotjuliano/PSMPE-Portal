@@ -14,4 +14,8 @@ public interface IEventService
     Task<Result<EventDto>> CreateAsync(CreateEventRequest request, CancellationToken cancellationToken = default);
 
     Task<Result<EventDto>> UpdateAsync(Guid id, UpdateEventRequest request, CancellationToken cancellationToken = default);
+
+    Task<Result<EventRegistrationDto>> RegisterAsync(Guid userId, Guid eventId, string mode, CancellationToken cancellationToken = default);
+
+    Task<Result> CancelRegistrationAsync(Guid userId, Guid registrationId, CancellationToken cancellationToken = default);
 }
