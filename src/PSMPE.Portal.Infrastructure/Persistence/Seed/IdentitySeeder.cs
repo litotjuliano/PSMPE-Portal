@@ -26,14 +26,16 @@ public static class IdentitySeeder
             Permissions.Layout.Create, Permissions.Layout.Delete,
             Permissions.Admin.ManageUsers,
             Permissions.Ai.UsePrompt,
-            Permissions.Members.View, Permissions.Members.Manage
+            Permissions.Members.View, Permissions.Members.Manage,
+            Permissions.Events.View, Permissions.Events.Manage
         ],
         [RoleNames.Manager] =
         [
             Permissions.Content.Create, Permissions.Content.Update, Permissions.Content.Delete,
             Permissions.Layout.Create,
             Permissions.Ai.UsePrompt,
-            Permissions.Members.View
+            Permissions.Members.View,
+            Permissions.Events.View
         ],
         [RoleNames.Accounts] =
         [

@@ -38,12 +38,19 @@ public static class Permissions
         public const string Approve = "members:approve";
     }
 
+    public static class Events
+    {
+        public const string View = "events:view";
+        public const string Manage = "events:manage";
+    }
+
     public static readonly string[] All =
     [
         Content.Create, Content.Update, Content.Delete, Content.ManageOthers,
         Layout.Create, Layout.Delete, Layout.DeleteSystem,
         Admin.ManageUsers, Admin.ManageRoles,
         Ai.UsePrompt,
-        Members.View, Members.Manage, Members.Approve
+        Members.View, Members.Manage, Members.Approve,
+        Events.View, Events.Manage
     ];
 }
