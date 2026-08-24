@@ -440,4 +440,76 @@ public class EventServiceTests
         registration!.Status = EventRegistrationStatus.PaymentVerified;
         await db.SaveChangesAsync();
     }
+
+    [Fact]
+    public async Task SubmitEvaluationAsync_BeforeAttended_Fails()
+    {
+        using var db = TestDbContext.CreateInMemory();
+        var service = new EventService(db);
+        var @event = (await service.CreateAsync(ValidCreateRequest())).Value!;
+        var member = await SeedMemberForEventTestsAsync(db);
+        var registration = (await service.RegisterAsync(member.UserId, @event.Id, "Onsite")).Value!;
+
+        var result = await service.SubmitEvaluationAsync(member.UserId, registration.Id, rating: 5, comments: "Great");
+
+        Assert.False(result.Succeeded);
+    }
+
+    [Fact]
+    public async Task SubmitEvaluationAsync_AfterAttended_MovesToEvaluationSubmitted()
+    {
+        using var db = TestDbContext.CreateInMemory();
+        var service = new EventService(db);
+        var @event = (await service.CreateAsync(ValidCreateRequest())).Value!;
+        var member = await SeedMemberForEventTestsAsync(db);
+        var registration = (await service.RegisterAsync(member.UserId, @event.Id, "Onsite")).Value!;
+        await MarkAttendedAsync(db, registration.Id);
+
+        var result = await service.SubmitEvaluationAsync(member.UserId, registration.Id, rating: 4, comments: "Good session");
+
+        Assert.True(result.Succeeded);
+        var updated = await db.EventRegistrations.FindAsync(registration.Id);
+        Assert.Equal(EventRegistrationStatus.EvaluationSubmitted, updated!.Status);
+        Assert.NotNull(updated.EvaluationSubmittedAt);
+    }
+
+    [Fact]
+    public async Task SubmitEvaluationAsync_NotOwner_Forbidden()
+    {
+        using var db = TestDbContext.CreateInMemory();
+        var service = new EventService(db);
+        var @event = (await service.CreateAsync(ValidCreateRequest())).Value!;
+        var member = await SeedMemberForEventTestsAsync(db);
+        var registration = (await service.RegisterAsync(member.UserId, @event.Id, "Onsite")).Value!;
+        await MarkAttendedAsync(db, registration.Id);
+
+        var result = await service.SubmitEvaluationAsync(Guid.NewGuid(), registration.Id, rating: 4, comments: null);
+
+        Assert.False(result.Succeeded);
+        Assert.Equal(ResultErrorType.Forbidden, result.ErrorType);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(6)]
+    public async Task SubmitEvaluationAsync_RatingOutOfRange_Fails(int rating)
+    {
+        using var db = TestDbContext.CreateInMemory();
+        var service = new EventService(db);
+        var @event = (await service.CreateAsync(ValidCreateRequest())).Value!;
+        var member = await SeedMemberForEventTestsAsync(db);
+        var registration = (await service.RegisterAsync(member.UserId, @event.Id, "Onsite")).Value!;
+        await MarkAttendedAsync(db, registration.Id);
+
+        var result = await service.SubmitEvaluationAsync(member.UserId, registration.Id, rating, comments: null);
+
+        Assert.False(result.Succeeded);
+    }
+
+    private static async Task MarkAttendedAsync(TestDbContext db, Guid registrationId)
+    {
+        var registration = await db.EventRegistrations.FindAsync(registrationId);
+        registration!.Status = EventRegistrationStatus.Attended;
+        await db.SaveChangesAsync();
+    }
 }

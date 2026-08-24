@@ -19,6 +19,8 @@ public interface IEventService
 
     Task<Result> CancelRegistrationAsync(Guid userId, Guid registrationId, CancellationToken cancellationToken = default);
 
+    Task<Result> SubmitEvaluationAsync(Guid userId, Guid registrationId, int rating, string? comments, CancellationToken cancellationToken = default);
+
     Task<Result> RecordAttendanceAsync(
         Guid eventId, IReadOnlyList<RegistrantAttendanceRequest> registrants, Guid adminUserId, CancellationToken cancellationToken = default);
 }
