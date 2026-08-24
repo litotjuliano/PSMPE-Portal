@@ -37,9 +37,9 @@ export function MyCpdPage() {
 
         {error && <p className="text-sm text-danger mb-4">{error}</p>}
 
-        {loading || !summary ? (
+        {loading ? (
           <p className="text-sm text-default-500">Loading…</p>
-        ) : (
+        ) : !summary ? null : (
           <div className="flex flex-col gap-4">
             <div className="card">
               <div className="card-body">
