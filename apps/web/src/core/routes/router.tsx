@@ -12,6 +12,9 @@ import { MembersPage } from '../pages/MembersPage'
 import { MembershipFeesPage } from '../pages/MembershipFeesPage'
 import { MemberFormPage } from '../pages/MemberFormPage'
 import { MyProfilePage } from '../pages/MyProfilePage'
+import { EventsPage } from '../pages/EventsPage'
+import { EventRosterPage } from '../pages/EventRosterPage'
+import { MyCpdPage } from '../pages/MyCpdPage'
 import { RegisterPage } from '../pages/RegisterPage'
 import { VerifyEmailPage } from '../pages/VerifyEmailPage'
 import { ForgotPasswordPage } from '../pages/ForgotPasswordPage'
@@ -46,6 +49,8 @@ export const router = createBrowserRouter([
                   { path: '/content', element: <ContentListPage /> },
                   { path: '/content/:id', element: <ContentEditPage /> },
                   { path: '/profile', element: <MyProfilePage /> },
+                  { path: '/events', element: <EventsPage /> },
+                  { path: '/my-cpd', element: <MyCpdPage /> },
                   {
                     element: <ProtectedRoute requiredRoles={[Roles.Admin, Roles.SuperAdmin, Roles.Approval]} />,
                     children: [
@@ -54,6 +59,7 @@ export const router = createBrowserRouter([
                       { path: '/admin/roles', element: <AdminRolesPage /> },
                       { path: '/members', element: <MembersPage /> },
                       { path: '/members/:id', element: <MemberFormPage /> },
+                      { path: '/events/:id/roster', element: <EventRosterPage /> },
                       // Both queues folded into MembersPage's tabs. Kept as redirects rather than
                       // deleted so bookmarks and any older in-app link still land somewhere useful.
                       { path: '/membership-approvals', element: <Navigate to="/members?queue=approval" replace /> },

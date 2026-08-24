@@ -2,6 +2,7 @@ import type { IconType } from 'react-icons/lib'
 import {
   LuBanknote,
   LuBellRing,
+  LuCalendarClock,
   LuFileClock,
   LuFileText,
   LuMonitorDot,
@@ -57,11 +58,24 @@ export const menuItemsData: MenuItemType[] = [
     requiredRoles: ['Member'],
   },
   {
+    key: 'MyCpd',
+    label: 'My CPD',
+    icon: LuCalendarClock,
+    href: '/my-cpd',
+    requiredRoles: ['Member'],
+  },
+  {
     key: 'Members',
     label: 'Members',
     icon: LuUsers,
     href: '/members',
     requiredRoles: ['Admin', 'Super Admin', 'Approval'],
+  },
+  {
+    key: 'Events',
+    label: 'Events',
+    icon: LuCalendarClock,
+    href: '/events',
   },
   // Membership Approvals and RMP Verifications used to sit here. Both were the same
   // GET /api/members query with a different filter, so they are now tabs on Members. The topbar
