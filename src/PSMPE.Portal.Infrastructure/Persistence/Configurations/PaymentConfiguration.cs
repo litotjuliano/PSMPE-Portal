@@ -31,5 +31,12 @@ public class PaymentConfiguration : IEntityTypeConfiguration<Payment>
             .WithMany()
             .HasForeignKey(p => p.MemberId)
             .OnDelete(DeleteBehavior.Restrict);
+
+        // Restrict, same reasoning as MemberId - a registration with payment history shouldn't
+        // vanish out from under its payment row.
+        builder.HasOne(p => p.EventRegistration)
+            .WithMany()
+            .HasForeignKey(p => p.EventRegistrationId)
+            .OnDelete(DeleteBehavior.Restrict);
     }
 }
