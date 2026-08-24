@@ -676,4 +676,116 @@ public class EventServiceTests
 
         Assert.Empty(result.Value!.Registrants);
     }
+
+    private async Task<(EventDto Event, EventRegistrationDto Registration, Member Member)> SeedCreditedRegistrationAsync(
+        TestDbContext db, EventService service, decimal onsiteUnits = 8m)
+    {
+        var created = (await service.CreateAsync(ValidCreateRequest())).Value!;
+        var @event = (await service.UpdateAsync(created.Id, ToUpdateRequest(created) with { CpdUnitsOnsite = onsiteUnits })).Value!;
+        var member = await SeedMemberForEventTestsAsync(db);
+        var registration = (await service.RegisterAsync(member.UserId, @event.Id, "Onsite")).Value!;
+        await MarkPaymentVerifiedAsync(db, registration.Id);
+        await service.RecordAttendanceAsync(@event.Id, [new RegistrantAttendanceRequest(registration.Id, [@event.Sessions.Single().Id])], Guid.NewGuid());
+        await service.SubmitEvaluationAsync(member.UserId, registration.Id, rating: 5, comments: null);
+        return (@event, registration, member);
+    }
+
+    /// <summary>Matches spec.md's "Certificate request before credit is earned is refused" - not
+    /// yet EvaluationSubmitted.</summary>
+    [Fact]
+    public async Task GetCertificateDataAsync_BeforeEvaluationSubmitted_Fails()
+    {
+        using var db = TestDbContext.CreateInMemory();
+        var service = new EventService(db);
+        var @event = (await service.CreateAsync(ValidCreateRequest())).Value!;
+        await service.UpdateAsync(@event.Id, ToUpdateRequest(@event) with { CpdUnitsOnsite = 8m });
+        var member = await SeedMemberForEventTestsAsync(db);
+        var registration = (await service.RegisterAsync(member.UserId, @event.Id, "Onsite")).Value!;
+
+        var result = await service.GetCertificateDataAsync(member.UserId, registration.Id, isAdmin: false);
+
+        Assert.False(result.Succeeded);
+    }
+
+    /// <summary>Matches spec.md's other "not yet available" case - unit value still null.</summary>
+    [Fact]
+    public async Task GetCertificateDataAsync_ApplicableUnitsStillNull_Fails()
+    {
+        using var db = TestDbContext.CreateInMemory();
+        var service = new EventService(db);
+        var (@event, registration, member) = await SeedCreditedRegistrationAsync(db, service, onsiteUnits: 8m);
+        // Correct the units back to null to simulate "never set for this modality".
+        await service.UpdateAsync(@event.Id, ToUpdateRequest(@event) with { CpdUnitsOnsite = null });
+
+        var result = await service.GetCertificateDataAsync(member.UserId, registration.Id, isAdmin: false);
+
+        Assert.False(result.Succeeded);
+    }
+
+    /// <summary>Matches spec.md's "Certificate lists only attended sessions".</summary>
+    [Fact]
+    public async Task GetCertificateDataAsync_ListsOnlyAttendedSessions()
+    {
+        using var db = TestDbContext.CreateInMemory();
+        var service = new EventService(db);
+        var created = (await service.CreateAsync(ValidCreateRequest())).Value!;
+        var sixSessions = Enumerable.Range(1, 6)
+            .Select(i => new EventSessionRequest(i == 1 ? created.Sessions[0].Id : null, $"Lecture {i}", created.StartsAt.AddHours(i), created.StartsAt.AddHours(i + 1), i))
+            .ToList();
+        var @event = (await service.UpdateAsync(created.Id, ToUpdateRequest(created) with { Sessions = sixSessions, CpdUnitsOnsite = 8m })).Value!;
+        var member = await SeedMemberForEventTestsAsync(db);
+        var registration = (await service.RegisterAsync(member.UserId, @event.Id, "Onsite")).Value!;
+        await MarkPaymentVerifiedAsync(db, registration.Id);
+        var attendedIds = @event.Sessions.Take(3).Select(s => s.Id).ToList();
+        await service.RecordAttendanceAsync(@event.Id, [new RegistrantAttendanceRequest(registration.Id, attendedIds)], Guid.NewGuid());
+        await service.SubmitEvaluationAsync(member.UserId, registration.Id, rating: 5, comments: null);
+
+        var result = await service.GetCertificateDataAsync(member.UserId, registration.Id, isAdmin: false);
+
+        Assert.True(result.Succeeded);
+        Assert.Equal(3, result.Value!.AttendedSessionTitles.Count);
+        Assert.Equal(4m, result.Value.CreditUnits); // 8 x 3/6
+    }
+
+    /// <summary>Matches spec.md's "Certificate reflects a corrected unit count" - computed at read
+    /// time, so a later correction is visible on the very next call with no other action taken.</summary>
+    [Fact]
+    public async Task GetCertificateDataAsync_AfterUnitCorrection_ReflectsNewValue()
+    {
+        using var db = TestDbContext.CreateInMemory();
+        var service = new EventService(db);
+        var (@event, registration, member) = await SeedCreditedRegistrationAsync(db, service, onsiteUnits: 8m);
+        var before = await service.GetCertificateDataAsync(member.UserId, registration.Id, isAdmin: false);
+        Assert.Equal(8m, before.Value!.CreditUnits);
+
+        await service.UpdateAsync(@event.Id, ToUpdateRequest(@event) with { CpdUnitsOnsite = 6m });
+        var after = await service.GetCertificateDataAsync(member.UserId, registration.Id, isAdmin: false);
+
+        Assert.Equal(6m, after.Value!.CreditUnits);
+    }
+
+    [Fact]
+    public async Task GetCertificateDataAsync_NotOwnerAndNotAdmin_Forbidden()
+    {
+        using var db = TestDbContext.CreateInMemory();
+        var service = new EventService(db);
+        var (_, registration, _) = await SeedCreditedRegistrationAsync(db, service);
+
+        var result = await service.GetCertificateDataAsync(Guid.NewGuid(), registration.Id, isAdmin: false);
+
+        Assert.False(result.Succeeded);
+        Assert.Equal(ResultErrorType.Forbidden, result.ErrorType);
+    }
+
+    [Fact]
+    public async Task GetCertificateDataAsync_Admin_BypassesOwnershipCheck()
+    {
+        using var db = TestDbContext.CreateInMemory();
+        var service = new EventService(db);
+        var (_, registration, _) = await SeedCreditedRegistrationAsync(db, service);
+
+        var result = await service.GetCertificateDataAsync(Guid.NewGuid(), registration.Id, isAdmin: true);
+
+        Assert.True(result.Succeeded);
+    }
 }

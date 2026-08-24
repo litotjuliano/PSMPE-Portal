@@ -15,6 +15,11 @@ using PSMPE.Portal.WebAPI.Middleware;
 
 var builder = WebApplication.CreateBuilder(args);
 
+// Required by QuestPDF as of its Community-license versions - without this, every PDF generation
+// call throws at runtime. Community is free for PSMPE's use (a single small organization, not a
+// >$1M-revenue company reselling the software) - see QuestPDF's license terms if that ever changes.
+QuestPDF.Settings.License = QuestPDF.Infrastructure.LicenseType.Community;
+
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddPortalSwagger();

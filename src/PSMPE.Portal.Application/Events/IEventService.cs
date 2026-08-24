@@ -27,4 +27,9 @@ public interface IEventService
     Task<MyCpdSummaryDto> GetMyCpdAsync(Guid userId, CancellationToken cancellationToken = default);
 
     Task<Result<EventRosterDto>> GetRosterAsync(Guid eventId, CancellationToken cancellationToken = default);
+
+    /// <summary>isAdmin bypasses the ownership check - an Admin can pull any registration's
+    /// certificate data, a member only their own.</summary>
+    Task<Result<CertificateDataDto>> GetCertificateDataAsync(
+        Guid userId, Guid registrationId, bool isAdmin, CancellationToken cancellationToken = default);
 }
