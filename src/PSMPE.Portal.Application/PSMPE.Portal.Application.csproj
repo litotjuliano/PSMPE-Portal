@@ -17,4 +17,8 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="PSMPE.Portal.Application.UnitTests" />
+  </ItemGroup>
+
 </Project>

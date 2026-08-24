@@ -23,4 +23,6 @@ public interface IEventService
 
     Task<Result> RecordAttendanceAsync(
         Guid eventId, IReadOnlyList<RegistrantAttendanceRequest> registrants, Guid adminUserId, CancellationToken cancellationToken = default);
+
+    Task<MyCpdSummaryDto> GetMyCpdAsync(Guid userId, CancellationToken cancellationToken = default);
 }

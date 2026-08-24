@@ -512,4 +512,50 @@ public class EventServiceTests
         registration!.Status = EventRegistrationStatus.Attended;
         await db.SaveChangesAsync();
     }
+
+    /// <summary>Matches spec.md's "A member's CPD total reflects only completed, credited
+    /// registrations".</summary>
+    [Fact]
+    public async Task GetMyCpdAsync_SumsOnlyEvaluationSubmittedRegistrationsWithNonNullUnits()
+    {
+        using var db = TestDbContext.CreateInMemory();
+        var service = new EventService(db);
+        var member = await SeedMemberForEventTestsAsync(db);
+
+        var creditedEvent = (await service.CreateAsync(ValidCreateRequest("Credited Event"))).Value!;
+        await service.UpdateAsync(creditedEvent.Id, ToUpdateRequest(creditedEvent) with { CpdUnitsOnsite = 8m });
+        var creditedRegistration = (await service.RegisterAsync(member.UserId, creditedEvent.Id, "Onsite")).Value!;
+        await MarkPaymentVerifiedAsync(db, creditedRegistration.Id);
+        await service.RecordAttendanceAsync(
+            creditedEvent.Id, [new RegistrantAttendanceRequest(creditedRegistration.Id, [creditedEvent.Sessions.Single().Id])], Guid.NewGuid());
+        await service.SubmitEvaluationAsync(member.UserId, creditedRegistration.Id, rating: 5, comments: null);
+
+        var tbdEvent = (await service.CreateAsync(ValidCreateRequest("TBD Units Event"))).Value!;
+        var tbdRegistration = (await service.RegisterAsync(member.UserId, tbdEvent.Id, "Onsite")).Value!;
+        await MarkPaymentVerifiedAsync(db, tbdRegistration.Id);
+        await service.RecordAttendanceAsync(
+            tbdEvent.Id, [new RegistrantAttendanceRequest(tbdRegistration.Id, [tbdEvent.Sessions.Single().Id])], Guid.NewGuid());
+        await service.SubmitEvaluationAsync(member.UserId, tbdRegistration.Id, rating: 5, comments: null);
+
+        var notYetEvaluatedEvent = (await service.CreateAsync(ValidCreateRequest("Not Yet Evaluated Event"))).Value!;
+        await service.UpdateAsync(notYetEvaluatedEvent.Id, ToUpdateRequest(notYetEvaluatedEvent) with { CpdUnitsOnsite = 6m });
+        await service.RegisterAsync(member.UserId, notYetEvaluatedEvent.Id, "Onsite");
+
+        var summary = await service.GetMyCpdAsync(member.UserId);
+
+        Assert.Equal(8m, summary.TotalCreditUnits);
+        Assert.Equal(3, summary.Registrations.Count);
+    }
+
+    [Fact]
+    public async Task GetMyCpdAsync_NoMemberProfile_ReturnsEmptySummary()
+    {
+        using var db = TestDbContext.CreateInMemory();
+        var service = new EventService(db);
+
+        var summary = await service.GetMyCpdAsync(Guid.NewGuid());
+
+        Assert.Equal(0m, summary.TotalCreditUnits);
+        Assert.Empty(summary.Registrations);
+    }
 }
