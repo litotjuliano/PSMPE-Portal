@@ -17,6 +17,10 @@ public interface IApplicationDbContext
     DbSet<MemberCertificate> MemberCertificates { get; }
     DbSet<PrcVerificationHistory> PrcVerificationHistories { get; }
     DbSet<Payment> Payments { get; }
+    DbSet<Event> Events { get; }
+    DbSet<EventSession> EventSessions { get; }
+    DbSet<EventRegistration> EventRegistrations { get; }
+    DbSet<EventAttendance> EventAttendances { get; }
     DbSet<AuditLog> AuditLogs { get; }
     DbSet<ErrorLog> ErrorLogs { get; }
     DbSet<RenewalReminderLog> RenewalReminderLogs { get; }

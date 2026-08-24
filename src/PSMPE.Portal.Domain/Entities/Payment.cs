@@ -18,6 +18,13 @@ public class Payment : BaseEntity
     public Guid MemberId { get; set; }
     public Member Member { get; set; } = null!;
 
+    /// <summary>Set only when Kind is EventRegistration. Nullable because NewMembership/Renewal
+    /// payments have no event. A registration can have more than one Payment row over time (e.g. a
+    /// Rejected one followed by a resubmission), same as a member's own NewMembership/Renewal
+    /// history - only one may be Submitted or Verified at a time, enforced in PaymentService.</summary>
+    public Guid? EventRegistrationId { get; set; }
+    public EventRegistration? EventRegistration { get; set; }
+
     public PaymentKind Kind { get; set; }
 
     /// <summary>What the member says they paid, and when. Not validated against the configured fee -

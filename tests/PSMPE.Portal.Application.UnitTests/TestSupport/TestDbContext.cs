@@ -16,6 +16,10 @@ public class TestDbContext(DbContextOptions<TestDbContext> options) : DbContext(
     public DbSet<MemberCertificate> MemberCertificates => Set<MemberCertificate>();
     public DbSet<PrcVerificationHistory> PrcVerificationHistories => Set<PrcVerificationHistory>();
     public DbSet<Payment> Payments => Set<Payment>();
+    public DbSet<Event> Events => Set<Event>();
+    public DbSet<EventSession> EventSessions => Set<EventSession>();
+    public DbSet<EventRegistration> EventRegistrations => Set<EventRegistration>();
+    public DbSet<EventAttendance> EventAttendances => Set<EventAttendance>();
     public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
     public DbSet<ErrorLog> ErrorLogs => Set<ErrorLog>();
     public DbSet<RenewalReminderLog> RenewalReminderLogs => Set<RenewalReminderLog>();
