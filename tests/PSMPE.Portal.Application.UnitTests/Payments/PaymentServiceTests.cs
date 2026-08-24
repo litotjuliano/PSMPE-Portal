@@ -427,4 +427,25 @@ public class PaymentServiceTests
 
         Assert.True(result.Succeeded);
     }
+
+    /// <summary>
+    /// A registration cancelled before it ever had a payment (Registered -> Cancelled via
+    /// CancelRegistrationAsync) has no Payment row at all, so the pre-existing hasActivePayment
+    /// check alone would let this through and EventPaymentVerification.Apply would flip a
+    /// Cancelled registration back to PaymentVerified - resurrecting it. Cancelled must stay a
+    /// terminal off-ramp (see openspecs/events.md).
+    /// </summary>
+    [Fact]
+    public async Task RecordEventCashPaymentAsync_OnACancelledRegistration_Fails()
+    {
+        using var db = TestDbContext.CreateInMemory();
+        var service = new PaymentService(db);
+        var (_, registration) = await SeedEventRegistrationAsync(db, EventRegistrationStatus.Cancelled);
+
+        var result = await service.RecordEventCashPaymentAsync(registration.Id, 500m, Guid.NewGuid());
+
+        Assert.False(result.Succeeded);
+        var updated = await db.EventRegistrations.FindAsync(registration.Id);
+        Assert.Equal(EventRegistrationStatus.Cancelled, updated!.Status);
+    }
 }

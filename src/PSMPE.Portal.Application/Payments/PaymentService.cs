@@ -316,6 +316,19 @@ public class PaymentService(IApplicationDbContext db, ICacheService? cache = nul
             return Result<PaymentDto>.NotFound($"Registration '{registrationId}' was not found.");
         }
 
+        // Same terminal/already-decided statuses SubmitForEventRegistrationAsync refuses, plus
+        // Cancelled: CancelRegistrationAsync allows Registered/PaymentSubmitted/Rejected ->
+        // Cancelled and never touches the Payment row, so a registration cancelled before ever
+        // paying (or cancelled after a rejection) has no active Payment - hasActivePayment below
+        // would be false and let this method resurrect a cancelled registration. PaymentSubmitted
+        // is deliberately not listed here: cancelling from it leaves the Submitted Payment row in
+        // place, so hasActivePayment already turns that case into a Conflict.
+        if (registration.Status is EventRegistrationStatus.PaymentVerified or EventRegistrationStatus.Attended
+            or EventRegistrationStatus.EvaluationSubmitted or EventRegistrationStatus.Cancelled)
+        {
+            return Result<PaymentDto>.Failure("This registration isn't awaiting payment.");
+        }
+
         if (amount <= 0)
         {
             return Result<PaymentDto>.Failure("Amount must be greater than zero.");
