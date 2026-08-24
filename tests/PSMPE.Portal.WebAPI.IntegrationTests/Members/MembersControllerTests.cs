@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.DependencyInjection;
 using PSMPE.Portal.Application.Common.Interfaces;
 using PSMPE.Portal.Application.Common.Models;
+using PSMPE.Portal.Application.Events;
 using PSMPE.Portal.Application.Members;
 using PSMPE.Portal.Application.Members.Dtos;
 using PSMPE.Portal.Application.Payments;
@@ -34,6 +35,7 @@ public class MembersControllerTests : IClassFixture<CustomWebApplicationFactory>
     private readonly IMemberCertificateService _memberCertificateService;
     private readonly IEmailSender _emailSender;
     private readonly IPaymentService _paymentService;
+    private readonly IEventService _eventService;
 
     public MembersControllerTests(CustomWebApplicationFactory factory)
     {
@@ -45,6 +47,7 @@ public class MembersControllerTests : IClassFixture<CustomWebApplicationFactory>
         _memberCertificateService = _scope.ServiceProvider.GetRequiredService<IMemberCertificateService>();
         _emailSender = _scope.ServiceProvider.GetRequiredService<IEmailSender>();
         _paymentService = _scope.ServiceProvider.GetRequiredService<IPaymentService>();
+        _eventService = _scope.ServiceProvider.GetRequiredService<IEventService>();
     }
 
     public Task InitializeAsync() => _factory.InitializeAsync();
@@ -59,7 +62,7 @@ public class MembersControllerTests : IClassFixture<CustomWebApplicationFactory>
     {
         var claims = new List<Claim> { new(ClaimTypes.NameIdentifier, (callerId ?? Guid.NewGuid()).ToString()) };
         var httpContext = new DefaultHttpContext { User = new ClaimsPrincipal(new ClaimsIdentity(claims, "TestAuth")) };
-        return new MembersController(_memberService, _memberUploadService, _memberCertificateService, _userManager, _emailSender, _paymentService)
+        return new MembersController(_memberService, _memberUploadService, _memberCertificateService, _userManager, _emailSender, _paymentService, _eventService)
         {
             ControllerContext = new ControllerContext { HttpContext = httpContext }
         };

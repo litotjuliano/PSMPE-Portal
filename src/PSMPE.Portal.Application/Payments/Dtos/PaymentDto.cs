@@ -32,6 +32,10 @@ public record SubmitPaymentRequest(
 
 public record RejectPaymentRequest(string Reason);
 
+/// <summary>POST /api/events/registrations/{id}/payment/cash's request body - just the amount, no
+/// proof file, no reference number. See PaymentService.RecordEventCashPaymentAsync.</summary>
+public record RecordCashPaymentRequest(decimal Amount);
+
 /// <summary>
 /// Where an admin-uploaded proof landed. The key is handed back to the caller only so the approval
 /// request can reference it moments later - it is not exposed on PaymentDto, since it embeds the
