@@ -41,6 +41,18 @@ public interface IPaymentService
 
     Task<Result> RejectAsync(Guid paymentId, string reason, Guid decidedByUserId, CancellationToken cancellationToken = default);
 
+    /// <summary>Self-service submission of a proof-of-payment for an event registration - the
+    /// EventRegistration counterpart to SubmitAsync. Kind is always EventRegistration, decided by
+    /// the caller passing a registrationId rather than trusted from the request body.</summary>
+    Task<Result<PaymentDto>> SubmitForEventRegistrationAsync(
+        Guid userId, Guid registrationId, SubmitPaymentRequest request, CancellationToken cancellationToken = default);
+
+    /// <summary>Creates and immediately verifies a Payment with no proof file, for an on-site cash
+    /// payer - reaches the same PaymentVerified state as the proof-upload path in one call. Refused
+    /// if the registration already has a Submitted or Verified Payment.</summary>
+    Task<Result<PaymentDto>> RecordEventCashPaymentAsync(
+        Guid registrationId, decimal amount, Guid decidedByUserId, CancellationToken cancellationToken = default);
+
     Task<MembershipFeesDto> GetFeesAsync(CancellationToken cancellationToken = default);
 
     Task<Result> UpdateFeesAsync(UpdateMembershipFeesRequest request, CancellationToken cancellationToken = default);

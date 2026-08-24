@@ -167,6 +167,25 @@ public class PaymentService(IApplicationDbContext db, ICacheService? cache = nul
             return Result.Failure("This payment has no proof attached - there's nothing to verify against.");
         }
 
+        if (payment.Kind == PaymentKind.EventRegistration)
+        {
+            var registration = payment.EventRegistrationId is null
+                ? null
+                : await db.EventRegistrations.FirstOrDefaultAsync(r => r.Id == payment.EventRegistrationId, cancellationToken);
+            if (registration is null)
+            {
+                return Result.Failure("The event registration for this payment no longer exists.");
+            }
+            if (registration.Status != EventRegistrationStatus.PaymentSubmitted)
+            {
+                return Result.Failure("This registration isn't awaiting payment verification.");
+            }
+
+            EventPaymentVerification.Apply(payment, registration, decidedByUserId);
+            await db.SaveChangesAsync(cancellationToken);
+            return Result.Success();
+        }
+
         var member = payment.Member;
 
         // Payment can't admit someone. Approval is a separate decision that gates on RMP
@@ -197,9 +216,19 @@ public class PaymentService(IApplicationDbContext db, ICacheService? cache = nul
 
         if (payment.Status == PaymentStatus.Verified)
         {
-            // Reversing a verification would have to un-advance a due date and possibly deactivate a
-            // live member - deliberately not a thing this endpoint does.
+            // Reversing a verification would have to un-advance a due date (or un-attend a
+            // registration) - deliberately not a thing this endpoint does.
             return Result.Failure("This payment was already verified and can't be rejected.");
+        }
+
+        if (payment.Kind == PaymentKind.EventRegistration && payment.EventRegistrationId is not null)
+        {
+            var registration = await db.EventRegistrations.FirstOrDefaultAsync(r => r.Id == payment.EventRegistrationId, cancellationToken);
+            if (registration is not null)
+            {
+                registration.Status = EventRegistrationStatus.Rejected;
+                registration.UpdatedAt = DateTimeOffset.UtcNow;
+            }
         }
 
         payment.Status = PaymentStatus.Rejected;
@@ -208,10 +237,116 @@ public class PaymentService(IApplicationDbContext db, ICacheService? cache = nul
         payment.DecidedAt = DateTimeOffset.UtcNow;
         payment.UpdatedAt = DateTimeOffset.UtcNow;
 
-        // Status and RenewalDueDate are deliberately untouched - a rejected renewal leaves the
-        // member exactly where they were, still owing.
+        // Member Status and RenewalDueDate are deliberately untouched for a NewMembership/Renewal
+        // rejection - a rejected renewal leaves the member exactly where they were, still owing.
         await db.SaveChangesAsync(cancellationToken);
         return Result.Success();
+    }
+
+    public async Task<Result<PaymentDto>> SubmitForEventRegistrationAsync(
+        Guid userId, Guid registrationId, SubmitPaymentRequest request, CancellationToken cancellationToken = default)
+    {
+        var registration = await db.EventRegistrations.Include(r => r.Member)
+            .FirstOrDefaultAsync(r => r.Id == registrationId, cancellationToken);
+        if (registration is null)
+        {
+            return Result<PaymentDto>.NotFound($"Registration '{registrationId}' was not found.");
+        }
+        if (registration.Member.UserId != userId)
+        {
+            return Result<PaymentDto>.Forbidden("This isn't your registration.");
+        }
+        // PaymentSubmitted is deliberately not excluded here - that status only ever coexists with
+        // an actual Submitted Payment row (set together in this method and in
+        // RecordEventCashPaymentAsync), so the hasPending check below is what turns a second
+        // submission while one is already pending into a Conflict rather than this Validation.
+        if (registration.Status is EventRegistrationStatus.PaymentVerified or EventRegistrationStatus.Attended
+            or EventRegistrationStatus.EvaluationSubmitted or EventRegistrationStatus.Cancelled)
+        {
+            return Result<PaymentDto>.Failure("This registration isn't awaiting payment.");
+        }
+
+        if (request.Amount <= 0)
+        {
+            return Result<PaymentDto>.Failure("Amount must be greater than zero.");
+        }
+        if (request.PaidOn > DateOnly.FromDateTime(DateTime.UtcNow))
+        {
+            return Result<PaymentDto>.Failure("Payment date can't be in the future.");
+        }
+        if (request.ReferenceNo?.Length > 64)
+        {
+            return Result<PaymentDto>.Failure("Reference number must be 64 characters or fewer.");
+        }
+
+        var hasPending = await db.Payments.AnyAsync(
+            p => p.EventRegistrationId == registrationId && p.Status == PaymentStatus.Submitted, cancellationToken);
+        if (hasPending)
+        {
+            return Result<PaymentDto>.Conflict("You already have a payment awaiting verification for this registration.");
+        }
+
+        var payment = new Payment
+        {
+            MemberId = registration.MemberId,
+            Member = registration.Member,
+            Kind = PaymentKind.EventRegistration,
+            EventRegistrationId = registration.Id,
+            Amount = request.Amount,
+            ReferenceNo = request.ReferenceNo?.Trim(),
+            PaidOn = request.PaidOn,
+            Status = PaymentStatus.Submitted,
+        };
+        db.Payments.Add(payment);
+
+        registration.Status = EventRegistrationStatus.PaymentSubmitted;
+        registration.UpdatedAt = DateTimeOffset.UtcNow;
+
+        await db.SaveChangesAsync(cancellationToken);
+        return Result<PaymentDto>.Success(ToDto(payment));
+    }
+
+    public async Task<Result<PaymentDto>> RecordEventCashPaymentAsync(
+        Guid registrationId, decimal amount, Guid decidedByUserId, CancellationToken cancellationToken = default)
+    {
+        var registration = await db.EventRegistrations.Include(r => r.Member)
+            .FirstOrDefaultAsync(r => r.Id == registrationId, cancellationToken);
+        if (registration is null)
+        {
+            return Result<PaymentDto>.NotFound($"Registration '{registrationId}' was not found.");
+        }
+
+        if (amount <= 0)
+        {
+            return Result<PaymentDto>.Failure("Amount must be greater than zero.");
+        }
+
+        // "Exactly one Payment, regardless of path" - a Rejected payment doesn't count, same as
+        // SubmitForEventRegistrationAsync's own pending check, so a cash payment can still cover a
+        // registration whose earlier proof submission was rejected.
+        var hasActivePayment = await db.Payments.AnyAsync(
+            p => p.EventRegistrationId == registrationId && p.Status != PaymentStatus.Rejected, cancellationToken);
+        if (hasActivePayment)
+        {
+            return Result<PaymentDto>.Conflict("This registration already has a submitted or verified payment.");
+        }
+
+        var payment = new Payment
+        {
+            MemberId = registration.MemberId,
+            Member = registration.Member,
+            Kind = PaymentKind.EventRegistration,
+            EventRegistrationId = registration.Id,
+            Amount = amount,
+            PaidOn = DateOnly.FromDateTime(DateTime.UtcNow),
+            Status = PaymentStatus.Submitted,
+        };
+        db.Payments.Add(payment);
+
+        EventPaymentVerification.Apply(payment, registration, decidedByUserId);
+
+        await db.SaveChangesAsync(cancellationToken);
+        return Result<PaymentDto>.Success(ToDto(payment));
     }
 
     public Task<MembershipFeesDto> GetFeesAsync(CancellationToken cancellationToken = default) =>

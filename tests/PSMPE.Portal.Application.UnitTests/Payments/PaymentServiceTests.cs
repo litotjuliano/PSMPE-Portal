@@ -1,4 +1,5 @@
 using PSMPE.Portal.Application.Common.Configuration;
+using PSMPE.Portal.Application.Common.Models;
 using PSMPE.Portal.Application.Payments;
 using PSMPE.Portal.Application.Payments.Dtos;
 using PSMPE.Portal.Application.UnitTests.TestSupport;
@@ -277,5 +278,153 @@ public class PaymentServiceTests
         var result = await service.UpdateFeesAsync(new UpdateMembershipFeesRequest(-1m, 200m, 600m));
 
         Assert.False(result.Succeeded);
+    }
+
+    private static async Task<(Member Member, EventRegistration Registration)> SeedEventRegistrationAsync(
+        TestDbContext db, EventRegistrationStatus status = EventRegistrationStatus.Registered)
+    {
+        var user = new ApplicationUser { UserName = $"{Guid.NewGuid()}@example.com", Email = $"{Guid.NewGuid()}@example.com" };
+        db.Add(user);
+        var member = new Member { UserId = user.Id, User = user, FirstName = "Ana", LastName = "Reyes", Chapter = Chapters.Ncr, MemberType = MemberTypes.Regular };
+        db.Members.Add(member);
+
+        var @event = new Event { Title = "Seminar", StartsAt = DateTimeOffset.UtcNow.AddDays(5), EndsAt = DateTimeOffset.UtcNow.AddDays(5).AddHours(4), Fee = 500m };
+        db.Events.Add(@event);
+
+        var registration = new EventRegistration { EventId = @event.Id, Event = @event, MemberId = member.Id, Member = member, Mode = EventMode.Onsite, Status = status };
+        db.EventRegistrations.Add(registration);
+        await db.SaveChangesAsync();
+        return (member, registration);
+    }
+
+    [Fact]
+    public async Task SubmitForEventRegistrationAsync_Valid_CreatesPaymentAndMovesToPaymentSubmitted()
+    {
+        using var db = TestDbContext.CreateInMemory();
+        var service = new PaymentService(db);
+        var (member, registration) = await SeedEventRegistrationAsync(db);
+
+        var result = await service.SubmitForEventRegistrationAsync(
+            member.UserId, registration.Id, new SubmitPaymentRequest(500m, "REF-1", DateOnly.FromDateTime(DateTime.UtcNow)));
+
+        Assert.True(result.Succeeded);
+        Assert.Equal(PaymentKind.EventRegistration, result.Value!.Kind);
+        var updated = await db.EventRegistrations.FindAsync(registration.Id);
+        Assert.Equal(EventRegistrationStatus.PaymentSubmitted, updated!.Status);
+    }
+
+    [Fact]
+    public async Task SubmitForEventRegistrationAsync_SecondSubmissionWhilePending_Fails()
+    {
+        using var db = TestDbContext.CreateInMemory();
+        var service = new PaymentService(db);
+        var (member, registration) = await SeedEventRegistrationAsync(db);
+        var request = new SubmitPaymentRequest(500m, "REF-1", DateOnly.FromDateTime(DateTime.UtcNow));
+        await service.SubmitForEventRegistrationAsync(member.UserId, registration.Id, request);
+
+        var result = await service.SubmitForEventRegistrationAsync(member.UserId, registration.Id, request);
+
+        Assert.False(result.Succeeded);
+        Assert.Equal(ResultErrorType.Conflict, result.ErrorType);
+    }
+
+    /// <summary>Matches spec.md's "Verifying an event payment advances the registration".</summary>
+    [Fact]
+    public async Task VerifyAsync_EventRegistrationPayment_MovesRegistrationToPaymentVerified()
+    {
+        using var db = TestDbContext.CreateInMemory();
+        var service = new PaymentService(db);
+        var (member, registration) = await SeedEventRegistrationAsync(db, EventRegistrationStatus.PaymentSubmitted);
+        var payment = new Payment
+        {
+            MemberId = member.Id, Kind = PaymentKind.EventRegistration, EventRegistrationId = registration.Id,
+            Amount = 500m, PaidOn = DateOnly.FromDateTime(DateTime.UtcNow), ProofStorageKey = "proof/key.jpg",
+            Status = PaymentStatus.Submitted,
+        };
+        db.Payments.Add(payment);
+        await db.SaveChangesAsync();
+
+        var result = await service.VerifyAsync(payment.Id, Guid.NewGuid());
+
+        Assert.True(result.Succeeded);
+        Assert.Equal(PaymentStatus.Verified, payment.Status);
+        var updated = await db.EventRegistrations.FindAsync(registration.Id);
+        Assert.Equal(EventRegistrationStatus.PaymentVerified, updated!.Status);
+    }
+
+    /// <summary>Matches spec.md's "A rejected event payment can be resubmitted".</summary>
+    [Fact]
+    public async Task RejectAsync_EventRegistrationPayment_SetsRegistrationRejectedAndAllowsResubmission()
+    {
+        using var db = TestDbContext.CreateInMemory();
+        var service = new PaymentService(db);
+        var (member, registration) = await SeedEventRegistrationAsync(db, EventRegistrationStatus.PaymentSubmitted);
+        var payment = new Payment
+        {
+            MemberId = member.Id, Kind = PaymentKind.EventRegistration, EventRegistrationId = registration.Id,
+            Amount = 500m, PaidOn = DateOnly.FromDateTime(DateTime.UtcNow), ProofStorageKey = "proof/key.jpg",
+            Status = PaymentStatus.Submitted,
+        };
+        db.Payments.Add(payment);
+        await db.SaveChangesAsync();
+
+        var rejectResult = await service.RejectAsync(payment.Id, "Amount doesn't match the fee.", Guid.NewGuid());
+
+        Assert.True(rejectResult.Succeeded);
+        var updated = await db.EventRegistrations.FindAsync(registration.Id);
+        Assert.Equal(EventRegistrationStatus.Rejected, updated!.Status);
+
+        var resubmit = await service.SubmitForEventRegistrationAsync(
+            member.UserId, registration.Id, new SubmitPaymentRequest(500m, "REF-2", DateOnly.FromDateTime(DateTime.UtcNow)));
+        Assert.True(resubmit.Succeeded);
+    }
+
+    /// <summary>Matches spec.md's "An admin records a cash payment".</summary>
+    [Fact]
+    public async Task RecordEventCashPaymentAsync_Valid_CreatesVerifiedPaymentAndMovesRegistration()
+    {
+        using var db = TestDbContext.CreateInMemory();
+        var service = new PaymentService(db);
+        var (_, registration) = await SeedEventRegistrationAsync(db);
+        var adminUserId = Guid.NewGuid();
+
+        var result = await service.RecordEventCashPaymentAsync(registration.Id, 500m, adminUserId);
+
+        Assert.True(result.Succeeded);
+        Assert.Equal(PaymentStatus.Verified, result.Value!.Status);
+        Assert.False(result.Value.HasProof);
+        var updated = await db.EventRegistrations.FindAsync(registration.Id);
+        Assert.Equal(EventRegistrationStatus.PaymentVerified, updated!.Status);
+    }
+
+    /// <summary>Matches spec.md's "A cash payment cannot be recorded over an existing payment".</summary>
+    [Fact]
+    public async Task RecordEventCashPaymentAsync_RegistrationAlreadyHasSubmittedPayment_Fails()
+    {
+        using var db = TestDbContext.CreateInMemory();
+        var service = new PaymentService(db);
+        var (member, registration) = await SeedEventRegistrationAsync(db);
+        await service.SubmitForEventRegistrationAsync(
+            member.UserId, registration.Id, new SubmitPaymentRequest(500m, "REF-1", DateOnly.FromDateTime(DateTime.UtcNow)));
+
+        var result = await service.RecordEventCashPaymentAsync(registration.Id, 500m, Guid.NewGuid());
+
+        Assert.False(result.Succeeded);
+        Assert.Equal(ResultErrorType.Conflict, result.ErrorType);
+    }
+
+    [Fact]
+    public async Task RecordEventCashPaymentAsync_AfterEarlierRejection_Succeeds()
+    {
+        using var db = TestDbContext.CreateInMemory();
+        var service = new PaymentService(db);
+        var (member, registration) = await SeedEventRegistrationAsync(db);
+        var submitted = await service.SubmitForEventRegistrationAsync(
+            member.UserId, registration.Id, new SubmitPaymentRequest(500m, "REF-1", DateOnly.FromDateTime(DateTime.UtcNow)));
+        await service.RejectAsync(submitted.Value!.Id, "Wrong amount.", Guid.NewGuid());
+
+        var result = await service.RecordEventCashPaymentAsync(registration.Id, 500m, Guid.NewGuid());
+
+        Assert.True(result.Succeeded);
     }
 }
