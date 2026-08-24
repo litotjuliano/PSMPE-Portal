@@ -100,9 +100,9 @@ export function EventRosterPage() {
 
         {error && <p className="text-sm text-danger mb-4">{error}</p>}
 
-        {loading || !roster ? (
+        {loading ? (
           <p className="text-sm text-default-500">Loading…</p>
-        ) : (
+        ) : !roster ? null : (
           <EventRosterTable
             sessions={roster.sessions}
             registrants={roster.registrants}
