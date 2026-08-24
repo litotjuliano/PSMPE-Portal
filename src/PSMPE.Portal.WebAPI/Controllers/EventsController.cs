@@ -147,8 +147,11 @@ public class EventsController(IEventService eventService, IPaymentService paymen
     /// events:manage. isAdmin here is derived from the authenticated user's own permission claims
     /// (User.HasClaim), never from any client-supplied request value - this is the ownership-bypass
     /// flag EventService.GetCertificateDataAsync documents, and it must only ever reflect what the
-    /// server itself knows about the caller.</summary>
+    /// server itself knows about the caller. Reachable even while Expired, same as
+    /// MembersController.GetMyCpd - a member should still be able to retrieve proof of CPD credit
+    /// they already earned even after their membership has lapsed.</summary>
     [HttpGet("registrations/{id:guid}/certificate")]
+    [AllowExpiredMember]
     public async Task<IActionResult> GetCertificate(Guid id, CancellationToken cancellationToken)
     {
         var userId = CurrentUserId;

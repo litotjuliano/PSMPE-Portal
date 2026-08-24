@@ -3,6 +3,7 @@ using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using PSMPE.Portal.Application.Auth;
 using PSMPE.Portal.Domain.Entities;
@@ -192,6 +193,78 @@ public class EventsControllerTests : IClassFixture<CustomWebApplicationFactory>,
 
         var certificateResponse = await _client.SendAsync(
             new HttpRequestMessage(HttpMethod.Get, $"/api/events/registrations/{registrationId}/certificate").WithBearer(memberToken));
+        Assert.Equal(HttpStatusCode.OK, certificateResponse.StatusCode);
+        Assert.Equal("application/pdf", certificateResponse.Content.Headers.ContentType?.MediaType);
+    }
+
+    /// <summary>
+    /// Mirrors FullRoundTrip_RegisterThroughCertificate_Succeeds up through evaluation, then flips
+    /// the member to Expired before requesting the certificate - GetCertificate must carry
+    /// [AllowExpiredMember] the same as MembersController.GetMyCpd, or MembershipAccessMiddleware's
+    /// deny-by-default gate would block a member from downloading proof of CPD credit they already
+    /// earned just because their membership later lapsed.
+    /// </summary>
+    [Fact]
+    public async Task GetCertificate_ForExpiredMember_StillSucceeds()
+    {
+        var (_, adminToken) = await CreateAdminAsync();
+        var createResponse = await _client.SendAsync(PostJson("/api/events", ValidEventPayload(), adminToken));
+        var created = await createResponse.Content.ReadFromJsonAsync<JsonElement>();
+        var eventId = created.GetProperty("id").GetGuid();
+        var sessionId = created.GetProperty("sessions")[0].GetProperty("id").GetGuid();
+
+        var setUnits = await _client.SendAsync(new HttpRequestMessage(HttpMethod.Put, $"/api/events/{eventId}")
+        {
+            Content = JsonContent.Create(new
+            {
+                title = created.GetProperty("title").GetString(),
+                description = (string?)null,
+                chapter = Chapters.Ncr,
+                venue = "PICC",
+                startsAt = created.GetProperty("startsAt").GetDateTimeOffset(),
+                endsAt = created.GetProperty("endsAt").GetDateTimeOffset(),
+                capacity = 100,
+                fee = 500m,
+                cpdUnitsOnsite = 8m,
+                cpdUnitsOnline = (decimal?)null,
+                sessions = new[] { new { id = sessionId, title = "Full Event", startsAt = created.GetProperty("startsAt").GetDateTimeOffset(), endsAt = created.GetProperty("endsAt").GetDateTimeOffset(), order = 1 } },
+            }),
+        }.WithBearer(adminToken));
+        Assert.Equal(HttpStatusCode.OK, setUnits.StatusCode);
+
+        var memberToken = await RegisterMemberAsync();
+        var registerResponse = await _client.SendAsync(PostJson($"/api/events/{eventId}/register", new { mode = "Onsite" }, memberToken));
+        var registrationId = (await registerResponse.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("id").GetGuid();
+
+        var cashResponse = await _client.SendAsync(
+            PostJson($"/api/events/registrations/{registrationId}/payment/cash", new { amount = 500m }, adminToken));
+        Assert.Equal(HttpStatusCode.OK, cashResponse.StatusCode);
+
+        var attendanceResponse = await _client.SendAsync(PostJson(
+            $"/api/events/{eventId}/roster/attendance",
+            new { registrants = new[] { new { registrationId, sessionIds = new[] { sessionId } } } },
+            adminToken));
+        Assert.Equal(HttpStatusCode.NoContent, attendanceResponse.StatusCode);
+
+        var evaluationResponse = await _client.SendAsync(PostJson(
+            $"/api/events/registrations/{registrationId}/evaluation", new { rating = 5, comments = "Great" }, memberToken));
+        Assert.Equal(HttpStatusCode.NoContent, evaluationResponse.StatusCode);
+
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var member = await db.EventRegistrations
+                .Where(r => r.Id == registrationId)
+                .Select(r => r.Member)
+                .SingleAsync();
+            member.Status = MembershipStatus.Expired;
+            member.RenewalDueDate = DateOnly.FromDateTime(DateTime.UtcNow).AddDays(-100);
+            await db.SaveChangesAsync();
+        }
+
+        var certificateResponse = await _client.SendAsync(
+            new HttpRequestMessage(HttpMethod.Get, $"/api/events/registrations/{registrationId}/certificate").WithBearer(memberToken));
+
         Assert.Equal(HttpStatusCode.OK, certificateResponse.StatusCode);
         Assert.Equal("application/pdf", certificateResponse.Content.Headers.ContentType?.MediaType);
     }
