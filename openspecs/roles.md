@@ -86,7 +86,8 @@ via `[RequirePermission]`.
 - **Permissions** (`Domain.Enums.Permissions`, `resource:action` naming): `content:create`,
   `content:update`, `content:delete`, `content:manage-others`, `layout:create`,
   `layout:delete`, `layout:delete-system`, `admin:manage-users`, `admin:manage-roles`,
-  `ai:use-prompt`, `members:view`, `members:manage`, `members:approve`.
+  `ai:use-prompt`, `members:view`, `members:manage`, `members:approve`, `events:view`,
+  `events:manage` (see `openspecs/events.md`).
 - `members:approve` covers exactly the membership-approval pipeline: RMP/PRC verification
   approve/reject, the Membership ID availability check, the final approve call, and uploading a
   walk-in's payment proof during approval. It is granted *in addition to* `members:manage` on
@@ -116,8 +117,8 @@ via `[RequirePermission]`.
 | Role | Grants |
 |---|---|
 | Super Admin | All permissions |
-| Admin | Content: create/update/delete/manage-others; Layout: create/delete; Admin: manage-users; Ai: use-prompt; Members: view, manage |
-| Manager | Content: create/update/delete; Layout: create; Ai: use-prompt; Members: view |
+| Admin | Content: create/update/delete/manage-others; Layout: create/delete; Admin: manage-users; Ai: use-prompt; Members: view, manage; Events: view, manage |
+| Manager | Content: create/update/delete; Layout: create; Ai: use-prompt; Members: view; Events: view |
 | Accounts | Content: update; Ai: use-prompt; Members: view |
 | Approval | Members: view, approve |
 | Member | Content: create/update |

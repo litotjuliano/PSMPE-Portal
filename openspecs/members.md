@@ -220,8 +220,10 @@ registration (`O(n)`, check-then-insert with no lock or retry). Deleted outright
 `RenewalDueDate` has passed, and today is still within `RenewalDueDate + MembershipGracePeriodDays`
 (a `SystemConfig` row, default `30`, read by `MemberService` with an in-code fallback if unseeded).
 Gives lapsed-but-recent members a window of continued access rather than an immediate cutoff.
-Nothing currently enforces reduced access during grace (no Certificates/CPD/Events exist yet to
-gate) — it's exposed as a flag for the frontend to act on when those features exist.
+Nothing currently enforces reduced access during grace — Certificates, CPD and Events now exist
+(see `openspecs/events.md`) but none of them are gated by grace-period status specifically, only by
+the harder `Expired` cutoff below. This flag remains exposed for the frontend to act on if a
+grace-specific restriction is ever wanted.
 
 ## Registration: simple sign-up now, resumable application wizard later
 
@@ -536,13 +538,20 @@ repeat call doesn't regenerate/resend):
   `MembershipAccessMiddleware` (`PSMPE.Portal.WebAPI`) blocks every other endpoint with `403
   MEMBERSHIP_EXPIRED` once `Status == Expired`. The allowlist is every `/me`-prefixed action on this
   controller, plus `AccountController`'s two self-service actions and `PaymentsController`'s
-  `me`/`fees`/`proof` endpoints (see `payments.md`) — exactly what a member needs to view their
-  profile and pay their way back to `Active`. Marked with `[AllowExpiredMember]`, a plain marker
+  `me`/`fees`/`proof` endpoints (see `payments.md`), plus one endpoint on another controller
+  (see below) — together, what a member needs to view their profile, pay their way back to
+  `Active`, and retrieve records tied to credit already earned. Marked with `[AllowExpiredMember]`, a plain marker
   attribute the middleware reads off endpoint metadata (not an authorization policy). Staff/admin
   roles (any role other than exactly `Member`) are never gated, and Active/grace-period members are
   unaffected. The frontend (`ExpiredMembershipGate`) mirrors this by redirecting an Expired member
   to `/profile` and hiding the rest of the nav, but that is UX only — the middleware is the actual
   enforcement.
+  - Also on the allowlist, outside this controller entirely:
+    `GET /api/events/registrations/{id}/certificate` (`EventsController`, see `openspecs/events.md`)
+    — a member should still be able to retrieve proof of CPD credit already earned even after their
+    membership lapses, the same reasoning that keeps the payment endpoints above reachable.
+    (`GET /api/members/me/cpd` is already covered above — it's a `/me`-prefixed action on *this*
+    controller, `MembersController`.)
 
 ## Open questions / TODO
 

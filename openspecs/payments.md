@@ -159,6 +159,35 @@ reading them itself, so it stays a pure renderer with no database dependency.
   so any key added after the first deployment would never appear on an existing database. Each
   missing key is now filled independently and admin-edited values are left alone.
 
+## Event registration payments (`Kind.EventRegistration`)
+
+`Payment.Kind` gained a third case, `EventRegistration`, alongside `NewMembership`/`Renewal`, and
+`Payment` gained a nullable `EventRegistrationId` FK (mirrors how `Payment.MemberId` already works)
+— added for the Event Management & CPD Credit Tracker feature, see `openspecs/events.md`.
+
+- **`POST /{id}/verify` and `POST /{id}/reject` now branch on `Kind`.** For an `EventRegistration`
+  payment, verifying/rejecting drives the linked `EventRegistration.Status` instead of
+  `MembershipStatus`/`RenewalDueDate` — verifying moves it to `PaymentVerified`, rejecting moves it
+  to `Rejected` (the member can resubmit). `EventPaymentVerification.Apply`
+  (`Application/Payments/EventPaymentVerification.cs`) is the `EventRegistration` counterpart to
+  `PaymentVerification.Apply` above: same shape (marks the `Payment` verified, stamps
+  `DecidedByUserId`/`DecidedAt`), but with none of `PaymentVerification.Apply`'s membership-specific
+  `Member.ApprovedAt`/`RenewalDueDate` arithmetic, since none of that applies to an event payment.
+  Both `PaymentService.VerifyAsync` and the event-only `RecordEventCashPaymentAsync` (below) call it,
+  so "this event payment is now verified" has exactly one definition regardless of which path reached
+  it — the same reasoning that gives `PaymentVerification.Apply` a single definition for memberships.
+- **Two new endpoints exist under `/api/events/...`, not `/api/payments/...`**, for the two payment
+  actions that are genuinely new and specific to events — not just `Kind`-branching on an existing
+  one:
+  - `POST /api/events/registrations/{id}/payment` — member proof submission, scoped to a
+    registration id rather than a bare payment id.
+  - `POST /api/events/registrations/{id}/payment/cash` — admin-only, records a cash payment for an
+    on-site payer: creates and verifies a `Payment` in one call, with no proof file, reaching
+    `PaymentVerified` directly. Refused if the registration already has a submitted or verified
+    `Payment` — a registration has exactly one active `Payment` regardless of path.
+  See `openspecs/events.md` ("The two payment paths") for the full detail — not duplicated here so
+  this file doesn't become a second copy of that documentation.
+
 ## Membership lifecycle: reminders, grace period, and auto-expiry
 
 The grace period is 7 days (`SystemConfig` key `MembershipGracePeriodDays`), after which a lapsed
