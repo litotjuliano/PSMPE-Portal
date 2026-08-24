@@ -326,4 +326,118 @@ public class EventServiceTests
         await db.SaveChangesAsync();
         return member;
     }
+
+    [Fact]
+    public async Task RecordAttendanceAsync_BeforePaymentVerified_Fails()
+    {
+        using var db = TestDbContext.CreateInMemory();
+        var service = new EventService(db);
+        var @event = (await service.CreateAsync(ValidCreateRequest())).Value!;
+        var member = await SeedMemberForEventTestsAsync(db);
+        var registration = (await service.RegisterAsync(member.UserId, @event.Id, "Onsite")).Value!;
+        var sessionId = @event.Sessions.Single().Id;
+
+        var result = await service.RecordAttendanceAsync(
+            @event.Id, [new RegistrantAttendanceRequest(registration.Id, [sessionId])], Guid.NewGuid());
+
+        Assert.False(result.Succeeded);
+    }
+
+    [Fact]
+    public async Task RecordAttendanceAsync_RecordsSessions_MovesRegistrationToAttended()
+    {
+        using var db = TestDbContext.CreateInMemory();
+        var service = new EventService(db);
+        var @event = (await service.CreateAsync(ValidCreateRequest())).Value!;
+        var member = await SeedMemberForEventTestsAsync(db);
+        var registration = (await service.RegisterAsync(member.UserId, @event.Id, "Onsite")).Value!;
+        await MarkPaymentVerifiedAsync(db, registration.Id);
+        var sessionId = @event.Sessions.Single().Id;
+        var adminUserId = Guid.NewGuid();
+
+        var result = await service.RecordAttendanceAsync(
+            @event.Id, [new RegistrantAttendanceRequest(registration.Id, [sessionId])], adminUserId);
+
+        Assert.True(result.Succeeded);
+        var updated = await db.EventRegistrations.FindAsync(registration.Id);
+        Assert.Equal(EventRegistrationStatus.Attended, updated!.Status);
+        var attendance = Assert.Single(db.EventAttendances.Where(a => a.EventRegistrationId == registration.Id));
+        Assert.Equal(adminUserId, attendance.RecordedBy);
+    }
+
+    /// <summary>Matches spec.md's "A member attends only part of a multi-session event": 3 of 6
+    /// sessions produces exactly 3 EventAttendance rows.</summary>
+    [Fact]
+    public async Task RecordAttendanceAsync_PartialAttendance_RecordsExactlyThatManySessions()
+    {
+        using var db = TestDbContext.CreateInMemory();
+        var service = new EventService(db);
+        var created = (await service.CreateAsync(ValidCreateRequest())).Value!;
+        var sixSessions = Enumerable.Range(1, 6)
+            .Select(i => new EventSessionRequest(i == 1 ? created.Sessions[0].Id : null, $"Lecture {i}", created.StartsAt.AddHours(i), created.StartsAt.AddHours(i + 1), i))
+            .ToList();
+        var @event = (await service.UpdateAsync(created.Id, ToUpdateRequest(created) with { Sessions = sixSessions })).Value!;
+        var member = await SeedMemberForEventTestsAsync(db);
+        var registration = (await service.RegisterAsync(member.UserId, @event.Id, "Onsite")).Value!;
+        await MarkPaymentVerifiedAsync(db, registration.Id);
+        var attendedSessionIds = @event.Sessions.Take(3).Select(s => s.Id).ToList();
+
+        var result = await service.RecordAttendanceAsync(
+            @event.Id, [new RegistrantAttendanceRequest(registration.Id, attendedSessionIds)], Guid.NewGuid());
+
+        Assert.True(result.Succeeded);
+        Assert.Equal(3, db.EventAttendances.Count(a => a.EventRegistrationId == registration.Id));
+        var updated = await db.EventRegistrations.FindAsync(registration.Id);
+        Assert.Equal(EventRegistrationStatus.Attended, updated!.Status);
+    }
+
+    [Fact]
+    public async Task RecordAttendanceAsync_SessionFromDifferentEvent_Fails()
+    {
+        using var db = TestDbContext.CreateInMemory();
+        var service = new EventService(db);
+        var @event = (await service.CreateAsync(ValidCreateRequest())).Value!;
+        var otherEvent = (await service.CreateAsync(ValidCreateRequest("Other Event"))).Value!;
+        var member = await SeedMemberForEventTestsAsync(db);
+        var registration = (await service.RegisterAsync(member.UserId, @event.Id, "Onsite")).Value!;
+        await MarkPaymentVerifiedAsync(db, registration.Id);
+        var otherEventSessionId = otherEvent.Sessions.Single().Id;
+
+        var result = await service.RecordAttendanceAsync(
+            @event.Id, [new RegistrantAttendanceRequest(registration.Id, [otherEventSessionId])], Guid.NewGuid());
+
+        Assert.False(result.Succeeded);
+        Assert.Empty(db.EventAttendances.Where(a => a.EventRegistrationId == registration.Id));
+    }
+
+    [Fact]
+    public async Task RecordAttendanceAsync_CalledAgainWithCorrectedSet_ReplacesPreviousRows()
+    {
+        using var db = TestDbContext.CreateInMemory();
+        var service = new EventService(db);
+        var created = (await service.CreateAsync(ValidCreateRequest())).Value!;
+        var twoSessions = new List<EventSessionRequest>
+        {
+            new(created.Sessions[0].Id, "Lecture 1", created.StartsAt, created.StartsAt.AddHours(1), 1),
+            new(null, "Lecture 2", created.StartsAt.AddHours(1), created.EndsAt, 2),
+        };
+        var @event = (await service.UpdateAsync(created.Id, ToUpdateRequest(created) with { Sessions = twoSessions })).Value!;
+        var member = await SeedMemberForEventTestsAsync(db);
+        var registration = (await service.RegisterAsync(member.UserId, @event.Id, "Onsite")).Value!;
+        await MarkPaymentVerifiedAsync(db, registration.Id);
+        await service.RecordAttendanceAsync(@event.Id, [new RegistrantAttendanceRequest(registration.Id, [@event.Sessions[0].Id])], Guid.NewGuid());
+
+        var result = await service.RecordAttendanceAsync(
+            @event.Id, [new RegistrantAttendanceRequest(registration.Id, [@event.Sessions[0].Id, @event.Sessions[1].Id])], Guid.NewGuid());
+
+        Assert.True(result.Succeeded);
+        Assert.Equal(2, db.EventAttendances.Count(a => a.EventRegistrationId == registration.Id));
+    }
+
+    private static async Task MarkPaymentVerifiedAsync(TestDbContext db, Guid registrationId)
+    {
+        var registration = await db.EventRegistrations.FindAsync(registrationId);
+        registration!.Status = EventRegistrationStatus.PaymentVerified;
+        await db.SaveChangesAsync();
+    }
 }
