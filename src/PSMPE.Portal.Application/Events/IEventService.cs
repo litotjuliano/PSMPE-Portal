@@ -25,4 +25,6 @@ public interface IEventService
         Guid eventId, IReadOnlyList<RegistrantAttendanceRequest> registrants, Guid adminUserId, CancellationToken cancellationToken = default);
 
     Task<MyCpdSummaryDto> GetMyCpdAsync(Guid userId, CancellationToken cancellationToken = default);
+
+    Task<Result<EventRosterDto>> GetRosterAsync(Guid eventId, CancellationToken cancellationToken = default);
 }

@@ -1,6 +1,8 @@
 using PSMPE.Portal.Application.Common.Models;
 using PSMPE.Portal.Application.Events;
 using PSMPE.Portal.Application.Events.Dtos;
+using PSMPE.Portal.Application.Payments;
+using PSMPE.Portal.Application.Payments.Dtos;
 using PSMPE.Portal.Application.UnitTests.TestSupport;
 using PSMPE.Portal.Domain.Entities;
 using PSMPE.Portal.Domain.Enums;
@@ -557,5 +559,79 @@ public class EventServiceTests
 
         Assert.Equal(0m, summary.TotalCreditUnits);
         Assert.Empty(summary.Registrations);
+    }
+
+    [Fact]
+    public async Task GetRosterAsync_UnknownEvent_NotFound()
+    {
+        using var db = TestDbContext.CreateInMemory();
+        var service = new EventService(db);
+
+        var result = await service.GetRosterAsync(Guid.NewGuid());
+
+        Assert.False(result.Succeeded);
+        Assert.Equal(ResultErrorType.NotFound, result.ErrorType);
+    }
+
+    [Fact]
+    public async Task GetRosterAsync_ReturnsPerSessionAttendancePaymentAndEvaluationState()
+    {
+        using var db = TestDbContext.CreateInMemory();
+        var service = new EventService(db);
+        var @event = (await service.CreateAsync(ValidCreateRequest())).Value!;
+        var member = await SeedMemberForEventTestsAsync(db);
+        var registration = (await service.RegisterAsync(member.UserId, @event.Id, "Onsite")).Value!;
+        var paymentService = new PaymentService(db);
+        var submitted = await paymentService.SubmitForEventRegistrationAsync(
+            member.UserId, registration.Id, new SubmitPaymentRequest(500m, "REF-1", DateOnly.FromDateTime(DateTime.UtcNow)));
+        db.Payments.First(p => p.Id == submitted.Value!.Id).ProofStorageKey = "proof/key.jpg";
+        await db.SaveChangesAsync();
+        await paymentService.VerifyAsync(submitted.Value!.Id, Guid.NewGuid());
+        var sessionId = @event.Sessions.Single().Id;
+        await service.RecordAttendanceAsync(@event.Id, [new RegistrantAttendanceRequest(registration.Id, [sessionId])], Guid.NewGuid());
+        await service.SubmitEvaluationAsync(member.UserId, registration.Id, rating: 5, comments: "Excellent");
+
+        var result = await service.GetRosterAsync(@event.Id);
+
+        Assert.True(result.Succeeded);
+        var entry = Assert.Single(result.Value!.Registrants);
+        Assert.Equal("EvaluationSubmitted", entry.Status);
+        Assert.Equal([sessionId], entry.AttendedSessionIds);
+        Assert.Equal(1, entry.TotalSessions);
+        Assert.Equal("Verified", entry.PaymentStatus);
+        Assert.False(entry.PaymentIsCash);
+        Assert.Equal(5, entry.EvaluationRating);
+    }
+
+    [Fact]
+    public async Task GetRosterAsync_CashPayment_ReportsPaymentIsCashTrue()
+    {
+        using var db = TestDbContext.CreateInMemory();
+        var service = new EventService(db);
+        var @event = (await service.CreateAsync(ValidCreateRequest())).Value!;
+        var member = await SeedMemberForEventTestsAsync(db);
+        var registration = (await service.RegisterAsync(member.UserId, @event.Id, "Onsite")).Value!;
+        var paymentService = new PaymentService(db);
+        await paymentService.RecordEventCashPaymentAsync(registration.Id, 500m, Guid.NewGuid());
+
+        var result = await service.GetRosterAsync(@event.Id);
+
+        var entry = Assert.Single(result.Value!.Registrants);
+        Assert.True(entry.PaymentIsCash);
+    }
+
+    [Fact]
+    public async Task GetRosterAsync_ExcludesCancelledRegistrations()
+    {
+        using var db = TestDbContext.CreateInMemory();
+        var service = new EventService(db);
+        var @event = (await service.CreateAsync(ValidCreateRequest())).Value!;
+        var member = await SeedMemberForEventTestsAsync(db);
+        var registration = (await service.RegisterAsync(member.UserId, @event.Id, "Onsite")).Value!;
+        await service.CancelRegistrationAsync(member.UserId, registration.Id);
+
+        var result = await service.GetRosterAsync(@event.Id);
+
+        Assert.Empty(result.Value!.Registrants);
     }
 }
