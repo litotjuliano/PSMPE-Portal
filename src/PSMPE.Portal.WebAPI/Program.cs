@@ -4,6 +4,8 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using PSMPE.Portal.Application;
+using PSMPE.Portal.Application.Members;
+using PSMPE.Portal.Application.Payments;
 using PSMPE.Portal.Domain.Entities;
 using PSMPE.Portal.Infrastructure;
 using PSMPE.Portal.Infrastructure.Persistence;
@@ -113,6 +115,8 @@ app.UseRateLimiter();
 app.UseAuthentication();
 app.UseAuthorization();
 
+app.UseMiddleware<MembershipAccessMiddleware>();
+
 app.MapControllers();
 
 // Unauthenticated liveness probe used by the DigitalOcean App Platform health check
@@ -139,7 +143,11 @@ if (builder.Configuration.GetValue<bool>("Seed:Enabled"))
     var userManager = services.GetRequiredService<UserManager<ApplicationUser>>();
     await IdentitySeeder.SeedAsync(roleManager, userManager, builder.Configuration, logger);
     await SystemConfigSeeder.SeedAsync(db, logger);
-    await MemberSeeder.SeedAsync(db, userManager, builder.Configuration, logger);
+
+    var memberService = services.GetRequiredService<IMemberService>();
+    var memberUploadService = services.GetRequiredService<IMemberUploadService>();
+    var paymentService = services.GetRequiredService<IPaymentService>();
+    await MemberSeeder.SeedAsync(db, userManager, memberService, memberUploadService, paymentService, builder.Configuration, logger);
 }
 
 // Unconditional (not gated by Seed:Enabled) - fixes real corrupted data (administrative accounts

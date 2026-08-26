@@ -25,7 +25,7 @@ template is the app's actual layout/UI:
   into a specific file.
 - A few template files import `core/auth/useAuth` directly (`AppMenu.tsx` for
   role-gating the Users nav item, `topbar/index.tsx` for the signed-in user's
-  name/email and Sign Out, `WelcomeUser.tsx` for the dashboard greeting). The
+  name/email and Sign Out, `MembershipWelcomeBanner.tsx` for the dashboard greeting). The
   template needs real session data to render correctly — there's no way around this
   once it's the actual UI, not an optional add-on.
 
@@ -36,16 +36,22 @@ a while, to catch *accidental* new coupling rather than the deliberate coupling 
 ## What's here
 
 ```
-assets/{css,images}/     Tailwick's CSS (verbatim) + a curated image subset
-components/layout/       SideNav, topbar, Footer, customizer, AppShell
-components/dashboard/    The 10 Ecommerce-dashboard widgets + chart config (data.ts)
-components/shared/       PageBreadcrumb, PageMeta, ApexChart/IconifyIcon/Simplebar wrappers
-context/                 LayoutContext (sidenav size/color, theme, RTL direction)
-hooks/                   usePrelineInit - re-runs Preline's autoInit() on route change
-pages/                   DashboardPage, LoginPage, and the CMS re-skin components
-                          (AdminUsersTable, ContentListCard, ContentEditCard)
-utils/, helpers/         Copied support code (debounce, layout attribute helpers, colors)
-types/global.d.ts        Window.HSStaticMethods typing for Preline
+assets/{css,images}/              Tailwick's CSS (verbatim) + a curated image subset
+components/layout/                SideNav, topbar, Footer, customizer, AppShell
+components/dashboard-membership/  Real Membership statistics dashboard (status breakdown,
+                                   registration trend, chapter/type breakdown, action items,
+                                   welcome banner) - Admin/staff only, replacing the old fake
+                                   ecommerce dashboard/ folder (deleted)
+components/dashboard-previews/    Static "coming soon" preview widgets for the not-yet-built
+                                   Event and News Management modules - shown to all roles
+components/shared/                PageBreadcrumb, PageMeta, ApexChart/IconifyIcon/Simplebar
+                                   wrappers, GaugeStat, StatTile
+context/                          LayoutContext (sidenav size/color, theme, RTL direction)
+hooks/                            usePrelineInit - re-runs Preline's autoInit() on route change
+pages/                            DashboardPage, LoginPage, and the CMS re-skin components
+                                   (AdminUsersTable, ContentListCard, ContentEditCard)
+utils/, helpers/                  Copied support code (debounce, layout attribute helpers, colors)
+types/global.d.ts                 Window.HSStaticMethods typing for Preline
 ```
 
 ## What's in the Tailwick package but NOT ported here

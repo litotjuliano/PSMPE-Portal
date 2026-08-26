@@ -2,7 +2,7 @@ import type { ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import type { IconType } from 'react-icons/lib'
 
-export type StandardButtonVariant = 'primary' | 'view' | 'success' | 'warning' | 'danger' | 'secondary'
+export type StandardButtonVariant = 'primary' | 'view' | 'success' | 'warning' | 'danger' | 'secondary' | 'on-primary'
 
 interface StandardButtonBaseProps {
   variant?: StandardButtonVariant
@@ -40,6 +40,10 @@ const variantClasses: Record<StandardButtonVariant, string> = {
   warning: 'bg-warning text-white hover:bg-warning/90',
   danger: 'bg-danger text-white hover:bg-danger/90',
   secondary: 'border border-default-200 hover:bg-default-150 text-default-700',
+  // For buttons sitting inside a filled .card-header. The default primary variant is invisible
+  // there - primary on primary - and a CSS-only fix is impossible, since a utility class always
+  // beats an @layer base rule in Tailwind v4 no matter the selector specificity.
+  'on-primary': 'bg-white/15 text-white hover:bg-white/25',
 }
 
 /**

@@ -32,6 +32,10 @@ export interface GetUsersParams {
   pageSize?: number
   sortBy?: 'displayName' | 'email' | 'createdAt' | 'emailConfirmed'
   sortDir?: 'asc' | 'desc'
+  /** Matches display name or email - case-insensitive substring match. */
+  search?: string
+  /** Union of every role listed - a user matching any one of them is included. */
+  roles?: Role[]
 }
 
 export interface CreateUserRequest {

@@ -107,7 +107,7 @@ const Topbar = () => {
                 {pendingPrcVerifications.map((member) => (
                   <Link
                     key={member.id}
-                    to="/prc-verifications"
+                    to="/members?queue=rmp"
                     className="flex gap-3 p-4 items-start hover:bg-default-150"
                   >
                     <div className="size-10 rounded-md bg-default-100 flex justify-center items-center">

@@ -18,8 +18,13 @@ export const Chapters = {
 
 export type ChapterValue = (typeof Chapters)[keyof typeof Chapters]
 
+/** Mirrors MemberTypes.cs. Regular stays first because every member predating the other three
+ *  carries it - dropping it would leave those records showing a value the dropdown doesn't offer. */
 export const MemberTypes = {
   Regular: 'Regular Member',
+  New: 'New',
+  Renewal: 'Renewal',
+  SeniorCitizen: 'Senior Citizen',
 } as const
 
 export type MemberTypeValue = (typeof MemberTypes)[keyof typeof MemberTypes]
@@ -81,23 +86,23 @@ export interface Member {
   cityMunicipality: string | null
   province: string | null
   zipCode: string | null
+  country: string | null
   mailingHouseNo: string | null
   mailingStreet: string | null
   mailingBarangay: string | null
   mailingCityMunicipality: string | null
   mailingProvince: string | null
   mailingZipCode: string | null
+  mailingCountry: string | null
   housePhone: string | null
-  website: string | null
-  facebookUrl: string | null
-  linkedInUrl: string | null
-  xUrl: string | null
-  instagramUrl: string | null
-  membershipNo: string
+  /** Null until an admin assigns PSMPE's control number at approval. */
+  membershipNo: string | null
   prcLicenseNo: string | null
   prcRegistrationDate: string | null
   prcValidUntilDate: string | null
   ptrNumber: string | null
+  ptrPlaceIssued: string | null
+  ptrDateIssued: string | null
   tin: string | null
   prcIdVerified: boolean
   pendingPrcLicenseNo: string | null
@@ -105,6 +110,10 @@ export interface Member {
   pendingPrcValidUntilDate: string | null
   prcVerificationRejectedReason: string | null
   chapter: string
+  /** Optional chapter officer post - the year held and the role. Distinct from `position`, which
+   *  is the member's employment position. */
+  chapterYear: number | null
+  chapterPosition: string | null
   employmentStatus: string | null
   company: string | null
   position: string | null
@@ -119,6 +128,9 @@ export interface Member {
   approvedAt: string | null
   submittedAt: string | null
   isInGracePeriod: boolean
+  /** Past the renewal date AND past the grace period. Derived server-side, not stored - there is
+   *  no scheduler, so the persisted status stays admin-controlled. */
+  isExpired: boolean
   createdAt: string
   updatedAt: string | null
 }

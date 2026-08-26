@@ -1,17 +1,20 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { memberApi } from '../api/endpoints/memberApi'
+import { uploadApi } from '../api/endpoints/uploadApi'
 import { useAuth } from '../auth/useAuth'
 import { Roles } from '../types/auth'
 import { MemberTypes } from '../types/member'
 import type { Member } from '../types/member'
 import { AccountSection } from './AccountSection'
 import { describeError } from '../utils/apiError'
+import { mailingMirrorsResidence } from '../utils/memberFields'
 import {
   MembershipApplicationWizardCard,
   type MembershipApplicationState,
   MyProfileTabsCard,
   PageBreadcrumb,
   PageMeta,
+  RenewalPaymentCard,
 } from '../../integrations/template'
 
 /**
@@ -34,6 +37,16 @@ function splitDisplayName(displayName: string): { firstName: string; middleName:
   return { firstName: words[0], middleName: words.slice(1, -1).join(' '), lastName: words[words.length - 1] }
 }
 
+/** Given + middle + surname + suffix, blanks dropped. Falls back to the account display name for a
+ *  caller with no Member profile yet (administrative accounts) or a draft with no name typed in. */
+function completeName(member: Member | null, displayName: string): string {
+  const composed = [member?.firstName, member?.middleName, member?.lastName, member?.suffix]
+    .map((part) => part?.trim())
+    .filter(Boolean)
+    .join(' ')
+  return composed || displayName.trim()
+}
+
 function buildEmptyWizardState(displayName: string): MembershipApplicationState {
   return {
     ...splitDisplayName(displayName),
@@ -42,6 +55,8 @@ function buildEmptyWizardState(displayName: string): MembershipApplicationState 
     gender: '',
     civilStatus: '',
     chapter: '',
+    chapterYear: '',
+    chapterPosition: '',
     memberType: MemberTypes.Regular,
     educationLevel: '',
     schoolName: '',
@@ -51,6 +66,8 @@ function buildEmptyWizardState(displayName: string): MembershipApplicationState 
     prcRegistrationDate: '',
     prcValidUntilDate: '',
     ptrNumber: '',
+    ptrPlaceIssued: '',
+    ptrDateIssued: '',
     tin: '',
     company: '',
     mobileNumber: '',
@@ -60,6 +77,7 @@ function buildEmptyWizardState(displayName: string): MembershipApplicationState 
     cityMunicipality: '',
     province: '',
     zipCode: '',
+    country: 'Philippines',
     mailingSameAsResidence: true,
     mailingHouseNo: '',
     mailingStreet: '',
@@ -67,12 +85,8 @@ function buildEmptyWizardState(displayName: string): MembershipApplicationState 
     mailingCityMunicipality: '',
     mailingProvince: '',
     mailingZipCode: '',
+    mailingCountry: 'Philippines',
     housePhone: '',
-    website: '',
-    facebookUrl: '',
-    linkedInUrl: '',
-    xUrl: '',
-    instagramUrl: '',
     agreedToTerms: false,
     dataPrivacyConsent: false,
   }
@@ -88,6 +102,8 @@ function toWizardState(member: Member): MembershipApplicationState {
     gender: member.gender ?? '',
     civilStatus: member.civilStatus ?? '',
     chapter: member.chapter,
+    chapterYear: member.chapterYear !== null ? String(member.chapterYear) : '',
+    chapterPosition: member.chapterPosition ?? '',
     memberType: member.memberType || MemberTypes.Regular,
     educationLevel: member.educationLevel ?? '',
     schoolName: member.schoolName ?? '',
@@ -97,6 +113,8 @@ function toWizardState(member: Member): MembershipApplicationState {
     prcRegistrationDate: member.prcRegistrationDate ?? '',
     prcValidUntilDate: member.prcValidUntilDate ?? '',
     ptrNumber: member.ptrNumber ?? '',
+    ptrPlaceIssued: member.ptrPlaceIssued ?? '',
+    ptrDateIssued: member.ptrDateIssued ?? '',
     tin: member.tin ?? '',
     company: member.company ?? '',
     mobileNumber: member.mobileNumber ?? '',
@@ -106,21 +124,18 @@ function toWizardState(member: Member): MembershipApplicationState {
     cityMunicipality: member.cityMunicipality ?? '',
     province: member.province ?? '',
     zipCode: member.zipCode ?? '',
-    // Resuming a draft always shows the mailing fields explicitly (not the "same as residence"
-    // shorthand) - there's no stored flag to know if they were originally mirrored or typed in.
-    mailingSameAsResidence: false,
+    country: member.country ?? 'Philippines',
+    // There's no stored flag, so this is inferred - ticked unless the draft already holds a
+    // mailing address that genuinely differs from the residence one (see mailingMirrorsResidence).
+    mailingSameAsResidence: mailingMirrorsResidence(member),
     mailingHouseNo: member.mailingHouseNo ?? '',
     mailingStreet: member.mailingStreet ?? '',
     mailingBarangay: member.mailingBarangay ?? '',
     mailingCityMunicipality: member.mailingCityMunicipality ?? '',
     mailingProvince: member.mailingProvince ?? '',
     mailingZipCode: member.mailingZipCode ?? '',
+    mailingCountry: member.mailingCountry ?? 'Philippines',
     housePhone: member.housePhone ?? '',
-    website: member.website ?? '',
-    facebookUrl: member.facebookUrl ?? '',
-    linkedInUrl: member.linkedInUrl ?? '',
-    xUrl: member.xUrl ?? '',
-    instagramUrl: member.instagramUrl ?? '',
     agreedToTerms: false,
     dataPrivacyConsent: false,
   }
@@ -153,13 +168,10 @@ function hasCompletedContactInfo(member: Member): boolean {
   return Boolean(member.mobileNumber && member.street && member.barangay && member.cityMunicipality && member.province && member.zipCode)
 }
 
-/** Step 2 (Additional Information)'s required field - kept in sync with the wizard's Step 3 field
- *  set. Step 3 (Payment Details) has no required Member field of its own (Proof of Payment is an
- *  upload, and the terms/consent checkboxes are never persisted), so it's never a distinct gate:
- *  once Additional Information is complete, there's nothing further to check for resume purposes. */
-function hasCompletedAdditionalInfo(member: Member): boolean {
-  return Boolean(member.ptrNumber)
-}
+// Steps 2 (Additional Information) and 3 (Payment Details) have no required Member field between
+// them - PTR Number was the last one and is now optional, Proof of Payment is an upload, and the
+// terms/consent checkboxes are never persisted. Neither is a distinct resume gate any more, so
+// completing Contact Information carries the applicant straight to the end of the wizard.
 
 /** How far into the 4-step wizard (0-3) an in-progress draft has already gotten, each step
  *  building on the previous - same shallow field-based approach hasCompletedPersonalInfo already
@@ -167,7 +179,6 @@ function hasCompletedAdditionalInfo(member: Member): boolean {
 function furthestStepReached(member: Member): number {
   if (!hasCompletedPersonalInfo(member)) return 0
   if (!hasCompletedContactInfo(member)) return 1
-  if (!hasCompletedAdditionalInfo(member)) return 2
   return 3
 }
 
@@ -188,6 +199,43 @@ export function MyProfilePage() {
   // can't fire overlapping saveDraft calls.
   const [navigating, setNavigating] = useState(false)
   const [loading, setLoading] = useState(true)
+
+  // The photo lives here rather than in each consumer: the summary card displays it and the
+  // Personal Information tab replaces it, and when they each owned a copy the page fetched the
+  // same blob twice and showed two avatars that could disagree after an upload.
+  const [photoUrl, setPhotoUrl] = useState<string | null>(null)
+  // Held in a ref so cleanup revokes the URL actually on screen, not a stale capture.
+  const photoObjectUrlRef = useRef<string | null>(null)
+
+  const showPhoto = useCallback((next: string | null) => {
+    if (photoObjectUrlRef.current) URL.revokeObjectURL(photoObjectUrlRef.current)
+    photoObjectUrlRef.current = next
+    setPhotoUrl(next)
+  }, [])
+
+  useEffect(() => {
+    let cancelled = false
+    uploadApi
+      .fetchMyPhotoUrl()
+      .then((result) => {
+        if (cancelled) {
+          if (result) URL.revokeObjectURL(result.url)
+          return
+        }
+        showPhoto(result?.url ?? null)
+      })
+      .catch(() => {
+        // fetchMyPhotoUrl maps 404 to null, so a throw here is a real fault - but a missing avatar
+        // must never block the rest of the profile from rendering.
+      })
+    return () => {
+      cancelled = true
+      if (photoObjectUrlRef.current) {
+        URL.revokeObjectURL(photoObjectUrlRef.current)
+        photoObjectUrlRef.current = null
+      }
+    }
+  }, [showPhoto])
 
   useEffect(() => {
     memberApi
@@ -226,6 +274,7 @@ export function MyProfilePage() {
           mailingCityMunicipality: wizardState.cityMunicipality || null,
           mailingProvince: wizardState.province || null,
           mailingZipCode: wizardState.zipCode || null,
+          mailingCountry: wizardState.country || null,
         }
       : {
           mailingHouseNo: wizardState.mailingHouseNo || null,
@@ -234,6 +283,7 @@ export function MyProfilePage() {
           mailingCityMunicipality: wizardState.mailingCityMunicipality || null,
           mailingProvince: wizardState.mailingProvince || null,
           mailingZipCode: wizardState.mailingZipCode || null,
+          mailingCountry: wizardState.mailingCountry || null,
         }
 
     return memberApi.updateMyProfile({
@@ -255,20 +305,20 @@ export function MyProfilePage() {
       cityMunicipality: wizardState.cityMunicipality || null,
       province: wizardState.province || null,
       zipCode: wizardState.zipCode || null,
+      country: wizardState.country || null,
       ...mailing,
       housePhone: wizardState.housePhone || null,
-      website: wizardState.website || null,
-      facebookUrl: wizardState.facebookUrl || null,
-      linkedInUrl: wizardState.linkedInUrl || null,
-      xUrl: wizardState.xUrl || null,
-      instagramUrl: wizardState.instagramUrl || null,
       prcLicenseNo: wizardState.prcLicenseNo || null,
       prcRegistrationDate: wizardState.prcRegistrationDate || null,
       prcValidUntilDate: wizardState.prcValidUntilDate || null,
       ptrNumber: wizardState.ptrNumber || null,
+      ptrPlaceIssued: wizardState.ptrPlaceIssued || null,
+      ptrDateIssued: wizardState.ptrDateIssued || null,
       tin: wizardState.tin || null,
       company: wizardState.company || null,
       chapter: wizardState.chapter,
+      chapterYear: wizardState.chapterYear !== '' ? Number(wizardState.chapterYear) : null,
+      chapterPosition: wizardState.chapterPosition || null,
       employmentStatus: existing?.employmentStatus ?? null,
       position: existing?.position ?? null,
       businessAddress: existing?.businessAddress ?? null,
@@ -358,11 +408,14 @@ export function MyProfilePage() {
   const isAdministrativeAccount = (user?.roles ?? []).some((role) => role !== Roles.Member)
   const hasNoMembershipProfile = existing === null
 
+  // Blank while loading, so the heading doesn't flash a name-less title and then reflow.
+  const displayedName = loading ? '' : completeName(existing, user?.displayName ?? '')
+
   return (
     <>
       <PageMeta title="My Profile" />
       <main>
-        <PageBreadcrumb title="My Profile" />
+        <PageBreadcrumb title={displayedName ? `My Profile — ${displayedName}` : 'My Profile'} />
         {loading ? (
           <p className="text-sm text-default-500">Loading…</p>
         ) : isAdministrativeAccount && hasNoMembershipProfile ? (
@@ -387,11 +440,25 @@ export function MyProfilePage() {
                 navigating={navigating}
               />
             ) : (
-              <MyProfileTabsCard existing={existing as Member} onUpdated={setExisting} />
+              <>
+                <MyProfileTabsCard
+                  existing={existing as Member}
+                  onUpdated={setExisting}
+                  photoUrl={photoUrl}
+                  onPhotoChanged={showPhoto}
+                />
+                {/* Only once an application has actually been admitted - dues are meaningless for
+                    someone still waiting on approval. */}
+                {existing?.approvedAt && (
+                  <RenewalPaymentCard member={existing} onSubmitted={() => memberApi.getMyProfile().then(setExisting)} />
+                )}
+              </>
             )}
-            {/* Members get the same self-service account controls - name, photo, password are on
-                ApplicationUser, which every role has, and nothing about them is membership data. */}
-            <AccountSection />
+            {/* No standalone AccountSection here any more for members - Display Name and Change
+                Password now live on the Account & Security tab inside MyProfileTabsCard, and photo
+                comes from ProfileRail. This second rendering was fully redundant once both moved
+                in; AccountSection is still used as-is for administrative accounts above, which
+                have no Member row and so no tabs to hold this content. */}
           </div>
         )}
       </main>

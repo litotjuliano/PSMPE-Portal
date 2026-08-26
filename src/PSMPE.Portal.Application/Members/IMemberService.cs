@@ -8,14 +8,20 @@ public interface IMemberService
 {
     Task<PagedResult<MemberDto>> GetAllAsync(
         int page, int pageSize, string sortBy, string sortDir, MembershipStatus? status,
-        bool? pendingApprovalOnly = null, bool? pendingPrcVerificationOnly = null,
+        bool? pendingApprovalOnly = null, bool? pendingPrcVerificationOnly = null, string? search = null,
         IReadOnlyCollection<Guid>? excludeUserIds = null, CancellationToken cancellationToken = default);
+    /// <summary>Aggregated counts/trends for the admin dashboard - reuses GetAllAsync's own
+    /// submitted/exclude-user-ids filtering, so these numbers always agree with what GetAllAsync's
+    /// list would show.</summary>
+    Task<MemberStatsDto> GetStatsAsync(IReadOnlyCollection<Guid>? excludeUserIds, CancellationToken cancellationToken = default);
     Task<MemberDto?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default);
     Task<MemberDto?> GetByUserIdAsync(Guid userId, CancellationToken cancellationToken = default);
-    Task<bool> MembershipNoExistsAsync(string membershipNo, CancellationToken cancellationToken = default);
+    Task<bool> MembershipNoExistsAsync(string membershipNo, Guid? excludeMemberId = null, CancellationToken cancellationToken = default);
     Task<Result<MemberDto>> CreateAsync(CreateMemberRequest request, CancellationToken cancellationToken = default);
     Task<Result> UpdateAsync(Guid id, UpdateMemberRequest request, CancellationToken cancellationToken = default);
-    Task<Result> ApproveAsync(Guid id, CancellationToken cancellationToken = default);
+    /// <summary>Assigns PSMPE's membership control number and approves. The number is mandatory -
+    /// nothing else in the product sets it.</summary>
+    Task<Result> ApproveAsync(Guid id, ApproveMemberRequest request, Guid decidedByUserId, CancellationToken cancellationToken = default);
     Task<Result<MemberDto>> UpsertMyProfileAsync(Guid userId, UpdateMyProfileRequest request, CancellationToken cancellationToken = default);
     Task<Result> SubmitMyProfileAsync(Guid userId, CancellationToken cancellationToken = default);
     Task<Result> DeleteAsync(Guid id, CancellationToken cancellationToken = default);

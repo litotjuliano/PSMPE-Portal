@@ -17,4 +17,15 @@
   .card {
     box-shadow: none;
   }
+
+  /* The filled navy header would otherwise lay down a solid block of ink on every printed card,
+     with white-on-white text inside it. */
+  .card .card-header {
+    background: none;
+    border-bottom: 1px solid #d7dee4;
+
+    .card-title {
+      color: #000;
+    }
+  }
 }

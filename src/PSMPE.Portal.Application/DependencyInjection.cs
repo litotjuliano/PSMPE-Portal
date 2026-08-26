@@ -2,6 +2,7 @@ using Microsoft.Extensions.DependencyInjection;
 using PSMPE.Portal.Application.Content;
 using PSMPE.Portal.Application.Layouts;
 using PSMPE.Portal.Application.Members;
+using PSMPE.Portal.Application.Payments;
 
 namespace PSMPE.Portal.Application;
 
@@ -14,6 +15,7 @@ public static class DependencyInjection
         services.AddScoped<IMemberService, MemberService>();
         services.AddScoped<IMemberUploadService, MemberUploadService>();
         services.AddScoped<IMemberCertificateService, MemberCertificateService>();
+        services.AddScoped<IPaymentService, PaymentService>();
         return services;
     }
 }

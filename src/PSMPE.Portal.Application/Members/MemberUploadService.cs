@@ -37,61 +37,13 @@ public class MemberUploadService(IApplicationDbContext db, IFileStorageService s
     public async Task<Result> UploadAsync(
         Guid userId, UploadKind kind, Stream content, string fileName, long contentLength, CancellationToken cancellationToken = default)
     {
-        if (contentLength == 0)
+        var stored = await StoreFileAsync(userId, kind, content, fileName, contentLength, cancellationToken);
+        if (!stored.Succeeded)
         {
-            return Result.Failure("No file was provided.");
+            return Result.Failure(stored.Error!);
         }
 
-        var extension = Path.GetExtension(fileName).ToLowerInvariant();
-        if (!AllowedExtensions.Contains(extension))
-        {
-            return Result.Failure("Only JPG, PNG, or PDF files are allowed.");
-        }
-
-        if (extension == ".pdf" && !PdfAllowedKinds.Contains(kind))
-        {
-            return Result.Failure("Only the RMP ID and Proof of Payment uploads accept PDF files.");
-        }
-
-        var isImage = ImageExtensions.Contains(extension);
-        var maxSize = kind == UploadKind.ProofOfPayment ? MaxProofOfPaymentSizeBytes : isImage ? MaxRawImageSizeBytes : MaxPdfSizeBytes;
-        if (contentLength > maxSize)
-        {
-            var limitDescription = kind == UploadKind.ProofOfPayment ? "1 MB" : isImage ? "24 MB" : "2 MB";
-            return Result.Failure($"File exceeds the {limitDescription} size limit.");
-        }
-
-        var fileNamePrefix = NamedFileKinds.Contains(kind)
-            ? await BuildFileNamePrefixAsync(userId, kind, cancellationToken)
-            : kind.ToString().ToLowerInvariant();
-
-        string storageKey;
-        string contentType;
-
-        if (isImage)
-        {
-            using var original = SKBitmap.Decode(content);
-            if (original is null)
-            {
-                return Result.Failure("Could not read the image file - it may be corrupted.");
-            }
-
-            using var optimized = OptimizeImage(original);
-            using var optimizedImage = SKImage.FromBitmap(optimized);
-            using var jpegData = optimizedImage.Encode(SKEncodedImageFormat.Jpeg, JpegQuality);
-
-            storageKey = $"{userId}/{fileNamePrefix}.jpg";
-            contentType = "image/jpeg";
-            using var jpegStream = jpegData.AsStream();
-            await storage.SaveAsync(storageKey, jpegStream, cancellationToken);
-        }
-        else
-        {
-            storageKey = $"{userId}/{fileNamePrefix}.pdf";
-            contentType = "application/pdf";
-            await storage.SaveAsync(storageKey, content, cancellationToken);
-        }
-
+        var (storageKey, contentType) = stored.Value;
         var existing = await db.MemberUploads.FirstOrDefaultAsync(u => u.UserId == userId && u.Kind == kind, cancellationToken);
         if (existing is null)
         {
@@ -112,6 +64,95 @@ public class MemberUploadService(IApplicationDbContext db, IFileStorageService s
 
         await db.SaveChangesAsync(cancellationToken);
         return Result.Success();
+    }
+
+    public async Task<Result<string>> UploadPaymentProofAsync(
+        Guid userId, Stream content, string fileName, long contentLength, CancellationToken cancellationToken = default)
+    {
+        // Validated as a ProofOfPayment (1 MB cap, PDF allowed) but deliberately not recorded in
+        // MemberUploads - the caller stores the key on the Payment row instead.
+        var stored = await StoreFileAsync(userId, UploadKind.ProofOfPayment, content, fileName, contentLength, cancellationToken);
+        return stored.Succeeded
+            ? Result<string>.Success(stored.Value.StorageKey)
+            : Result<string>.Failure(stored.Error!);
+    }
+
+    public async Task<(Stream Content, string ContentType)?> OpenByKeyAsync(string storageKey, CancellationToken cancellationToken = default)
+    {
+        var stream = await storage.OpenReadAsync(storageKey, cancellationToken);
+        if (stream is null)
+        {
+            return null;
+        }
+
+        // Only two shapes are ever written (see StoreFileAsync), so the extension is enough.
+        var contentType = storageKey.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase) ? "application/pdf" : "image/jpeg";
+        return (stream, contentType);
+    }
+
+    /// <summary>
+    /// Validates, optimises and writes the file, returning where it landed. Shared by the
+    /// MemberUpload-backed path and the payment-proof path so both enforce identical limits.
+    /// </summary>
+    private async Task<Result<(string StorageKey, string ContentType)>> StoreFileAsync(
+        Guid userId, UploadKind kind, Stream content, string fileName, long contentLength, CancellationToken cancellationToken)
+    {
+        if (contentLength == 0)
+        {
+            return Result<(string, string)>.Failure("No file was provided.");
+        }
+
+        var extension = Path.GetExtension(fileName).ToLowerInvariant();
+        if (!AllowedExtensions.Contains(extension))
+        {
+            return Result<(string, string)>.Failure("Only JPG, PNG, or PDF files are allowed.");
+        }
+
+        if (extension == ".pdf" && !PdfAllowedKinds.Contains(kind))
+        {
+            return Result<(string, string)>.Failure("Only the RMP ID and Proof of Payment uploads accept PDF files.");
+        }
+
+        var isImage = ImageExtensions.Contains(extension);
+        var maxSize = kind == UploadKind.ProofOfPayment ? MaxProofOfPaymentSizeBytes : isImage ? MaxRawImageSizeBytes : MaxPdfSizeBytes;
+        if (contentLength > maxSize)
+        {
+            var limitDescription = kind == UploadKind.ProofOfPayment ? "1 MB" : isImage ? "24 MB" : "2 MB";
+            return Result<(string, string)>.Failure($"File exceeds the {limitDescription} size limit.");
+        }
+
+        var fileNamePrefix = NamedFileKinds.Contains(kind)
+            ? await BuildFileNamePrefixAsync(userId, kind, cancellationToken)
+            : kind.ToString().ToLowerInvariant();
+
+        string storageKey;
+        string contentType;
+
+        if (isImage)
+        {
+            using var original = SKBitmap.Decode(content);
+            if (original is null)
+            {
+                return Result<(string, string)>.Failure("Could not read the image file - it may be corrupted.");
+            }
+
+            using var optimized = OptimizeImage(original);
+            using var optimizedImage = SKImage.FromBitmap(optimized);
+            using var jpegData = optimizedImage.Encode(SKEncodedImageFormat.Jpeg, JpegQuality);
+
+            storageKey = $"{userId}/{fileNamePrefix}.jpg";
+            contentType = "image/jpeg";
+            using var jpegStream = jpegData.AsStream();
+            await storage.SaveAsync(storageKey, jpegStream, cancellationToken);
+        }
+        else
+        {
+            storageKey = $"{userId}/{fileNamePrefix}.pdf";
+            contentType = "application/pdf";
+            await storage.SaveAsync(storageKey, content, cancellationToken);
+        }
+
+        return Result<(string, string)>.Success((storageKey, contentType));
     }
 
     /// <summary>

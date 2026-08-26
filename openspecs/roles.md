@@ -19,9 +19,18 @@ via `[RequirePermission]`.
 ## Endpoints
 
 - `GET /api/admin/users` — list users with their roles (unchanged, documented in `auth.md`/here for completeness)
-  - Auth: `RequireAdmin` policy (Admin or Super Admin role)
+  - Auth: `RequireAdminOrApproval` policy (Admin, Super Admin, or Approval role — Approval is
+    view-only here, since every write endpoint below stays on `RequireAdmin`/`RequireSuperAdmin`)
+  - Query: `search` (optional — case-insensitive substring match against display name or email),
+    `roles` (optional, repeatable query key, e.g. `?roles=Admin&roles=Manager` — returns the union
+    of matching roles, not an intersection). `roles` is bound with an explicit `[FromQuery]` on the
+    parameter, since `[ApiController]`'s binding-source inference doesn't treat a bare
+    `IReadOnlyCollection<string>` as query-bound on its own. The frontend's shared `apiClient` is
+    configured with `paramsSerializer: { indexes: null }` specifically so array params serialize as
+    repeated bare keys (`roles=a&roles=b`) rather than axios's bracket-notation default
+    (`roles[]=a&roles[]=b`), which this endpoint's binder does not accept.
 - `GET /api/admin/users/{id}` — get one user
-  - Auth: `RequireAdmin` policy
+  - Auth: `RequireAdminOrApproval` policy
 - `POST /api/admin/users` — create a login account (the admin "New user" form)
   - Auth: `admin:manage-users` permission — the one action in this whole family still gated by a
     configurable permission claim rather than a hard role check (see the narrowed-scope note
@@ -61,23 +70,32 @@ via `[RequirePermission]`.
   - Request: `{ role }` (body-based, mirrors the `POST` shape — avoids URL-encoding role names with spaces)
   - Refuses to remove `Super Admin` from the last remaining Super Admin account (`400`)
 - `GET /api/admin/roles` — list all roles with their current permission claims
-  - Auth: `RequireAdmin` policy
+  - Auth: `RequireAdminOrApproval` policy
   - Response: `[{ id, name, permissions }]`
 - `PUT /api/admin/roles/{roleId}/permissions` — replace a role's permission set
   - Auth: `RequireSuperAdmin` policy
   - Request: `{ permissions }` — diffed against current claims; unknown permission values return `400`
 - `GET /api/admin/permissions` — list every defined permission constant
-  - Auth: `RequireAdmin` policy
+  - Auth: `RequireAdminOrApproval` policy
   - Lets the frontend render permission checkboxes without hardcoding the list
 
 ## Authorization rules
 
 - **Roles** (fixed set, `Domain.Enums.RoleNames`): `Super Admin`, `Admin`, `Manager`,
-  `Accounts`, `Member`. New self-registrations always get `Member` (see `auth.md`).
+  `Accounts`, `Approval`, `Member`. New self-registrations always get `Member` (see `auth.md`).
 - **Permissions** (`Domain.Enums.Permissions`, `resource:action` naming): `content:create`,
   `content:update`, `content:delete`, `content:manage-others`, `layout:create`,
   `layout:delete`, `layout:delete-system`, `admin:manage-users`, `admin:manage-roles`,
-  `ai:use-prompt`.
+  `ai:use-prompt`, `members:view`, `members:manage`, `members:approve`.
+- `members:approve` covers exactly the membership-approval pipeline: RMP/PRC verification
+  approve/reject, the Membership ID availability check, the final approve call, and uploading a
+  walk-in's payment proof during approval. It is granted *in addition to* `members:manage` on
+  those 5 endpoints (`[RequirePermission(Permissions.Members.Manage, Permissions.Members.Approve)]`
+  — the caller needs only one of the two), not a replacement for it, so `Admin`'s existing grant
+  is unaffected. It exists so the `Approval` role can run that one workflow without also getting
+  member create/update/delete or payment verify/reject (both still `members:manage`-only).
+- `[RequirePermission(...)]` accepts more than one permission and succeeds if the caller holds
+  any of them (`PermissionRequirement`/`PermissionAuthorizationHandler`) — an OR, not an AND.
 - Permission claims are embedded in the JWT alongside role claims at login/register
   (`JwtTokenGenerator`), so `[RequirePermission(...)]` checks (`PermissionAuthorizationHandler`)
   are pure claim lookups with no DB round-trip per request.
@@ -98,9 +116,10 @@ via `[RequirePermission]`.
 | Role | Grants |
 |---|---|
 | Super Admin | All permissions |
-| Admin | Content: create/update/delete/manage-others; Layout: create/delete; Admin: manage-users; Ai: use-prompt |
-| Manager | Content: create/update/delete; Layout: create; Ai: use-prompt |
-| Accounts | Content: update; Ai: use-prompt |
+| Admin | Content: create/update/delete/manage-others; Layout: create/delete; Admin: manage-users; Ai: use-prompt; Members: view, manage |
+| Manager | Content: create/update/delete; Layout: create; Ai: use-prompt; Members: view |
+| Accounts | Content: update; Ai: use-prompt; Members: view |
+| Approval | Members: view, approve |
 | Member | Content: create/update |
 
 Grants are applied by `IdentitySeeder` **only** the first time a role is created — re-running
@@ -118,4 +137,5 @@ the seeder never clobbers permissions a Super Admin edits later via `/admin/role
 - Per-permission frontend UI gating is not implemented — route/nav visibility stays role-based
   (`ProtectedRoute`, `AppMenu.filterByRole`); only the backend enforces permissions granularly.
 - No audit log for role/permission changes yet (same gap noted for `POST /api/admin/users/{id}/roles`
-  in `auth.md`).
+  in `auth.md`) — `AuditLog` exists for other events (rate-limit rejections, lockouts, membership
+  approvals), see `system-logs.md`; role/permission changes just aren't wired into it.

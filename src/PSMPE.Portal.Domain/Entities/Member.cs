@@ -31,6 +31,9 @@ public class Member : BaseEntity
     public string? CityMunicipality { get; set; }
     public string? Province { get; set; }
     public string? ZipCode { get; set; }
+    /// <summary>Defaults to "Philippines" in the UI but is not locked - a member can legitimately
+    /// reside overseas. Region/Province/City are Philippine-specific and left blank in that case.</summary>
+    public string? Country { get; set; }
 
     // Mailing address - defaults to a copy of the residence address client-side when the
     // applicant checks "Same as Residence Address"; no separate flag is stored since these are
@@ -41,6 +44,7 @@ public class Member : BaseEntity
     public string? MailingCityMunicipality { get; set; }
     public string? MailingProvince { get; set; }
     public string? MailingZipCode { get; set; }
+    public string? MailingCountry { get; set; }
 
     // Educational record (wizard Step 1 / Personal Information).
     public string? EducationLevel { get; set; }
@@ -53,13 +57,14 @@ public class Member : BaseEntity
 
     // Contact Information (wizard Step 2) - all optional.
     public string? HousePhone { get; set; }
-    public string? Website { get; set; }
-    public string? FacebookUrl { get; set; }
-    public string? LinkedInUrl { get; set; }
-    public string? XUrl { get; set; }
-    public string? InstagramUrl { get; set; }
 
-    public string MembershipNo { get; set; } = string.Empty;
+    /// <summary>
+    /// PSMPE's own control number, keyed in by an administrator at approval - the portal never
+    /// generates one. Null until then, which is why the column is nullable despite carrying a
+    /// unique index: Postgres permits many NULLs under a unique index, so unassigned applicants
+    /// don't collide with each other.
+    /// </summary>
+    public string? MembershipNo { get; set; }
 
     /// <summary>Displayed to applicants as "RMP License No." (Registered Master Plumber) - same
     /// field/workflow as before, only the user-facing label changed; internal naming stays PRC*
@@ -68,6 +73,10 @@ public class Member : BaseEntity
     public DateOnly? PrcRegistrationDate { get; set; }
     public DateOnly? PrcValidUntilDate { get; set; }
     public string? PtrNumber { get; set; }
+    /// <summary>Where and when the PTR was issued, straight off the receipt. Both optional - a
+    /// PTR Number on its own is still enough to submit an application.</summary>
+    public string? PtrPlaceIssued { get; set; }
+    public DateOnly? PtrDateIssued { get; set; }
     public string? Tin { get; set; }
 
     /// <summary>
@@ -99,6 +108,15 @@ public class Member : BaseEntity
 
     public string Chapter { get; set; } = string.Empty;
     public string MemberType { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Optional record of an officer post held in the member's chapter - ChapterPosition is the
+    /// role ("Secretary"), ChapterYear the year it was held. Named Chapter* because Position
+    /// already means the member's *employment* position further down. Unlike Chapter/MemberType
+    /// these are never locked post-submission: a member elected mid-term records it themselves.
+    /// </summary>
+    public int? ChapterYear { get; set; }
+    public string? ChapterPosition { get; set; }
 
     // Professional Information - post-approval, entirely optional (see My Profile's Professional
     // Information tab). EmploymentStatus gates which of Company/Position/BusinessAddress are

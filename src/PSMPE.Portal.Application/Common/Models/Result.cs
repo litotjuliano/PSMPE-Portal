@@ -5,7 +5,10 @@ public enum ResultErrorType
     None = 0,
     NotFound,
     Forbidden,
-    Validation
+    Validation,
+    /// <summary>Maps to 409. Distinct from Validation because "already in use" is a race the caller
+    /// resolves by choosing another value, not by fixing malformed input.</summary>
+    Conflict
 }
 
 public class Result
@@ -25,6 +28,7 @@ public class Result
     public static Result Forbidden(string error) => new(false, error, ResultErrorType.Forbidden);
     public static Result NotFound(string error) => new(false, error, ResultErrorType.NotFound);
     public static Result Failure(string error) => new(false, error, ResultErrorType.Validation);
+    public static Result Conflict(string error) => new(false, error, ResultErrorType.Conflict);
 }
 
 public class Result<T> : Result
@@ -38,4 +42,5 @@ public class Result<T> : Result
     public static new Result<T> Forbidden(string error) => new(false, default, error, ResultErrorType.Forbidden);
     public static new Result<T> NotFound(string error) => new(false, default, error, ResultErrorType.NotFound);
     public static new Result<T> Failure(string error) => new(false, default, error, ResultErrorType.Validation);
+    public static new Result<T> Conflict(string error) => new(false, default, error, ResultErrorType.Conflict);
 }

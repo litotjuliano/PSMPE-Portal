@@ -2,8 +2,9 @@ using Microsoft.AspNetCore.Authorization;
 
 namespace PSMPE.Portal.Infrastructure.Authorization;
 
-/// <summary>Requirement carrying a single permission claim value (e.g. "content:create") to check for.</summary>
-public class PermissionRequirement(string permission) : IAuthorizationRequirement
+/// <summary>Requirement carrying one or more permission claim values (e.g. "content:create") to
+/// check for - satisfied when the caller holds any one of them.</summary>
+public class PermissionRequirement(params string[] permissions) : IAuthorizationRequirement
 {
-    public string Permission { get; } = permission;
+    public IReadOnlyList<string> Permissions { get; } = permissions;
 }

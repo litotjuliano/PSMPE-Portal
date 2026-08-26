@@ -5,7 +5,13 @@ _forms.scss
 */
 
 .form-input {
-  @apply bg-card h-9.25 py-0 rounded outline-0 block w-full border border-default-200 transition-all text-default-800 placeholder:text-default-400;
+  /* text-sm is not redundant: @tailwindcss/forms hardcodes .form-input to defaultTheme.fontSize.base
+     - Tailwind's built-in 1rem, not our overridden --text-base - so without this inputs are pinned
+     at 16px and silently ignore the type scale in themes.css. Same value today, but it means they
+     follow the scale if it ever moves again.
+     h-10, not the template's h-9.25: spacing is fixed while the scale moved up a step, so the old
+     37px box sits tight against the ~39px buttons it lines up with. */
+  @apply bg-card h-10 py-0 rounded outline-0 block w-full border border-default-200 transition-all text-sm text-default-800 placeholder:text-default-400;
   @apply focus-visible:ring-default-300/30 focus-visible:border-default-300 focus-visible:outline-none focus-visible:ring-[3px];
   @apply disabled:cursor-not-allowed disabled:opacity-70;
   @apply [&[readonly]]:bg-default-100/80 [&[readonly]]:cursor-not-allowed [&[readonly]]:text-default-600/80;
@@ -16,7 +22,7 @@ _forms.scss
 }
 
 .form-input-sm {
-  @apply h-7.5 text-xs;
+  @apply h-8.5 text-xs;
 }
 
 textarea.form-input {

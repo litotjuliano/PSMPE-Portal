@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { LuPlus, LuSquarePen, LuTrash2 } from 'react-icons/lu'
 import { ContentStatus, type ContentItem } from '../../../core/types/content'
 import { ConfirmationModal } from '../components/shared/ConfirmationModal'
+import { StandardButton } from '../components/shared/StandardButton'
 
 interface ContentListCardProps {
   items: ContentItem[]
@@ -28,10 +29,9 @@ export const ContentListCard = ({ items, onDelete }: ContentListCardProps) => {
     <div className="card">
       <div className="card-header flex justify-between items-center">
         <h6 className="card-title">Content</h6>
-        <Link to="/content/new" className="btn btn-sm bg-primary text-white">
-          <LuPlus className="size-4 me-1" />
+        <StandardButton to="/content/new" size="sm" variant="on-primary" icon={LuPlus}>
           New content
-        </Link>
+        </StandardButton>
       </div>
 
       <div className="flex flex-col">
