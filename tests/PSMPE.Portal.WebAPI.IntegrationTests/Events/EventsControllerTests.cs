@@ -10,6 +10,7 @@ using PSMPE.Portal.Domain.Entities;
 using PSMPE.Portal.Domain.Enums;
 using PSMPE.Portal.Infrastructure.Persistence;
 using PSMPE.Portal.WebAPI.IntegrationTests.TestSupport;
+using SkiaSharp;
 using Xunit;
 
 namespace PSMPE.Portal.WebAPI.IntegrationTests.Events;
@@ -99,7 +100,8 @@ public class EventsControllerTests : IClassFixture<CustomWebApplicationFactory>,
         startsAt = DateTimeOffset.UtcNow.AddDays(10),
         endsAt = DateTimeOffset.UtcNow.AddDays(10).AddHours(4),
         capacity = 100,
-        fee = 500m,
+        feeOnsite = 500m,
+        feeOnline = 200m,
     };
 
     [Fact]
@@ -161,7 +163,8 @@ public class EventsControllerTests : IClassFixture<CustomWebApplicationFactory>,
                 startsAt = created.GetProperty("startsAt").GetDateTimeOffset(),
                 endsAt = created.GetProperty("endsAt").GetDateTimeOffset(),
                 capacity = 100,
-                fee = 500m,
+                feeOnsite = 500m,
+                feeOnline = 200m,
                 cpdUnitsOnsite = 8m,
                 cpdUnitsOnline = (decimal?)null,
                 sessions = new[] { new { id = sessionId, title = "Full Event", startsAt = created.GetProperty("startsAt").GetDateTimeOffset(), endsAt = created.GetProperty("endsAt").GetDateTimeOffset(), order = 1 } },
@@ -224,7 +227,8 @@ public class EventsControllerTests : IClassFixture<CustomWebApplicationFactory>,
                 startsAt = created.GetProperty("startsAt").GetDateTimeOffset(),
                 endsAt = created.GetProperty("endsAt").GetDateTimeOffset(),
                 capacity = 100,
-                fee = 500m,
+                feeOnsite = 500m,
+                feeOnline = 200m,
                 cpdUnitsOnsite = 8m,
                 cpdUnitsOnline = (decimal?)null,
                 sessions = new[] { new { id = sessionId, title = "Full Event", startsAt = created.GetProperty("startsAt").GetDateTimeOffset(), endsAt = created.GetProperty("endsAt").GetDateTimeOffset(), order = 1 } },
@@ -283,5 +287,74 @@ public class EventsControllerTests : IClassFixture<CustomWebApplicationFactory>,
             new HttpRequestMessage(HttpMethod.Get, $"/api/events/registrations/{registrationId}/certificate").WithBearer(memberToken));
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    private static byte[] BuildPng(int width, int height)
+    {
+        using var bitmap = new SKBitmap(width, height);
+        using var canvas = new SKCanvas(bitmap);
+        canvas.Clear(SKColors.CornflowerBlue);
+        using var image = SKImage.FromBitmap(bitmap);
+        using var data = image.Encode(SKEncodedImageFormat.Png, 100);
+        return data.ToArray();
+    }
+
+    private static HttpRequestMessage BuildUploadRequest(string url, string token, byte[] bytes, string fileName, string contentType)
+    {
+        var request = new HttpRequestMessage(HttpMethod.Post, url);
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        var content = new MultipartFormDataContent();
+        var fileContent = new ByteArrayContent(bytes);
+        fileContent.Headers.ContentType = new MediaTypeHeaderValue(contentType);
+        content.Add(fileContent, "file", fileName);
+        request.Content = content;
+        return request;
+    }
+
+    [Fact]
+    public async Task UploadThenGetPoster_RoundTrips()
+    {
+        var (_, adminToken) = await CreateAdminAsync();
+        var createResponse = await _client.SendAsync(PostJson("/api/events", ValidEventPayload(), adminToken));
+        var eventId = (await createResponse.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("id").GetGuid();
+
+        var uploadResponse = await _client.SendAsync(
+            BuildUploadRequest($"/api/events/{eventId}/poster", adminToken, BuildPng(200, 100), "poster.png", "image/png"));
+        Assert.Equal(HttpStatusCode.NoContent, uploadResponse.StatusCode);
+
+        var memberToken = await RegisterMemberAsync();
+        var getResponse = await _client.SendAsync(
+            new HttpRequestMessage(HttpMethod.Get, $"/api/events/{eventId}/poster").WithBearer(memberToken));
+
+        Assert.Equal(HttpStatusCode.OK, getResponse.StatusCode);
+        Assert.Equal("image/jpeg", getResponse.Content.Headers.ContentType?.MediaType);
+    }
+
+    [Fact]
+    public async Task UploadPoster_NonAdmin_Forbidden()
+    {
+        var (_, adminToken) = await CreateAdminAsync();
+        var createResponse = await _client.SendAsync(PostJson("/api/events", ValidEventPayload(), adminToken));
+        var eventId = (await createResponse.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("id").GetGuid();
+        var memberToken = await RegisterMemberAsync();
+
+        var response = await _client.SendAsync(
+            BuildUploadRequest($"/api/events/{eventId}/poster", memberToken, BuildPng(10, 10), "poster.png", "image/png"));
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task GetPoster_BeforeAnyUpload_ReturnsNotFound()
+    {
+        var (_, adminToken) = await CreateAdminAsync();
+        var createResponse = await _client.SendAsync(PostJson("/api/events", ValidEventPayload(), adminToken));
+        var eventId = (await createResponse.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("id").GetGuid();
+        var memberToken = await RegisterMemberAsync();
+
+        var response = await _client.SendAsync(
+            new HttpRequestMessage(HttpMethod.Get, $"/api/events/{eventId}/poster").WithBearer(memberToken));
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 }
