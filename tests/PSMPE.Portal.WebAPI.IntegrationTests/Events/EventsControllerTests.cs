@@ -1,6 +1,6 @@
 using System.Net;
-using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using System.Text;
 using System.Text.Json;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
@@ -10,7 +10,6 @@ using PSMPE.Portal.Domain.Entities;
 using PSMPE.Portal.Domain.Enums;
 using PSMPE.Portal.Infrastructure.Persistence;
 using PSMPE.Portal.WebAPI.IntegrationTests.TestSupport;
-using SkiaSharp;
 using Xunit;
 
 namespace PSMPE.Portal.WebAPI.IntegrationTests.Events;
@@ -289,28 +288,6 @@ public class EventsControllerTests : IClassFixture<CustomWebApplicationFactory>,
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
 
-    private static byte[] BuildPng(int width, int height)
-    {
-        using var bitmap = new SKBitmap(width, height);
-        using var canvas = new SKCanvas(bitmap);
-        canvas.Clear(SKColors.CornflowerBlue);
-        using var image = SKImage.FromBitmap(bitmap);
-        using var data = image.Encode(SKEncodedImageFormat.Png, 100);
-        return data.ToArray();
-    }
-
-    private static HttpRequestMessage BuildUploadRequest(string url, string token, byte[] bytes, string fileName, string contentType)
-    {
-        var request = new HttpRequestMessage(HttpMethod.Post, url);
-        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
-        var content = new MultipartFormDataContent();
-        var fileContent = new ByteArrayContent(bytes);
-        fileContent.Headers.ContentType = new MediaTypeHeaderValue(contentType);
-        content.Add(fileContent, "file", fileName);
-        request.Content = content;
-        return request;
-    }
-
     [Fact]
     public async Task UploadThenGetPoster_RoundTrips()
     {
@@ -319,7 +296,7 @@ public class EventsControllerTests : IClassFixture<CustomWebApplicationFactory>,
         var eventId = (await createResponse.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("id").GetGuid();
 
         var uploadResponse = await _client.SendAsync(
-            BuildUploadRequest($"/api/events/{eventId}/poster", adminToken, BuildPng(200, 100), "poster.png", "image/png"));
+            UploadTestHelpers.BuildUploadRequest($"/api/events/{eventId}/poster", adminToken, UploadTestHelpers.BuildPng(200, 100), "poster.png", "image/png"));
         Assert.Equal(HttpStatusCode.NoContent, uploadResponse.StatusCode);
 
         var memberToken = await RegisterMemberAsync();
@@ -339,7 +316,7 @@ public class EventsControllerTests : IClassFixture<CustomWebApplicationFactory>,
         var memberToken = await RegisterMemberAsync();
 
         var response = await _client.SendAsync(
-            BuildUploadRequest($"/api/events/{eventId}/poster", memberToken, BuildPng(10, 10), "poster.png", "image/png"));
+            UploadTestHelpers.BuildUploadRequest($"/api/events/{eventId}/poster", memberToken, UploadTestHelpers.BuildPng(10, 10), "poster.png", "image/png"));
 
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
@@ -356,5 +333,32 @@ public class EventsControllerTests : IClassFixture<CustomWebApplicationFactory>,
             new HttpRequestMessage(HttpMethod.Get, $"/api/events/{eventId}/poster").WithBearer(memberToken));
 
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task UploadPoster_NonImageFile_BadRequest()
+    {
+        var (_, adminToken) = await CreateAdminAsync();
+        var createResponse = await _client.SendAsync(PostJson("/api/events", ValidEventPayload(), adminToken));
+        var eventId = (await createResponse.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("id").GetGuid();
+
+        var response = await _client.SendAsync(
+            UploadTestHelpers.BuildUploadRequest($"/api/events/{eventId}/poster", adminToken, Encoding.UTF8.GetBytes("fake-pdf"), "poster.pdf", "application/pdf"));
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task UploadPoster_Oversized_BadRequest()
+    {
+        var (_, adminToken) = await CreateAdminAsync();
+        var createResponse = await _client.SendAsync(PostJson("/api/events", ValidEventPayload(), adminToken));
+        var eventId = (await createResponse.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("id").GetGuid();
+        var oversized = new byte[8 * 1024 * 1024 + 1];
+
+        var response = await _client.SendAsync(
+            UploadTestHelpers.BuildUploadRequest($"/api/events/{eventId}/poster", adminToken, oversized, "poster.png", "image/png"));
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
 }
