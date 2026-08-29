@@ -288,7 +288,7 @@ public class PaymentServiceTests
         var member = new Member { UserId = user.Id, User = user, FirstName = "Ana", LastName = "Reyes", Chapter = Chapters.Ncr, MemberType = MemberTypes.Regular };
         db.Members.Add(member);
 
-        var @event = new Event { Title = "Seminar", StartsAt = DateTimeOffset.UtcNow.AddDays(5), EndsAt = DateTimeOffset.UtcNow.AddDays(5).AddHours(4), Fee = 500m };
+        var @event = new Event { Title = "Seminar", StartsAt = DateTimeOffset.UtcNow.AddDays(5), EndsAt = DateTimeOffset.UtcNow.AddDays(5).AddHours(4), FeeOnsite = 500m, FeeOnline = 200m };
         db.Events.Add(@event);
 
         var registration = new EventRegistration { EventId = @event.Id, Event = @event, MemberId = member.Id, Member = member, Mode = EventMode.Onsite, Status = status };

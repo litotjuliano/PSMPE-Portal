@@ -70,7 +70,9 @@ public partial class EventService(IApplicationDbContext db) : IEventService
 
     public async Task<Result<EventDto>> CreateAsync(CreateEventRequest request, CancellationToken cancellationToken = default)
     {
-        var validation = ValidateCore(request.Title, request.StartsAt, request.EndsAt, request.Capacity, request.Fee, request.Chapter);
+        var validation = ValidateCore(
+            request.Title, request.StartsAt, request.EndsAt, request.Capacity,
+            request.FeeOnsite, request.FeeOnline, request.Chapter, request.Type, request.Hours);
         if (validation is not null)
         {
             return Result<EventDto>.Failure(validation);
@@ -80,12 +82,16 @@ public partial class EventService(IApplicationDbContext db) : IEventService
         {
             Title = request.Title.Trim(),
             Description = request.Description,
+            Objectives = request.Objectives,
+            Type = request.Type,
             Chapter = request.Chapter,
             Venue = request.Venue,
             StartsAt = request.StartsAt,
             EndsAt = request.EndsAt,
+            Hours = request.Hours,
             Capacity = request.Capacity,
-            Fee = request.Fee,
+            FeeOnsite = request.FeeOnsite,
+            FeeOnline = request.FeeOnline,
         };
         // Every event gets at least one session, even with no separate lectures - see
         // Event.Sessions's doc comment. Admins split this into real lectures via UpdateAsync.
@@ -105,7 +111,9 @@ public partial class EventService(IApplicationDbContext db) : IEventService
 
     public async Task<Result<EventDto>> UpdateAsync(Guid id, UpdateEventRequest request, CancellationToken cancellationToken = default)
     {
-        var validation = ValidateCore(request.Title, request.StartsAt, request.EndsAt, request.Capacity, request.Fee, request.Chapter);
+        var validation = ValidateCore(
+            request.Title, request.StartsAt, request.EndsAt, request.Capacity,
+            request.FeeOnsite, request.FeeOnline, request.Chapter, request.Type, request.Hours);
         if (validation is not null)
         {
             return Result<EventDto>.Failure(validation);
@@ -177,6 +185,7 @@ public partial class EventService(IApplicationDbContext db) : IEventService
                 existing.StartsAt = sessionRequest.StartsAt;
                 existing.EndsAt = sessionRequest.EndsAt;
                 existing.Order = sessionRequest.Order;
+                existing.Venue = sessionRequest.Venue;
             }
             else
             {
@@ -192,20 +201,27 @@ public partial class EventService(IApplicationDbContext db) : IEventService
                     StartsAt = sessionRequest.StartsAt,
                     EndsAt = sessionRequest.EndsAt,
                     Order = sessionRequest.Order,
+                    Venue = sessionRequest.Venue,
                 });
             }
         }
 
         @event.Title = request.Title.Trim();
         @event.Description = request.Description;
+        @event.Objectives = request.Objectives;
+        @event.Type = request.Type;
         @event.Chapter = request.Chapter;
         @event.Venue = request.Venue;
         @event.StartsAt = request.StartsAt;
         @event.EndsAt = request.EndsAt;
+        @event.Hours = request.Hours;
         @event.Capacity = request.Capacity;
-        @event.Fee = request.Fee;
+        @event.FeeOnsite = request.FeeOnsite;
+        @event.FeeOnline = request.FeeOnline;
         @event.CpdUnitsOnsite = request.CpdUnitsOnsite;
         @event.CpdUnitsOnline = request.CpdUnitsOnline;
+        @event.CpdCodeOnsite = request.CpdCodeOnsite;
+        @event.CpdCodeOnline = request.CpdCodeOnline;
         @event.UpdatedAt = DateTimeOffset.UtcNow;
         await db.SaveChangesAsync(cancellationToken);
 
@@ -214,7 +230,9 @@ public partial class EventService(IApplicationDbContext db) : IEventService
         return Result<EventDto>.Success(ToDto(@event, registeredCount));
     }
 
-    private static string? ValidateCore(string title, DateTimeOffset startsAt, DateTimeOffset endsAt, int? capacity, decimal fee, string? chapter)
+    private static string? ValidateCore(
+        string title, DateTimeOffset startsAt, DateTimeOffset endsAt, int? capacity,
+        decimal feeOnsite, decimal feeOnline, string? chapter, string? type, decimal? hours)
     {
         if (string.IsNullOrWhiteSpace(title))
         {
@@ -228,7 +246,7 @@ public partial class EventService(IApplicationDbContext db) : IEventService
         {
             return "Capacity must be at least 1 if set.";
         }
-        if (fee < 0)
+        if (feeOnsite < 0 || feeOnline < 0)
         {
             return "Fee can't be negative.";
         }
@@ -236,13 +254,22 @@ public partial class EventService(IApplicationDbContext db) : IEventService
         {
             return $"'{chapter}' is not a recognized chapter.";
         }
+        if (type is not null && !EventTypes.All.Contains(type))
+        {
+            return $"'{type}' is not a recognized event type.";
+        }
+        if (hours is < 0)
+        {
+            return "Hours can't be negative if set.";
+        }
         return null;
     }
 
     private static EventDto ToDto(Event e, int registeredCount) =>
-        new(e.Id, e.Title, e.Description, e.Chapter, e.Venue, e.StartsAt, e.EndsAt, e.Capacity,
-            registeredCount, e.Fee, e.CpdUnitsOnsite, e.CpdUnitsOnline,
+        new(e.Id, e.Title, e.Description, e.Objectives, e.Type, e.Chapter, e.Venue, e.StartsAt, e.EndsAt,
+            e.Hours, e.Capacity, registeredCount, e.FeeOnsite, e.FeeOnline, e.CpdUnitsOnsite, e.CpdUnitsOnline,
+            e.CpdCodeOnsite, e.CpdCodeOnline, e.PosterImageStorageKey is not null,
             e.Sessions.OrderBy(s => s.Order)
-                .Select(s => new EventSessionDto(s.Id, s.Title, s.StartsAt, s.EndsAt, s.Order))
+                .Select(s => new EventSessionDto(s.Id, s.Title, s.StartsAt, s.EndsAt, s.Order, s.Venue))
                 .ToList());
 }

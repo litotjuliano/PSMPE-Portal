@@ -50,7 +50,7 @@ public partial class EventService
         }).ToList();
 
         var sessions = @event.Sessions.OrderBy(s => s.Order)
-            .Select(s => new EventSessionDto(s.Id, s.Title, s.StartsAt, s.EndsAt, s.Order))
+            .Select(s => new EventSessionDto(s.Id, s.Title, s.StartsAt, s.EndsAt, s.Order, s.Venue))
             .ToList();
 
         return Result<EventRosterDto>.Success(new EventRosterDto(@event.Id, @event.Title, sessions, entries));

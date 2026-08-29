@@ -14,7 +14,7 @@ public class EventServiceTests
 {
     private static CreateEventRequest ValidCreateRequest(string title = "Water Sanitation Workshop") =>
         new(title, "Cross-connection control", Chapters.Ncr, "PICC", DateTimeOffset.UtcNow.AddDays(10),
-            DateTimeOffset.UtcNow.AddDays(10).AddHours(4), Capacity: 100, Fee: 500m);
+            DateTimeOffset.UtcNow.AddDays(10).AddHours(4), Capacity: 100, FeeOnsite: 500m, FeeOnline: 200m);
 
     [Fact]
     public async Task CreateAsync_ValidRequest_StartsWithBothCpdUnitsNull()
@@ -220,9 +220,56 @@ public class EventServiceTests
     }
 
     private static UpdateEventRequest ToUpdateRequest(EventDto e) =>
-        new(e.Title, e.Description, e.Chapter, e.Venue, e.StartsAt, e.EndsAt, e.Capacity, e.Fee,
+        new(e.Title, e.Description, e.Chapter, e.Venue, e.StartsAt, e.EndsAt, e.Capacity, e.FeeOnsite, e.FeeOnline,
             e.CpdUnitsOnsite, e.CpdUnitsOnline,
-            e.Sessions.Select(s => new EventSessionRequest(s.Id, s.Title, s.StartsAt, s.EndsAt, s.Order)).ToList());
+            e.Sessions.Select(s => new EventSessionRequest(s.Id, s.Title, s.StartsAt, s.EndsAt, s.Order, s.Venue)).ToList());
+
+    [Fact]
+    public async Task CreateAsync_UnrecognizedType_Fails()
+    {
+        using var db = TestDbContext.CreateInMemory();
+        var service = new EventService(db);
+
+        var result = await service.CreateAsync(ValidCreateRequest() with { Type = "Not A Real Type" });
+
+        Assert.False(result.Succeeded);
+    }
+
+    [Fact]
+    public async Task CreateAsync_RecognizedType_Succeeds()
+    {
+        using var db = TestDbContext.CreateInMemory();
+        var service = new EventService(db);
+
+        var result = await service.CreateAsync(ValidCreateRequest() with { Type = EventTypes.Seminar });
+
+        Assert.True(result.Succeeded);
+        Assert.Equal(EventTypes.Seminar, result.Value!.Type);
+    }
+
+    [Fact]
+    public async Task UpdateAsync_SessionVenueOverride_PersistsAndFallsBackWhenCleared()
+    {
+        using var db = TestDbContext.CreateInMemory();
+        var service = new EventService(db);
+        var created = (await service.CreateAsync(ValidCreateRequest() with { Venue = "PICC" })).Value!;
+        var defaultSession = created.Sessions.Single();
+        var withOverride = ToUpdateRequest(created) with
+        {
+            Sessions = [new EventSessionRequest(defaultSession.Id, defaultSession.Title, defaultSession.StartsAt, defaultSession.EndsAt, 1, "Cebu IT Park")],
+        };
+
+        var overridden = (await service.UpdateAsync(created.Id, withOverride)).Value!;
+        Assert.Equal("Cebu IT Park", overridden.Sessions.Single().Venue);
+
+        var cleared = ToUpdateRequest(overridden) with
+        {
+            Sessions = [new EventSessionRequest(defaultSession.Id, defaultSession.Title, defaultSession.StartsAt, defaultSession.EndsAt, 1, null)],
+        };
+        var result = await service.UpdateAsync(created.Id, cleared);
+
+        Assert.Null(result.Value!.Sessions.Single().Venue);
+    }
 
     [Fact]
     public async Task RegisterAsync_ValidMode_CreatesRegistrationInRegisteredStatus()
