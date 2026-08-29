@@ -1,6 +1,8 @@
+import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { LuCalendar, LuMapPin, LuPlus, LuSearch } from 'react-icons/lu'
 import type { Event } from '../../../core/api/endpoints/eventApi'
+import { eventApi } from '../../../core/api/endpoints/eventApi'
 import { Chapters, type ChapterValue } from '../../../core/types/member'
 import { StandardButton } from '../components/shared/StandardButton'
 
@@ -43,6 +45,30 @@ export function EventsTable({
   onSelectEvent,
 }: EventsTableProps) {
   const totalPages = Math.max(1, Math.ceil(totalCount / pageSize))
+
+  // Fetches a poster thumbnail for each event that has one, keyed by event id so a slow/failed
+  // fetch for one event doesn't block the others. Revokes every blob URL on cleanup/re-run,
+  // matching the pattern established in EventFormModal.tsx/EventRegisterModal.tsx.
+  const [posterUrls, setPosterUrls] = useState<Record<string, string>>({})
+  useEffect(() => {
+    let cancelled = false
+    const urls: Record<string, string> = {}
+    Promise.all(
+      events
+        .filter((event) => event.hasPoster)
+        .map((event) =>
+          eventApi.getPosterUrl(event.id).then((url) => {
+            if (url) urls[event.id] = url
+          }),
+        ),
+    ).then(() => {
+      if (!cancelled) setPosterUrls(urls)
+    })
+    return () => {
+      cancelled = true
+      Object.values(urls).forEach((url) => URL.revokeObjectURL(url))
+    }
+  }, [events])
 
   return (
     <div className="card">
@@ -96,39 +122,44 @@ export function EventsTable({
           <ul className="divide-y divide-default-200">
             {events.map((event) => (
               <li key={event.id} className="p-4 hover:bg-default-50 cursor-pointer" onClick={() => onSelectEvent(event)}>
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <p className="font-medium text-default-800">{event.title}</p>
-                    <p className="flex items-center gap-1 text-xs text-default-500 mt-1">
-                      <LuCalendar className="size-3.5" />
-                      {new Date(event.startsAt).toLocaleDateString()} - {new Date(event.endsAt).toLocaleDateString()}
-                    </p>
-                    {event.venue && (
-                      <p className="flex items-center gap-1 text-xs text-default-500">
-                        <LuMapPin className="size-3.5" /> {event.venue}
+                <div className="flex items-start gap-3">
+                  {posterUrls[event.id] && (
+                    <img src={posterUrls[event.id]} alt="" className="w-36 h-20 object-cover rounded-md shrink-0" />
+                  )}
+                  <div className="flex flex-1 min-w-0 items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="font-medium text-default-800">{event.title}</p>
+                      <p className="flex items-center gap-1 text-xs text-default-500 mt-1">
+                        <LuCalendar className="size-3.5" />
+                        {new Date(event.startsAt).toLocaleDateString()} - {new Date(event.endsAt).toLocaleDateString()}
                       </p>
-                    )}
-                    <p className="text-xs text-default-500 mt-1">{formatCpdUnits(event.cpdUnitsOnsite, event.cpdUnitsOnline)}</p>
-                  </div>
-                  <div className="text-right shrink-0">
-                    <p className="text-sm font-semibold">
-                      {event.feeOnsite > 0 || event.feeOnline > 0
-                        ? `Onsite PHP ${event.feeOnsite.toFixed(2)} / Online PHP ${event.feeOnline.toFixed(2)}`
-                        : 'Free'}
-                    </p>
-                    <p className="text-xs text-default-500">
-                      {event.registeredCount}
-                      {event.capacity ? ` / ${event.capacity}` : ''} registered
-                    </p>
-                    {canManageEvents && (
-                      <Link
-                        to={`/events/${event.id}/roster`}
-                        onClick={(e) => e.stopPropagation()}
-                        className="text-xs text-primary hover:underline"
-                      >
-                        View roster
-                      </Link>
-                    )}
+                      {event.venue && (
+                        <p className="flex items-center gap-1 text-xs text-default-500">
+                          <LuMapPin className="size-3.5" /> {event.venue}
+                        </p>
+                      )}
+                      <p className="text-xs text-default-500 mt-1">{formatCpdUnits(event.cpdUnitsOnsite, event.cpdUnitsOnline)}</p>
+                    </div>
+                    <div className="text-right shrink-0">
+                      <p className="text-sm font-semibold">
+                        {event.feeOnsite > 0 || event.feeOnline > 0
+                          ? `Onsite PHP ${event.feeOnsite.toFixed(2)} / Online PHP ${event.feeOnline.toFixed(2)}`
+                          : 'Free'}
+                      </p>
+                      <p className="text-xs text-default-500">
+                        {event.registeredCount}
+                        {event.capacity ? ` / ${event.capacity}` : ''} registered
+                      </p>
+                      {canManageEvents && (
+                        <Link
+                          to={`/events/${event.id}/roster`}
+                          onClick={(e) => e.stopPropagation()}
+                          className="text-xs text-primary hover:underline"
+                        >
+                          View roster
+                        </Link>
+                      )}
+                    </div>
                   </div>
                 </div>
               </li>
