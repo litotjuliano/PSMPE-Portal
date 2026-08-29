@@ -40,6 +40,8 @@ of any permission they hold.
 | `GET /api/events/{id}` | Any authenticated | One event's detail, including its sessions | `404` unknown event |
 | `POST /api/events` | `events:manage` | Create an event (`CpdUnitsOnsite`/`CpdUnitsOnline` start null) | `400` invalid (blank title, `EndsAt` before `StartsAt`); `403` without the permission |
 | `PUT /api/events/{id}` | `events:manage` | Edit event details, set/correct either CPD unit value, add/remove/reorder sessions | `404` unknown event; `400` invalid (no sessions left, `EndsAt` before `StartsAt`, a session id not belonging to this event); `409` removing a session that already has recorded attendance |
+| `POST /api/events/{id}/poster` | `events:manage` | Upload/replace the event's poster/banner image (multipart) | `404` unknown event; `400` not a JPG/PNG, over 8 MB, or unreadable; `403` without the permission |
+| `GET /api/events/{id}/poster` | Any authenticated | Stream the poster image | `404` unknown event or no poster uploaded yet |
 | `POST /api/events/{id}/register` | Any authenticated (Member) | Create an `EventRegistration` with a chosen `Mode` (→ `Registered`) | `404` unknown event; `400` unrecognized `Mode`; `409` already holds a non-cancelled registration for this event |
 | `POST /api/events/registrations/{id}/cancel` | Owner | Cancel own registration | `404` unknown registration; `403` not the owner; `400` can no longer be cancelled (payment already verified or beyond) |
 | `POST /api/events/registrations/{id}/payment` | Owner | Submit proof of payment (reuses the membership proof-submit pattern) | `404` unknown registration; `403` not the owner; `400` not awaiting payment, or invalid amount/date; `409` a payment is already awaiting verification |
@@ -57,14 +59,23 @@ mapping: `NotFound` → `404`, `Forbidden` → `403`, `Conflict` → `409`, ever
 
 ## The `Event` → `EventSession` → `EventAttendance` shape
 
-- **`Event`** — `Title`, `Description`, `Chapter` (null for a national/all-chapters event), `Venue`,
-  `StartsAt`/`EndsAt`, `Capacity`, `Fee`, and the two independently-nullable `CpdUnitsOnsite`/
-  `CpdUnitsOnline`.
+- **`Event`** — `Title`, `Description`, `Objectives` (same shape as `Description`), `Type` (free text
+  against `EventTypes.All` — Conference, Seminar, Technoforum, Convention, Symposium, Expo, mirroring
+  `Member.MemberType`/`MemberTypes`), `Chapter` (null for a national/all-chapters event), `Venue`,
+  `StartsAt`/`EndsAt`, `Hours` (a single PRC-declared hour count shared across both modalities),
+  `Capacity` (informational planning target only — never enforced, never blocks registration), the
+  independently-settable `FeeOnsite`/`FeeOnline`, the two independently-nullable `CpdUnitsOnsite`/
+  `CpdUnitsOnline`, their PRC accreditation references `CpdCodeOnsite`/`CpdCodeOnline` (also
+  independently nullable, informational only, never validated against PRC), and
+  `PosterImageStorageKey` (an admin-uploaded banner image, set only via `EventPosterService` — see
+  "The poster image" below).
 - **`EventSession`** — one lecture/segment of a (possibly multi-day) event: `Title`, `StartsAt`/
-  `EndsAt`, `Order` (display sequence only, not a uniqueness constraint). `EventService.CreateAsync`
-  always creates at least one session — an event with no separate lectures still gets exactly one
-  session spanning the whole event — so nothing downstream needs a special case for a
-  single-session event.
+  `EndsAt`, `Order` (display sequence only, not a uniqueness constraint), and `Venue` — an optional
+  override for this session's display venue; falls back to `Event.Venue` when null (e.g. for a
+  multi-city or multi-room event where one lecture happens somewhere different from the rest).
+  `EventService.CreateAsync` always creates at least one session — an event with no separate lectures
+  still gets exactly one session spanning the whole event — so nothing downstream needs a special
+  case for a single-session event.
 - **`EventRegistration`** — one row per member per event (mirrors `Payment`'s single-row-with-
   status-enum shape). Carries `Mode` (`Onsite`/`Online`), `Status` (`Registered` →
   `PaymentSubmitted` → `PaymentVerified` → `Attended` → `EvaluationSubmitted`, plus `Rejected`/
@@ -74,6 +85,19 @@ mapping: `NotFound` → `404`, `Forbidden` → `403`, `Conflict` → `409`, ever
 - **`EventAttendance`** — a join row: `EventRegistrationId` + `EventSessionId`, plus `RecordedBy`/
   `RecordedAt` (mirrors `Payment.DecidedByUserId`/`DecidedAt`). One row per session a registrant is
   confirmed to have attended.
+
+## The poster image
+
+An Admin can attach a JPG/PNG banner image via `POST /api/events/{id}/poster` (multipart form,
+`events:manage`), which `EventPosterService` validates (JPG/PNG only, 8 MB raw upload cap),
+downscales to at most 1600px on the longest side, re-encodes as JPEG, and writes to
+`Event.PosterImageStorageKey` — the same validate-downscale-reencode pipeline
+`MemberUploadService` uses for Member Photo, but simpler: exactly one poster per event, stored
+directly on the `Event` row rather than a separate join table. `GET /api/events/{id}/poster` streams
+it back (any authenticated caller — the poster is shown on the member-facing events list and register
+view, not just to staff). `EventDto.HasPoster` (derived from `PosterImageStorageKey is not null`, the
+same pattern as `PaymentDto.HasProof`) tells the frontend whether to fetch it. Uploading again
+overwrites the previous poster; there is no history.
 
 **Why attendance is per-session, not per-event.** PSMPE's own certificate practice — including their
 "consideration" exception for a member who leaves an event early due to an emergency — credits
@@ -210,7 +234,9 @@ doesn't wonder whether these were simply forgotten:
   to `Member.PrcValidUntilDate`. Members and admins see a running total of units earned, not a
   "9 / 15 required this cycle" comparison. Deferred pending the client's actual per-cycle unit
   requirement.
-- **Event cancellation, refunds, or capacity waitlisting** beyond a simple `Capacity` counter.
+- **Event cancellation, refunds, or capacity enforcement/waitlisting** — `Event.Capacity` is an
+  informational planning target only; `EventService.RegisterAsync` never reads it, so reaching it
+  never blocks a new registration.
 - **Chapter-officer-level event management permissions** — Admin/staff only (`events:manage`) in this
   pass, even though `Member.ChapterPosition` exists and events are chapter-scoped.
 - **Per-event configurable evaluation forms** — the evaluation is a fixed field set
