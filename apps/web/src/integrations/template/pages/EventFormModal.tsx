@@ -68,9 +68,22 @@ export function EventFormModal({ event, mode, onClose, onSaved }: EventFormModal
     }
   }, [event])
 
+  // Revokes the previous blob URL whenever it's replaced (a freshly-picked file superseding a
+  // fetched preview, or the reverse) and on unmount - same pattern as photoPreviewUrl in
+  // MembershipApplicationWizardCard.tsx / MemberFormCard.tsx.
+  useEffect(() => {
+    return () => {
+      if (posterPreviewUrl) URL.revokeObjectURL(posterPreviewUrl)
+    }
+  }, [posterPreviewUrl])
+
   const handlePosterFileChange = (file: File | null) => {
     setPosterFile(file)
-    if (file) setPosterPreviewUrl(URL.createObjectURL(file))
+    if (file) {
+      // Instant local preview - no need to wait for a round trip to see the picked poster.
+      if (posterPreviewUrl) URL.revokeObjectURL(posterPreviewUrl)
+      setPosterPreviewUrl(URL.createObjectURL(file))
+    }
   }
 
   const updateSession = (index: number, patch: Partial<EventSessionInput>) => {
@@ -88,23 +101,24 @@ export function EventFormModal({ event, mode, onClose, onSaved }: EventFormModal
   const handleSubmit = async () => {
     setSaving(true)
     setError(null)
-    try {
-      const basePayload = {
-        title,
-        description: description || null,
-        chapter: chapter || null,
-        venue: venue || null,
-        startsAt: new Date(startsAt).toISOString(),
-        endsAt: new Date(endsAt).toISOString(),
-        capacity: capacity ? Number(capacity) : null,
-        feeOnsite: Number(feeOnsite),
-        feeOnline: Number(feeOnline),
-        type: type || null,
-        hours: hours ? Number(hours) : null,
-        objectives: objectives || null,
-      }
 
-      let savedEventId = event?.id ?? null
+    const basePayload = {
+      title,
+      description: description || null,
+      chapter: chapter || null,
+      venue: venue || null,
+      startsAt: new Date(startsAt).toISOString(),
+      endsAt: new Date(endsAt).toISOString(),
+      capacity: capacity ? Number(capacity) : null,
+      feeOnsite: Number(feeOnsite),
+      feeOnline: Number(feeOnline),
+      type: type || null,
+      hours: hours ? Number(hours) : null,
+      objectives: objectives || null,
+    }
+
+    let savedEventId = event?.id ?? null
+    try {
       if (mode === 'create') {
         const created = await eventApi.createEvent(basePayload)
         savedEventId = created.id
@@ -118,17 +132,32 @@ export function EventFormModal({ event, mode, onClose, onSaved }: EventFormModal
           sessions,
         })
       }
-
-      if (posterFile && savedEventId) {
-        await eventApi.uploadPoster(savedEventId, posterFile)
-      }
-
-      onSaved()
     } catch (err) {
+      // Nothing was persisted - safe to let the admin retry the whole form as before.
       setError(describeError(err, 'Could not save this event.'))
-    } finally {
       setSaving(false)
+      return
     }
+
+    if (posterFile && savedEventId) {
+      try {
+        await eventApi.uploadPoster(savedEventId, posterFile)
+      } catch (err) {
+        // The event itself is already persisted at this point - closing via onSaved() (rather than
+        // leaving the form open) avoids the admin re-submitting and creating a duplicate event. That
+        // same onSaved() unmounts this modal right away, so an inline `error` banner would never be
+        // seen - an alert is the only way to actually surface this to the admin.
+        window.alert(
+          `Event saved, but the poster upload failed: ${describeError(err, 'an unknown error occurred')}. You can try uploading it again from Edit.`,
+        )
+        setSaving(false)
+        onSaved()
+        return
+      }
+    }
+
+    setSaving(false)
+    onSaved()
   }
 
   return (
