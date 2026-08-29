@@ -2,6 +2,18 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
+**Status: Implemented.** All 10 tasks complete via subagent-driven-development, each with a
+spec-compliance and code-quality review pass (two fix cycles landed along the way — Task 4 gained
+shared upload test helpers plus poster validation-failure coverage; Task 7 gained a poster-upload
+failure split from event-save failure plus blob-URL revocation). Final whole-implementation review
+confirmed 487/487 backend tests passing and a clean frontend build, with every renamed/new field
+traced end to end from entity through to UI with no cross-task regressions. Two gaps surfaced by
+that final review — `PaymentService` doesn't enforce submitted amounts against `Event.FeeOnsite`/
+`FeeOnline` (spec.md's wording should soften to match this), and the certificate PDF doesn't yet
+carry `CpdCodeOnsite`/`CpdCodeOnline`/`Type`/`Hours`/`Objectives` despite `proposal.md` saying it
+should — are out of this plan's original scope and tracked separately rather than silently folded
+in here.
+
 **Goal:** This is a **delta plan**, not a from-scratch build. `add-events-cpd-tracker` already has a
 complete, working, tested implementation (22 commits) built against the 2026-08-24 revision of the
 proposal — `Event`, `EventSession`, `EventRegistration`, `EventAttendance`, the full registration →
@@ -85,7 +97,7 @@ Confirmed by reading the actual current code before writing this plan — do not
 Pure data classes and EF mapping — no behavior to TDD; verification is a successful build
 (`dotnet build`) at the end of this task.
 
-- [ ] **Step 1: Create the `EventTypes` constants class**
+- [x] **Step 1: Create the `EventTypes` constants class**
 
 ```csharp
 namespace PSMPE.Portal.Domain.Enums;
@@ -108,7 +120,7 @@ public static class EventTypes
 }
 ```
 
-- [ ] **Step 2: Modify `Event.cs`** — replace the single `Fee` property with `FeeOnsite`/`FeeOnline`
+- [x] **Step 2: Modify `Event.cs`** — replace the single `Fee` property with `FeeOnsite`/`FeeOnline`
       and add `Objectives`, `Type`, `Hours`, `CpdCodeOnsite`, `CpdCodeOnline`,
       `PosterImageStorageKey`. Full replacement content:
 
@@ -179,7 +191,7 @@ public class Event : BaseEntity
 }
 ```
 
-- [ ] **Step 3: Modify `EventSession.cs`** — add the `Venue` override. Full replacement content:
+- [x] **Step 3: Modify `EventSession.cs`** — add the `Venue` override. Full replacement content:
 
 ```csharp
 namespace PSMPE.Portal.Domain.Entities;
@@ -210,7 +222,7 @@ public class EventSession : BaseEntity
 }
 ```
 
-- [ ] **Step 4: Modify `EventConfiguration.cs`** — replace `Fee`'s mapping with `FeeOnsite`/
+- [x] **Step 4: Modify `EventConfiguration.cs`** — replace `Fee`'s mapping with `FeeOnsite`/
       `FeeOnline`, and map the five new columns. Full replacement content:
 
 ```csharp
@@ -245,7 +257,7 @@ public class EventConfiguration : IEntityTypeConfiguration<Event>
 }
 ```
 
-- [ ] **Step 5: Modify `EventSessionConfiguration.cs`** — add the `Venue` mapping (one new line,
+- [x] **Step 5: Modify `EventSessionConfiguration.cs`** — add the `Venue` mapping (one new line,
       everything else unchanged):
 
 ```csharp
@@ -277,7 +289,7 @@ public class EventSessionConfiguration : IEntityTypeConfiguration<EventSession>
 }
 ```
 
-- [ ] **Step 6: Verify the solution still builds** (it will not yet — `EventService.cs` and its
+- [x] **Step 6: Verify the solution still builds** (it will not yet — `EventService.cs` and its
       tests still reference the old `Fee`/`EventSessionDto` shapes; Task 2 fixes that). Just confirm
       the compiler errors are limited to those expected spots:
 
@@ -287,7 +299,7 @@ Expected: Errors only in `EventService.cs`, `EventDto.cs`, `EventServiceTests.cs
 in `Event.cs`, `EventSession.cs`, `EventConfiguration.cs`, or `EventSessionConfiguration.cs`
 themselves.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add src/PSMPE.Portal.Domain/Enums/EventTypes.cs src/PSMPE.Portal.Domain/Entities/Event.cs src/PSMPE.Portal.Domain/Entities/EventSession.cs src/PSMPE.Portal.Infrastructure/Persistence/Configurations/EventConfiguration.cs src/PSMPE.Portal.Infrastructure/Persistence/Configurations/EventSessionConfiguration.cs
@@ -303,7 +315,7 @@ git commit -m "feat: split Event.Fee into FeeOnsite/FeeOnline, add Type/Hours/Ob
 - Modify: `src/PSMPE.Portal.Application/Events/EventService.cs`
 - Modify: `tests/PSMPE.Portal.Application.UnitTests/Events/EventServiceTests.cs`
 
-- [ ] **Step 1: Modify `EventDto.cs`** — full replacement content (new fields on `EventDto`,
+- [x] **Step 1: Modify `EventDto.cs`** — full replacement content (new fields on `EventDto`,
       `EventSessionDto`, `CreateEventRequest`, `UpdateEventRequest`, `EventSessionRequest`; the new
       fields on the two request records default to `null` so every existing named-argument test call
       that doesn't mention them keeps compiling):
@@ -388,7 +400,7 @@ public record UpdateEventRequest(
     string? CpdCodeOnline = null);
 ```
 
-- [ ] **Step 2: Modify `EventService.cs`** — extend `ValidateCore`, `CreateAsync`, `UpdateAsync`, and
+- [x] **Step 2: Modify `EventService.cs`** — extend `ValidateCore`, `CreateAsync`, `UpdateAsync`, and
       `ToDto` to carry the new fields and validate `Type`/`Hours`/the split fee. Full replacement
       content:
 
@@ -670,7 +682,7 @@ public partial class EventService(IApplicationDbContext db) : IEventService
 }
 ```
 
-- [ ] **Step 3: Fix the two broken helper methods in `EventServiceTests.cs`** — `ValidCreateRequest`
+- [x] **Step 3: Fix the two broken helper methods in `EventServiceTests.cs`** — `ValidCreateRequest`
       (line ~15-17) currently ends `Capacity: 100, Fee: 500m)`; change the named argument. `ToUpdateRequest`
       (line ~222-225) currently reads `e.Capacity, e.Fee,`; change to the two split fields:
 
@@ -687,12 +699,12 @@ public partial class EventService(IApplicationDbContext db) : IEventService
             e.Sessions.Select(s => new EventSessionRequest(s.Id, s.Title, s.StartsAt, s.EndsAt, s.Order, s.Venue)).ToList());
 ```
 
-- [ ] **Step 4: Run the existing Event tests to confirm they still pass after the rename**
+- [x] **Step 4: Run the existing Event tests to confirm they still pass after the rename**
 
 Run: `dotnet test tests/PSMPE.Portal.Application.UnitTests --filter FullyQualifiedName~EventServiceTests`
 Expected: All previously-passing tests still PASS (no behavior changed yet, only the Fee shape).
 
-- [ ] **Step 5: Write three new failing tests for the genuinely new validation/behavior**, appended
+- [x] **Step 5: Write three new failing tests for the genuinely new validation/behavior**, appended
       to `EventServiceTests.cs` (anywhere among the other `[Fact]` methods in the class):
 
 ```csharp
@@ -748,7 +760,7 @@ Add the necessary `using PSMPE.Portal.Domain.Enums;` at the top of the file if n
 (it already is — `EventServiceTests.cs` already references `Chapters`/`EventMode` from that
 namespace).
 
-- [ ] **Step 6: Run the new tests to verify they fail first (for the two genuinely new-behavior
+- [x] **Step 6: Run the new tests to verify they fail first (for the two genuinely new-behavior
       ones), then pass after Step 2's `EventService.cs` change**
 
 Run: `dotnet test tests/PSMPE.Portal.Application.UnitTests --filter FullyQualifiedName~EventServiceTests`
@@ -756,7 +768,7 @@ Expected: PASS — `CreateAsync_UnrecognizedType_Fails`, `CreateAsync_Recognized
 `UpdateAsync_SessionVenueOverride_PersistsAndFallsBackWhenCleared` all green, alongside every
 pre-existing test in the file.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add src/PSMPE.Portal.Application/Events/Dtos/EventDto.cs src/PSMPE.Portal.Application/Events/EventService.cs tests/PSMPE.Portal.Application.UnitTests/Events/EventServiceTests.cs
@@ -781,7 +793,7 @@ file — exactly like `MemberUploadService`, which has no unit tests either (Ski
 needs a real image byte stream, which is exercised at the integration level instead, same as
 `MemberUploadsTests.cs` does for member uploads). Task 4 adds the integration test for this.
 
-- [ ] **Step 1: Create `IEventPosterService.cs`**
+- [x] **Step 1: Create `IEventPosterService.cs`**
 
 ```csharp
 using PSMPE.Portal.Application.Common.Models;
@@ -797,7 +809,7 @@ public interface IEventPosterService
 }
 ```
 
-- [ ] **Step 2: Create `EventPosterService.cs`**
+- [x] **Step 2: Create `EventPosterService.cs`**
 
 ```csharp
 using Microsoft.EntityFrameworkCore;
@@ -904,7 +916,7 @@ public class EventPosterService(IApplicationDbContext db, IFileStorageService st
 }
 ```
 
-- [ ] **Step 3: Register the new service in `DependencyInjection.cs`** — add one line:
+- [x] **Step 3: Register the new service in `DependencyInjection.cs`** — add one line:
 
 ```csharp
 using Microsoft.Extensions.DependencyInjection;
@@ -933,7 +945,7 @@ public static class DependencyInjection
 }
 ```
 
-- [ ] **Step 4: Modify `EventsController.cs`** — inject `IEventPosterService` and add the two poster
+- [x] **Step 4: Modify `EventsController.cs`** — inject `IEventPosterService` and add the two poster
       endpoints. Change the class declaration line and add two new action methods (placed after
       `Update`, before `Register`):
 
@@ -967,12 +979,12 @@ public class EventsController(IEventService eventService, IPaymentService paymen
 Add `using PSMPE.Portal.Application.Events;` if not already imported (it already is, for
 `IEventService`/`EventDto`).
 
-- [ ] **Step 5: Verify the solution builds**
+- [x] **Step 5: Verify the solution builds**
 
 Run: `dotnet build`
 Expected: Build succeeds with zero errors.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src/PSMPE.Portal.Application/Events/IEventPosterService.cs src/PSMPE.Portal.Application/Events/EventPosterService.cs src/PSMPE.Portal.Application/DependencyInjection.cs src/PSMPE.Portal.WebAPI/Controllers/EventsController.cs
@@ -987,19 +999,19 @@ git commit -m "feat: add EventPosterService and POST/GET /api/events/{id}/poster
 - Modify: `tests/PSMPE.Portal.Application.UnitTests/Payments/PaymentServiceTests.cs`
 - Modify: `tests/PSMPE.Portal.WebAPI.IntegrationTests/Events/EventsControllerTests.cs`
 
-- [ ] **Step 1: Fix `SeedEventRegistrationAsync` in `PaymentServiceTests.cs`** (around line 291) —
+- [x] **Step 1: Fix `SeedEventRegistrationAsync` in `PaymentServiceTests.cs`** (around line 291) —
       the entity literal still sets the old `Fee` property:
 
 ```csharp
         var @event = new Event { Title = "Seminar", StartsAt = DateTimeOffset.UtcNow.AddDays(5), EndsAt = DateTimeOffset.UtcNow.AddDays(5).AddHours(4), FeeOnsite = 500m, FeeOnline = 500m };
 ```
 
-- [ ] **Step 2: Run the Payments unit tests to confirm the fix compiles and passes**
+- [x] **Step 2: Run the Payments unit tests to confirm the fix compiles and passes**
 
 Run: `dotnet test tests/PSMPE.Portal.Application.UnitTests --filter FullyQualifiedName~PaymentServiceTests`
 Expected: PASS — all tests in the file, unchanged behavior.
 
-- [ ] **Step 3: Fix the three `fee = 500m,` JSON payload literals in `EventsControllerTests.cs`** —
+- [x] **Step 3: Fix the three `fee = 500m,` JSON payload literals in `EventsControllerTests.cs`** —
       `ValidEventPayload` (~line 102) and the two inline update payloads (~line 164, ~line 227). In
       each of the three spots, replace the single line:
 
@@ -1017,12 +1029,12 @@ with:
 (Match the existing indentation at each of the three call sites — `ValidEventPayload`'s body is
 indented one level less than the two inline `Content = JsonContent.Create(new { ... })` payloads.)
 
-- [ ] **Step 4: Run the full Events integration test suite to confirm nothing else broke**
+- [x] **Step 4: Run the full Events integration test suite to confirm nothing else broke**
 
 Run: `dotnet test tests/PSMPE.Portal.WebAPI.IntegrationTests --filter FullyQualifiedName~EventsControllerTests`
 Expected: PASS — every pre-existing test in the file still green.
 
-- [ ] **Step 5: Write a new failing integration test for the poster upload/download round trip**,
+- [x] **Step 5: Write a new failing integration test for the poster upload/download round trip**,
       appended to `EventsControllerTests.cs`:
 
 ```csharp
@@ -1099,14 +1111,14 @@ Expected: PASS — every pre-existing test in the file still green.
 Add `using SkiaSharp;` to the top of `EventsControllerTests.cs` if not already present (it is not —
 this file currently has no SkiaSharp reference).
 
-- [ ] **Step 6: Run the tests to verify they fail first (route doesn't exist without Task 3, and Task
+- [x] **Step 6: Run the tests to verify they fail first (route doesn't exist without Task 3, and Task
       3 is already done at this point in the plan — so verify they pass directly)**
 
 Run: `dotnet test tests/PSMPE.Portal.WebAPI.IntegrationTests --filter FullyQualifiedName~EventsControllerTests`
 Expected: PASS — `UploadThenGetPoster_RoundTrips`, `UploadPoster_NonAdmin_Forbidden`, and
 `GetPoster_BeforeAnyUpload_ReturnsNotFound` all green, alongside every pre-existing test in the file.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add tests/PSMPE.Portal.Application.UnitTests/Payments/PaymentServiceTests.cs tests/PSMPE.Portal.WebAPI.IntegrationTests/Events/EventsControllerTests.cs
@@ -1128,7 +1140,7 @@ scaffold it with the EF CLI (which reads the entity/config changes from Tasks 1�
 one part of the generated `Up()`/`Down()` methods so the rename doesn't silently drop existing `Fee`
 data.
 
-- [ ] **Step 1: Scaffold the migration**
+- [x] **Step 1: Scaffold the migration**
 
 Run:
 ```bash
@@ -1143,7 +1155,7 @@ Expected: A new migration file is created containing, among other operations, so
 `CpdCodeOnline`, `PosterImageStorageKey` on `Events`, and one `AddColumn` for `Venue` on
 `EventSessions`.
 
-- [ ] **Step 2: Hand-edit the generated migration's `Up()` method** to replace the auto-generated
+- [x] **Step 2: Hand-edit the generated migration's `Up()` method** to replace the auto-generated
       drop-and-add pair for `Fee`/`FeeOnsite` with a `RenameColumn`, so any pre-existing `Fee` value
       (e.g. from seeded dev data) survives as `FeeOnsite` instead of being silently reset to the
       default. Find the two lines that look like:
@@ -1177,7 +1189,7 @@ and replace both with a single rename (delete the `DropColumn` block entirely, a
 Leave the separate `AddColumn<decimal>` call for `FeeOnline` exactly as scaffolded (that's a genuinely
 new column with no prior data to preserve, so `defaultValue: 0m` for existing rows is correct as-is).
 
-- [ ] **Step 3: Mirror the same fix in `Down()`** — find the reverse pair (an `AddColumn` for `Fee`
+- [x] **Step 3: Mirror the same fix in `Down()`** — find the reverse pair (an `AddColumn` for `Fee`
       alongside a `DropColumn` for `FeeOnsite`) and replace both with the reverse rename:
 
 ```csharp
@@ -1190,21 +1202,21 @@ new column with no prior data to preserve, so `defaultValue: 0m` for existing ro
 (Keep `Down()`'s `DropColumn` for `FeeOnline` as scaffolded — reverting should drop the column that
 never existed before this migration.)
 
-- [ ] **Step 4: Apply the migration to your local database and verify it runs cleanly**
+- [x] **Step 4: Apply the migration to your local database and verify it runs cleanly**
 
 Run: `dotnet ef database update --project src/PSMPE.Portal.Infrastructure/PSMPE.Portal.Infrastructure.csproj --startup-project src/PSMPE.Portal.WebAPI/PSMPE.Portal.WebAPI.csproj`
 Expected: Migration applies with no errors. If you have any pre-existing `Events` rows from local
 testing, spot-check one: its old `Fee` value should now appear under `FeeOnsite`, and `FeeOnline`
 should read `0`.
 
-- [ ] **Step 5: Run the full backend test suite** (integration tests spin up their own database via
+- [x] **Step 5: Run the full backend test suite** (integration tests spin up their own database via
       `WebApplicationFactory` and apply migrations fresh, so this also validates the migration from a
       clean slate)
 
 Run: `dotnet test`
 Expected: All tests pass, including everything fixed/added in Tasks 2–4.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src/PSMPE.Portal.Infrastructure/Persistence/Migrations/
@@ -1218,7 +1230,7 @@ git commit -m "feat: add AlterEventsAddDetailFieldsAndPoster migration (FeeOnsit
 **Files:**
 - Modify: `apps/web/src/core/api/endpoints/eventApi.ts`
 
-- [ ] **Step 1: Modify `eventApi.ts`** — full replacement content:
+- [x] **Step 1: Modify `eventApi.ts`** — full replacement content:
 
 ```typescript
 import { apiClient } from '../apiClient'
@@ -1452,14 +1464,14 @@ export const eventApi = {
 }
 ```
 
-- [ ] **Step 2: Verify TypeScript compiles** (it will not yet — the three page components still use
+- [x] **Step 2: Verify TypeScript compiles** (it will not yet — the three page components still use
       the old shape; Tasks 7–9 fix them)
 
 Run: `cd apps/web && npx tsc -b`
 Expected: Errors only in `EventFormModal.tsx`, `EventRegisterModal.tsx`, and `EventsTable.tsx` (all
 fixed in Tasks 7–9).
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add apps/web/src/core/api/endpoints/eventApi.ts
@@ -1473,7 +1485,7 @@ git commit -m "feat: add FeeOnsite/FeeOnline, Type, Hours, Objectives, CpdCode, 
 **Files:**
 - Modify: `apps/web/src/integrations/template/pages/EventFormModal.tsx`
 
-- [ ] **Step 1: Modify `EventFormModal.tsx`** — full replacement content:
+- [x] **Step 1: Modify `EventFormModal.tsx`** — full replacement content:
 
 ```tsx
 import { useEffect, useState } from 'react'
@@ -1792,13 +1804,13 @@ export function EventFormModal({ event, mode, onClose, onSaved }: EventFormModal
 }
 ```
 
-- [ ] **Step 2: Verify this file's slice of the TypeScript build is clean** (other files still break
+- [x] **Step 2: Verify this file's slice of the TypeScript build is clean** (other files still break
       until Tasks 8–9)
 
 Run: `cd apps/web && npx tsc -b --noEmit 2>&1 | grep EventFormModal || echo "no errors in EventFormModal.tsx"`
 Expected: `no errors in EventFormModal.tsx`
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add apps/web/src/integrations/template/pages/EventFormModal.tsx
@@ -1812,7 +1824,7 @@ git commit -m "feat: add Type, Hours, Objectives, per-modality fee/CPD code fiel
 **Files:**
 - Modify: `apps/web/src/integrations/template/pages/EventRegisterModal.tsx`
 
-- [ ] **Step 1: Modify `EventRegisterModal.tsx`** — full replacement content:
+- [x] **Step 1: Modify `EventRegisterModal.tsx`** — full replacement content:
 
 ```tsx
 import { useEffect, useState } from 'react'
@@ -1990,12 +2002,12 @@ export function EventRegisterModal({ event, onClose, onRegistered }: EventRegist
 }
 ```
 
-- [ ] **Step 2: Verify this file's slice of the TypeScript build is clean**
+- [x] **Step 2: Verify this file's slice of the TypeScript build is clean**
 
 Run: `cd apps/web && npx tsc -b --noEmit 2>&1 | grep EventRegisterModal || echo "no errors in EventRegisterModal.tsx"`
 Expected: `no errors in EventRegisterModal.tsx`
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add apps/web/src/integrations/template/pages/EventRegisterModal.tsx
@@ -2009,7 +2021,7 @@ git commit -m "feat: show poster/type/hours/objectives/session venues and live p
 **Files:**
 - Modify: `apps/web/src/integrations/template/pages/EventsTable.tsx`
 
-- [ ] **Step 1: Modify `EventsTable.tsx`** — replace the single `event.fee` display (around the
+- [x] **Step 1: Modify `EventsTable.tsx`** — replace the single `event.fee` display (around the
       existing `<p className="text-sm font-semibold">` line) with the two-modality version. Find:
 
 ```tsx
@@ -2030,14 +2042,14 @@ Replace with:
                     <p className="text-xs text-default-500">
 ```
 
-- [ ] **Step 2: Verify this file's slice of the TypeScript build is clean, and the whole frontend
+- [x] **Step 2: Verify this file's slice of the TypeScript build is clean, and the whole frontend
       build now compiles end to end**
 
 Run: `cd apps/web && npx tsc -b`
 Expected: Build succeeds with zero errors (this is the last of the three page components with a
 stale `Event.fee` reference).
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add apps/web/src/integrations/template/pages/EventsTable.tsx
@@ -2051,7 +2063,7 @@ git commit -m "feat: show FeeOnsite/FeeOnline separately in the events list"
 **Files:**
 - Modify: `openspecs/events.md`
 
-- [ ] **Step 1: Modify `openspecs/events.md`** — update "The `Event` → `EventSession` →
+- [x] **Step 1: Modify `openspecs/events.md`** — update "The `Event` → `EventSession` →
       `EventAttendance` shape" section's `Event`/`EventSession` bullet points to reflect the new
       fields. Find:
 
@@ -2101,7 +2113,7 @@ same pattern as `PaymentDto.HasProof`) tells the frontend whether to fetch it. U
 overwrites the previous poster; there is no history.
 ```
 
-- [ ] **Step 2: Update the endpoint table** to add the two new poster rows immediately after the
+- [x] **Step 2: Update the endpoint table** to add the two new poster rows immediately after the
       existing `PUT /api/events/{id}` row. Find:
 
 ```markdown
@@ -2116,7 +2128,7 @@ Replace with (adds two new table rows immediately below the unchanged original r
 | `GET /api/events/{id}/poster` | Any authenticated | Stream the poster image | `404` unknown event or no poster uploaded yet |
 ```
 
-- [ ] **Step 3: Run the full backend and frontend verification suites one more time**
+- [x] **Step 3: Run the full backend and frontend verification suites one more time**
 
 Run: `dotnet test`
 Expected: All tests pass.
@@ -2124,7 +2136,7 @@ Expected: All tests pass.
 Run: `cd apps/web && npx tsc -b && npx eslint src`
 Expected: Both succeed with zero errors.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add openspecs/events.md
