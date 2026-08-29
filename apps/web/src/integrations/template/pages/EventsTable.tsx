@@ -111,7 +111,11 @@ export function EventsTable({
                     <p className="text-xs text-default-500 mt-1">{formatCpdUnits(event.cpdUnitsOnsite, event.cpdUnitsOnline)}</p>
                   </div>
                   <div className="text-right shrink-0">
-                    <p className="text-sm font-semibold">{event.fee > 0 ? `PHP ${event.fee.toFixed(2)}` : 'Free'}</p>
+                    <p className="text-sm font-semibold">
+                      {event.feeOnsite > 0 || event.feeOnline > 0
+                        ? `Onsite PHP ${event.feeOnsite.toFixed(2)} / Online PHP ${event.feeOnline.toFixed(2)}`
+                        : 'Free'}
+                    </p>
                     <p className="text-xs text-default-500">
                       {event.registeredCount}
                       {event.capacity ? ` / ${event.capacity}` : ''} registered
