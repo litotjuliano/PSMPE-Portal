@@ -30,17 +30,23 @@ set or correct either `CpdUnitsOnsite` or `CpdUnitsOnline` at any time, before o
 - **AND** every existing `EventRegistration` for that modality that has reached
   `EvaluationSubmitted` immediately reflects the new credit value the next time it is read
 
-### Requirement: Registration Fee Is Resolved Per Modality
+### Requirement: Registration Fee Is Displayed Per Modality, Not System-Enforced
 
-The system SHALL resolve the fee owed for an `EventRegistration` from `Event.FeeOnsite` when the
-registration's `Mode` is `Onsite`, or `Event.FeeOnline` when `Mode` is `Online`. The two values SHALL
-be settable independently, and either MAY be 0 for a free modality.
+The system SHALL display, as the suggested amount for an `EventRegistration`, `Event.FeeOnsite` when
+the registration's `Mode` is `Onsite`, or `Event.FeeOnline` when `Mode` is `Online`. The two values
+SHALL be settable independently, and either MAY be 0 for a free modality. This is a *displayed
+default*, not a validated charge: the member-submitted or admin-recorded payment amount is not
+cross-checked against it, matching how a membership dues payment's amount is never system-validated
+either — an Admin verifies the correct amount was paid as part of `Payment` verification, the same
+manual check used for membership dues.
 
-#### Scenario: Onsite and Online registrations on the same event owe different fees
+#### Scenario: Onsite and Online registrations on the same event show different suggested fees
 
 - **WHEN** one member registers Onsite and another registers Online for the same event, and the
   event's `FeeOnsite` is 3000 while `FeeOnline` is 900
-- **THEN** the Onsite member's registration owes 3000 and the Online member's owes 900
+- **THEN** the Onsite member's registration form pre-fills 3000 and the Online member's pre-fills 900
+- **AND** an Admin verifying either payment confirms the correct amount was paid manually, the same
+  as for a membership dues payment
 
 ### Requirement: One Registration Per Member Per Event
 

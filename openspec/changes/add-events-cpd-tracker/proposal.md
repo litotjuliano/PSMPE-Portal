@@ -192,9 +192,11 @@ original design. `EventRegistration.Status` moves to `Attended` once an admin re
 advances the linked `EventRegistration.Status` from `PaymentSubmitted` to `PaymentVerified`, the
 same way verifying a membership payment today flips `Member.Status` to `Active`. A new admin-only
 action records a cash payment directly — creating and verifying a `Payment` in one step, with no
-proof file — for on-site registrants who paid in cash at the venue. The amount owed for a
-registration resolves from `Event.FeeOnsite` or `Event.FeeOnline` based on the registration's
-`Mode`, not a single shared `Event.Fee`.
+proof file — for on-site registrants who paid in cash at the venue. The suggested amount shown for a
+registration is `Event.FeeOnsite` or `Event.FeeOnline` based on the registration's `Mode`, not a
+single shared `Event.Fee` — but, same as membership dues today, the submitted or admin-recorded
+amount is never system-validated against it; an Admin confirms the correct amount was paid as part
+of verifying the `Payment`.
 
 ### 6. API endpoints
 
