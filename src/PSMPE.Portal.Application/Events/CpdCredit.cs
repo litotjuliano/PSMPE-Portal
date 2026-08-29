@@ -30,4 +30,13 @@ internal static class CpdCredit
         var rawCredit = unitsForMode.Value * sessionsAttended / totalSessions;
         return Math.Round(rawCredit, 2, MidpointRounding.AwayFromZero);
     }
+
+    /// <summary>
+    /// The PRC accreditation reference (Event.CpdCodeOnsite/CpdCodeOnline) for whichever modality
+    /// the registration was made under - same Mode-based selection as For() above, but unconditional
+    /// (the code is informational metadata, not gated on evaluation status or session attendance the
+    /// way the credit amount is).
+    /// </summary>
+    public static string? CodeFor(EventRegistration registration, Event @event) =>
+        registration.Mode == EventMode.Onsite ? @event.CpdCodeOnsite : @event.CpdCodeOnline;
 }

@@ -28,6 +28,10 @@ public static class CertificatePdfGenerator
                     column.Item().AlignCenter().Text("Certificate of Completion").FontSize(28).Bold();
                     column.Item().PaddingTop(20).AlignCenter().Text($"This certifies that {data.MemberName}").FontSize(16);
                     column.Item().AlignCenter().Text($"attended {data.EventTitle}").FontSize(16);
+                    if (!string.IsNullOrWhiteSpace(data.EventType))
+                    {
+                        column.Item().AlignCenter().Text(data.EventType).FontSize(12);
+                    }
                     column.Item().AlignCenter().Text(
                         $"{data.EventStartsAt:MMMM d, yyyy} - {data.EventEndsAt:MMMM d, yyyy} ({data.Mode})").FontSize(12);
 
@@ -37,7 +41,14 @@ public static class CertificatePdfGenerator
                         column.Item().Text($"- {title}");
                     }
 
-                    column.Item().PaddingTop(20).AlignCenter().Text($"CPD Units Earned: {data.CreditUnits}").FontSize(16).Bold();
+                    var unitsLine = data.Hours is null
+                        ? $"CPD Units Earned: {data.CreditUnits}"
+                        : $"CPD Units Earned: {data.CreditUnits} ({data.Hours} hours)";
+                    column.Item().PaddingTop(20).AlignCenter().Text(unitsLine).FontSize(16).Bold();
+                    if (!string.IsNullOrWhiteSpace(data.CpdCode))
+                    {
+                        column.Item().AlignCenter().Text($"PRC Accreditation No.: {data.CpdCode}").FontSize(12);
+                    }
                 });
             });
         });

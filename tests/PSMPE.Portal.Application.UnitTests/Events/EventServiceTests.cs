@@ -835,4 +835,63 @@ public class EventServiceTests
 
         Assert.True(result.Succeeded);
     }
+
+    /// <summary>Matches the same Mode-based selection CpdCredit.For uses for CreditUnits (Task 11) -
+    /// an Onsite registration's certificate must carry Event.CpdCodeOnsite, not CpdCodeOnline, plus
+    /// the shared (non-modality-split) Type/Hours metadata.</summary>
+    [Fact]
+    public async Task GetCertificateDataAsync_OnsiteRegistration_UsesOnsiteCpdCodeAndSharedEventMetadata()
+    {
+        using var db = TestDbContext.CreateInMemory();
+        var service = new EventService(db);
+        var created = (await service.CreateAsync(ValidCreateRequest())).Value!;
+        var @event = (await service.UpdateAsync(created.Id, ToUpdateRequest(created) with
+        {
+            CpdUnitsOnsite = 8m,
+            CpdUnitsOnline = 3m,
+            CpdCodeOnsite = "PRC-ONSITE-001",
+            CpdCodeOnline = "PRC-ONLINE-001",
+            Type = EventTypes.Seminar,
+            Hours = 8m,
+        })).Value!;
+        var member = await SeedMemberForEventTestsAsync(db);
+        var registration = (await service.RegisterAsync(member.UserId, @event.Id, "Onsite")).Value!;
+        await MarkPaymentVerifiedAsync(db, registration.Id);
+        await service.RecordAttendanceAsync(@event.Id, [new RegistrantAttendanceRequest(registration.Id, [@event.Sessions.Single().Id])], Guid.NewGuid());
+        await service.SubmitEvaluationAsync(member.UserId, registration.Id, rating: 5, comments: null);
+
+        var result = await service.GetCertificateDataAsync(member.UserId, registration.Id, isAdmin: false);
+
+        Assert.True(result.Succeeded);
+        Assert.Equal("PRC-ONSITE-001", result.Value!.CpdCode);
+        Assert.Equal(EventTypes.Seminar, result.Value.EventType);
+        Assert.Equal(8m, result.Value.Hours);
+    }
+
+    /// <summary>Mirror of the Onsite case above for the Online modality - CpdCredit.CodeFor must
+    /// select CpdCodeOnline, matching how CpdCredit.For selects CpdUnitsOnline for the same Mode.</summary>
+    [Fact]
+    public async Task GetCertificateDataAsync_OnlineRegistration_UsesOnlineCpdCode()
+    {
+        using var db = TestDbContext.CreateInMemory();
+        var service = new EventService(db);
+        var created = (await service.CreateAsync(ValidCreateRequest())).Value!;
+        var @event = (await service.UpdateAsync(created.Id, ToUpdateRequest(created) with
+        {
+            CpdUnitsOnsite = 8m,
+            CpdUnitsOnline = 3m,
+            CpdCodeOnsite = "PRC-ONSITE-001",
+            CpdCodeOnline = "PRC-ONLINE-001",
+        })).Value!;
+        var member = await SeedMemberForEventTestsAsync(db);
+        var registration = (await service.RegisterAsync(member.UserId, @event.Id, "Online")).Value!;
+        await MarkPaymentVerifiedAsync(db, registration.Id);
+        await service.RecordAttendanceAsync(@event.Id, [new RegistrantAttendanceRequest(registration.Id, [@event.Sessions.Single().Id])], Guid.NewGuid());
+        await service.SubmitEvaluationAsync(member.UserId, registration.Id, rating: 5, comments: null);
+
+        var result = await service.GetCertificateDataAsync(member.UserId, registration.Id, isAdmin: false);
+
+        Assert.True(result.Succeeded);
+        Assert.Equal("PRC-ONLINE-001", result.Value!.CpdCode);
+    }
 }

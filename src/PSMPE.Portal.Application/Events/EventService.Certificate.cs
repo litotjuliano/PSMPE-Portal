@@ -40,9 +40,11 @@ public partial class EventService
             .Select(s => s.Title)
             .ToList();
 
+        var cpdCode = CpdCredit.CodeFor(registration, registration.Event);
+
         return Result<CertificateDataDto>.Success(new CertificateDataDto(
             $"{registration.Member.FirstName} {registration.Member.LastName}", registration.Event.Title,
             registration.Event.StartsAt, registration.Event.EndsAt, registration.Mode.ToString(),
-            attendedTitles, credit.Value));
+            attendedTitles, credit.Value, registration.Event.Type, registration.Event.Hours, cpdCode));
     }
 }
