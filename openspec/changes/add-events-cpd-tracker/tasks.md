@@ -1,118 +1,116 @@
-# Tasks: add-events-cpd-tracker
+# Tasks: add-events-cpd-tracker (delta against the 2026-08-29 spec revision)
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Build Event Management and the CPD Credit Tracker together — members register for a
-PSMPE event in a chosen modality (Onsite or Online, paid via the existing Payments domain), admins
-reconcile per-session attendance from a roster after the event, members submit a post-event
-evaluation, and CPD credit is computed at read time as a proration of sessions attended against
-whichever modality's unit count applies. Admins manage events (including their sessions/lectures)
-and rosters, record on-site cash payments directly, and set each modality's CPD units before or
-after the event. Members see a running credit total and can download a certificate once credit is
-earned.
+**Goal:** This is a **delta plan**, not a from-scratch build. `add-events-cpd-tracker` already has a
+complete, working, tested implementation (22 commits) built against the 2026-08-24 revision of the
+proposal — `Event`, `EventSession`, `EventRegistration`, `EventAttendance`, the full registration →
+payment → attendance → evaluation → CPD-credit → certificate flow, `EventsController`, and the React
+pages, all shipped. The proposal was then revised again on 2026-08-29 against PRC's public
+accreditation data, adding: `Event.Fee` split into `FeeOnsite`/`FeeOnline`; new `Event.CpdCodeOnsite`/
+`CpdCodeOnline`; new `Event.Type` (free text against a constants list); new `Event.Hours`; new
+`Event.Objectives`; a new admin-uploaded `Event.PosterImageStorageKey`; a new `EventSession.Venue`
+override. This plan implements exactly those seven additions on top of the existing code — every step
+below says **Modify** against a real file that already exists, never **Create** for anything already
+built. Two more proposal points turned out to already be correct in the existing code and need no
+changes at all (see "Already Satisfied — No Code Changes" immediately below); read that section before
+starting so you don't duplicate work that's already done.
 
-**Architecture:** Four new EF Core entities — `Event`, `EventSession` (one row per lecture/segment,
-always at least one per event), `EventRegistration` (one row per member per event, carrying `Mode`
-and a forward-walking `Status`), and `EventAttendance` (a join row per session a registrant is
-confirmed to have attended, replacing any single whole-event attendance flag) — behind a thin
-`EventService`, mirroring the existing `Payment` entity's single-row-with-status-enum shape for
-`EventRegistration`. `Payment` gains a third `Kind` (`EventRegistration`) and a nullable
-`EventRegistrationId` FK; the existing `POST /api/payments/{id}/verify` and `/reject` endpoints are
-reused unchanged (they already work off `Payment.Id` alone), only `PaymentService.VerifyAsync` and
-`RejectAsync` grow a branch for the new kind, plus two brand new `PaymentService` methods (submit for
-an event registration; record a cash payment directly). CPD credit is a computed property, never
-stored — there is no scheduler in this codebase for anything to write it, matching how
-`MemberDto.IsExpired`/`MemberService.ComputeIsExpired` already work. Certificates are generated on
-demand with QuestPDF, not pre-rendered or cached. Full context: `openspec/changes/add-events-cpd-tracker/proposal.md`
-and `specs/events/spec.md` in this folder — **read both before starting**.
+**Architecture:** No new entities, no new tables. `Event` gains seven columns; `EventSession` gains
+one. A new `EventPosterService` (mirroring how `MemberUploadService` is kept separate from
+`MemberService`) owns the poster/banner image upload, reusing the same
+validate-downscale-reencode-via-SkiaSharp pipeline `MemberUploadService` already uses for Member
+Photo — but simpler, since a poster has exactly one allowed kind (image) and lives directly on
+`Event.PosterImageStorageKey`, the same "key stored directly on the owning row" shape
+`Payment.ProofStorageKey` already uses, not `MemberUpload`'s separate join-table shape. `EventDto`,
+`CreateEventRequest`, `UpdateEventRequest`, `EventSessionDto`, and `EventSessionRequest` all grow new
+fields; `EventService.ValidateCore`/`CreateAsync`/`UpdateAsync`/`ToDto` are extended to match. One new
+EF Core migration (`AlterColumn`/`AddColumn`/`RenameColumn` — **not** a fresh `CreateTable`, since the
+four tables already exist from `20260824054348_AddEventsAndCpdTracker`) captures the schema delta.
 
-**Tech Stack:** .NET 8 + EF Core 8 (Npgsql in prod, EF InMemory in Application unit tests) for the
-backend; React 19 + Vite + TypeScript + Tailwind for the frontend, plain axios (no react-query), no
-frontend test runner (verification is `tsc -b` / `eslint` / manual browser pass). Backend: xUnit
-unit tests (`PSMPE.Portal.Application.UnitTests`) and xUnit integration tests
-(`PSMPE.Portal.WebAPI.IntegrationTests`, real HTTP via `WebApplicationFactory<Program>`). PDF
-generation: QuestPDF (MIT/Community-licensed, not currently referenced anywhere in this codebase —
-`Directory.Packages.props` does not exist in this repo, so package versions are pinned directly in
-each `.csproj`; `PSMPE.Portal.Application.csproj` already references `SkiaSharp`/`SkiaSharp.NativeAssets.Linux`,
-which QuestPDF's rendering pipeline also depends on, so adding QuestPDF itself is low-friction).
+**Tech Stack:** Same as the existing implementation — .NET 8 + EF Core 8 (Npgsql in prod, EF InMemory
+in Application unit tests), React 19 + Vite + TypeScript + Tailwind, plain axios, xUnit for both unit
+(`PSMPE.Portal.Application.UnitTests`) and integration (`PSMPE.Portal.WebAPI.IntegrationTests`, real
+HTTP via `WebApplicationFactory<Program>`) tests. Image handling continues to use SkiaSharp (already
+referenced by `PSMPE.Portal.Application.csproj`).
 
-**Sequencing:** Tasks 1–3 lay the data model and permissions. Tasks 4–11 build the Application-layer
-services end-to-end (event/session CRUD → registration → attendance → evaluation → CPD computation →
-payment integration → roster query → certificate), each verified by unit tests. Task 12 wires it all
-up behind `EventsController` (plus one new endpoint on the existing `MembersController`) with
-integration tests. Tasks 13–17 build the frontend on top of a working API. Task 18 is final
-verification and docs.
-
-**Design note carried through every task below:** the existing `PaymentDto.Status`/`Kind` are typed
-as raw C# enums, which — since this codebase has no `JsonStringEnumConverter` configured anywhere
-(confirmed by search) — actually serialize as **numbers** over the wire, even though
-`paymentApi.ts` types them as string literals (`'Submitted'`, `'Verified'`, ...). That mismatch is a
-pre-existing issue in `Payment`, out of scope to fix here. **Do not repeat it**: every new DTO field
-below that represents an enum (`EventRegistrationStatus`, `EventMode`) is explicitly converted with
-`.ToString()` in the mapping code, and every new request DTO that accepts one takes a `string` and
-parses it server-side with `Enum.TryParse`, so what actually crosses the wire is always the string
-the frontend's union types expect.
+**Sequencing:** Task 1 lays the domain/config/migration groundwork (Fee split, new fields, session
+Venue). Task 2 updates the Application-layer DTOs and `EventService`, plus the existing unit tests that
+break from the `Fee` rename. Task 3 builds the new `EventPosterService` and wires its two endpoints
+into `EventsController`. Task 4 fixes the two existing test files that construct events with the old
+`Fee` shape and adds new coverage (Type validation, session Venue round-trip, poster upload). Task 5
+scaffolds and hand-corrects the EF migration. Tasks 6–9 update the frontend. Task 10 updates
+`openspecs/events.md` and runs final verification.
 
 ---
 
-## 1. Domain entities and DbContext wiring
+## Already Satisfied — No Code Changes
+
+Confirmed by reading the actual current code before writing this plan — do not re-implement these:
+
+- **`GET /api/events` already has search + filter query params.** `EventsController.GetAll` and
+  `EventService.GetAllAsync` (`src/PSMPE.Portal.Application/Events/EventService.cs`) already accept
+  and apply `search` (case-insensitive `Title.Contains`), `chapter` (exact match), and `upcomingOnly`
+  (`EndsAt >= now`). The frontend `EventsTable.tsx` already renders a search box, a chapter `<select>`,
+  and an "Upcoming only" checkbox, all wired through `EventsPage.tsx` with debounced search. Nothing to
+  add here.
+- **`GET /api/events/{id}/roster` search/filter is already handled client-side and is sufficient.**
+  `EventService.GetRosterAsync` returns the full registrant list for one event (never more than a few
+  hundred rows in practice), and `EventRosterTable.tsx` already filters that in-memory list by name/
+  membership no. and by payment status via local `useState`/`useMemo` — no server round trip needed
+  per keystroke. This plan does **not** add `search`/`status` query params to the roster endpoint
+  itself; the existing client-side filtering already satisfies "the admin roster supports search and
+  filter."
+- **`Event.Capacity` is already informational-only — never enforced.** `EventService.RegisterAsync`
+  (`src/PSMPE.Portal.Application/Events/EventService.Registration.cs`) contains no reference to
+  `Capacity` anywhere in its logic; the only registration guard is the one-non-cancelled-registration-
+  per-member-per-event check. `ValidateCore`'s only capacity rule is `capacity is < 1` → "must be at
+  least 1 if set," which is input sanitization, not enforcement. Confirmed correct as-is.
+- **There is no `Category` field and no eligibility-restriction logic anywhere in the codebase.**
+  Grepped the full `Event`/`EventService`/`EventsController` surface — no `Category` property, no
+  eligibility/restriction check of any kind. `RegisterAsync` allows any authenticated member with a
+  `Member` profile to register for any event. Confirmed correct as-is.
+
+---
+
+## 1. Domain entities and EF configuration
 
 **Files:**
-- Create: `src/PSMPE.Portal.Domain/Entities/Event.cs`
-- Create: `src/PSMPE.Portal.Domain/Entities/EventSession.cs`
-- Create: `src/PSMPE.Portal.Domain/Entities/EventRegistration.cs`
-- Create: `src/PSMPE.Portal.Domain/Entities/EventAttendance.cs`
-- Create: `src/PSMPE.Portal.Domain/Enums/EventRegistrationStatus.cs`
-- Create: `src/PSMPE.Portal.Domain/Enums/EventMode.cs`
-- Modify: `src/PSMPE.Portal.Domain/Enums/PaymentKind.cs`
-- Modify: `src/PSMPE.Portal.Domain/Entities/Payment.cs`
-- Modify: `src/PSMPE.Portal.Application/Common/Interfaces/IApplicationDbContext.cs`
-- Modify: `src/PSMPE.Portal.Infrastructure/Persistence/ApplicationDbContext.cs`
-- Modify: `tests/PSMPE.Portal.Application.UnitTests/TestSupport/TestDbContext.cs`
+- Create: `src/PSMPE.Portal.Domain/Enums/EventTypes.cs`
+- Modify: `src/PSMPE.Portal.Domain/Entities/Event.cs`
+- Modify: `src/PSMPE.Portal.Domain/Entities/EventSession.cs`
+- Modify: `src/PSMPE.Portal.Infrastructure/Persistence/Configurations/EventConfiguration.cs`
+- Modify: `src/PSMPE.Portal.Infrastructure/Persistence/Configurations/EventSessionConfiguration.cs`
 
-Pure data classes and DI plumbing — no meaningful behavior to TDD here; verification is a
-successful build.
+Pure data classes and EF mapping — no behavior to TDD; verification is a successful build
+(`dotnet build`) at the end of this task.
 
-- [ ] **Step 1: Create the `EventRegistrationStatus` and `EventMode` enums**
+- [ ] **Step 1: Create the `EventTypes` constants class**
 
 ```csharp
 namespace PSMPE.Portal.Domain.Enums;
 
 /// <summary>
-/// Walks forward: Registered -> PaymentSubmitted -> PaymentVerified -> Attended ->
-/// EvaluationSubmitted, with Rejected/Cancelled as off-ramps. One EventRegistration row per member
-/// per event carries this single status rather than separate registration/attendance/evaluation
-/// tables - see add-events-cpd-tracker/proposal.md.
+/// Mirrors MemberTypes.cs exactly: free text against a constants list, not a validated C# enum -
+/// see add-events-cpd-tracker/proposal.md's 2026-08-29 revision. Nothing validates Event.Type
+/// itself; these constants only drive EventService.ValidateCore and the admin form's dropdown.
 /// </summary>
-public enum EventRegistrationStatus
+public static class EventTypes
 {
-    Registered,
-    PaymentSubmitted,
-    PaymentVerified,
-    Attended,
-    EvaluationSubmitted,
-    Rejected,
-    Cancelled,
+    public const string Conference = "Conference";
+    public const string Seminar = "Seminar";
+    public const string Technoforum = "Technoforum";
+    public const string Convention = "Convention";
+    public const string Symposium = "Symposium";
+    public const string Expo = "Expo";
+
+    public static readonly string[] All = [Conference, Seminar, Technoforum, Convention, Symposium, Expo];
 }
 ```
 
-```csharp
-namespace PSMPE.Portal.Domain.Enums;
-
-/// <summary>
-/// Which of an event's two independently-accredited CPD unit values (Event.CpdUnitsOnsite /
-/// Event.CpdUnitsOnline) applies to a given registration's credit. Chosen by the member at
-/// registration time - see add-events-cpd-tracker/proposal.md's "CPD units are tracked per
-/// modality" decision.
-/// </summary>
-public enum EventMode
-{
-    Onsite,
-    Online,
-}
-```
-
-- [ ] **Step 2: Create the `Event` entity**
+- [ ] **Step 2: Modify `Event.cs`** — replace the single `Fee` property with `FeeOnsite`/`FeeOnline`
+      and add `Objectives`, `Type`, `Hours`, `CpdCodeOnsite`, `CpdCodeOnline`,
+      `PosterImageStorageKey`. Full replacement content:
 
 ```csharp
 namespace PSMPE.Portal.Domain.Entities;
@@ -120,21 +118,58 @@ namespace PSMPE.Portal.Domain.Entities;
 /// <summary>
 /// A PSMPE event or workshop (national convention, chapter seminar, technical workshop). Runs
 /// face-to-face and via Zoom simultaneously, and each modality is accredited separately, so
-/// CpdUnitsOnsite and CpdUnitsOnline are independently nullable ("TBD" until an admin sets them) -
-/// see add-events-cpd-tracker/proposal.md. Chapter is null for a national/all-chapters event.
+/// CpdUnitsOnsite/CpdUnitsOnline (and FeeOnsite/FeeOnline, CpdCodeOnsite/CpdCodeOnline) are
+/// independently nullable/settable - see add-events-cpd-tracker/proposal.md's 2026-08-29 revision
+/// against PRC's public accreditation data. Chapter is null for a national/all-chapters event.
 /// </summary>
 public class Event : BaseEntity
 {
     public string Title { get; set; } = string.Empty;
     public string? Description { get; set; }
+
+    /// <summary>Same shape/validation as Description - long text, informational only, shown on the
+    /// event detail view and the certificate. Added per PRC's public program listings, which
+    /// always carry a stated objective.</summary>
+    public string? Objectives { get; set; }
+
+    /// <summary>Free text against the EventTypes constants list (Conference, Seminar, Technoforum,
+    /// Convention, Symposium, Expo) - mirrors Member.MemberType/MemberTypes exactly. Nothing
+    /// validates the column itself; EventService.ValidateCore is what checks it against
+    /// EventTypes.All.</summary>
+    public string? Type { get; set; }
+
     public string? Chapter { get; set; }
     public string? Venue { get; set; }
     public DateTimeOffset StartsAt { get; set; }
     public DateTimeOffset EndsAt { get; set; }
+
+    /// <summary>PRC's declared hour count for the program - a single value shared across both
+    /// modalities (PRC's own data shows the same hour count regardless of Onsite/Online).</summary>
+    public decimal? Hours { get; set; }
+
+    /// <summary>Informational planning target only - EventService.RegisterAsync never reads this
+    /// field, so reaching it never blocks a new registration. See proposal.md's "Not Built".</summary>
     public int? Capacity { get; set; }
-    public decimal Fee { get; set; }
+
+    /// <summary>Independent per-modality fee, replacing the original single Fee field - PRC's
+    /// public accreditation data shows PSMPE's Onsite and Online programs are priced independently
+    /// (e.g. PHP 3,000 Onsite vs PHP 900 Online for the same physical event).</summary>
+    public decimal FeeOnsite { get; set; }
+    public decimal FeeOnline { get; set; }
+
     public decimal? CpdUnitsOnsite { get; set; }
     public decimal? CpdUnitsOnline { get; set; }
+
+    /// <summary>PRC's own accreditation reference for each modality's program - informational only,
+    /// never validated against PRC. Independently nullable/settable exactly like CpdUnitsOnsite/
+    /// CpdUnitsOnline, for the same reason: each modality is its own separate CPDAS submission.</summary>
+    public string? CpdCodeOnsite { get; set; }
+    public string? CpdCodeOnline { get; set; }
+
+    /// <summary>Same shape as MemberUpload.StorageKey/Payment.ProofStorageKey - set by
+    /// EventPosterService, never directly through CreateEventRequest/UpdateEventRequest. Null means
+    /// no poster has been uploaded yet.</summary>
+    public string? PosterImageStorageKey { get; set; }
 
     /// <summary>Always at least one row, even for an event with no separate lectures (a single
     /// session spanning StartsAt/EndsAt) - see EventService.CreateAsync. Attendance and CPD credit
@@ -144,7 +179,7 @@ public class Event : BaseEntity
 }
 ```
 
-- [ ] **Step 3: Create the `EventSession` entity**
+- [ ] **Step 3: Modify `EventSession.cs`** — add the `Venue` override. Full replacement content:
 
 ```csharp
 namespace PSMPE.Portal.Domain.Entities;
@@ -163,163 +198,20 @@ public class EventSession : BaseEntity
     public DateTimeOffset StartsAt { get; set; }
     public DateTimeOffset EndsAt { get; set; }
     public int Order { get; set; }
+
+    /// <summary>Overrides Event.Venue for this session's display when set; falls back to
+    /// Event.Venue when null. PRC's per-event schedule table shows a Venue column per date/session
+    /// row, implying a multi-city or multi-room event's sessions can each have their own venue - see
+    /// add-events-cpd-tracker/proposal.md's 2026-08-29 revision. The fallback itself is a
+    /// display-time concern: EventDto/EventSessionDto carry the raw nullable override, not a
+    /// resolved value, so an edit form can still tell "explicitly set to X" apart from "inherits the
+    /// event's venue" (see EventFormModal.tsx / EventRegisterModal.tsx).</summary>
+    public string? Venue { get; set; }
 }
 ```
 
-- [ ] **Step 4: Create the `EventRegistration` entity**
-
-```csharp
-namespace PSMPE.Portal.Domain.Entities;
-
-/// <summary>
-/// One row per member per event - registration, payment progress, attendance and evaluation all
-/// live on this single row via Status, mirroring Payment's single-row-with-status-enum shape (see
-/// add-events-cpd-tracker/proposal.md). Mode is chosen at registration and decides which of
-/// Event.CpdUnitsOnsite/CpdUnitsOnline applies to this registration's credit. CPD credit itself is
-/// deliberately NOT a field here - it's computed from Status + Mode + attendance + Event's unit
-/// values at read time (see Application/Events/CpdCredit.cs), so a unit value set or corrected
-/// after the fact is instantly correct everywhere with no backfill. Which sessions were attended
-/// lives on EventAttendance, not here - there is no AttendedAt/AttendedBy flag on this row.
-/// </summary>
-public class EventRegistration : BaseEntity
-{
-    public Guid EventId { get; set; }
-    public Event Event { get; set; } = null!;
-
-    public Guid MemberId { get; set; }
-    public Member Member { get; set; } = null!;
-
-    public EventMode Mode { get; set; }
-    public EventRegistrationStatus Status { get; set; } = EventRegistrationStatus.Registered;
-
-    /// <summary>1-5. Fixed field set, not admin-configurable per event, to keep this pass
-    /// scoped - see proposal.md's "Not Built".</summary>
-    public int? EvaluationRating { get; set; }
-    public string? EvaluationComments { get; set; }
-    public DateTimeOffset? EvaluationSubmittedAt { get; set; }
-}
-```
-
-- [ ] **Step 5: Create the `EventAttendance` entity**
-
-```csharp
-namespace PSMPE.Portal.Domain.Entities;
-
-/// <summary>
-/// One row per EventSession a registrant is confirmed to have attended - what "attended" means
-/// structurally in this design. Recorded by an Admin during post-event roster reconciliation, never
-/// by the member themselves (there is no member self-check-in in this product - see
-/// add-events-cpd-tracker/proposal.md). RecordedBy/RecordedAt are an audit trail of who reconciled
-/// it and when, mirroring Payment.DecidedByUserId/DecidedAt.
-/// </summary>
-public class EventAttendance : BaseEntity
-{
-    public Guid EventRegistrationId { get; set; }
-    public EventRegistration EventRegistration { get; set; } = null!;
-
-    public Guid EventSessionId { get; set; }
-    public EventSession EventSession { get; set; } = null!;
-
-    public Guid RecordedBy { get; set; }
-    public DateTimeOffset RecordedAt { get; set; } = DateTimeOffset.UtcNow;
-}
-```
-
-- [ ] **Step 6: Extend `PaymentKind` and `Payment` for event registrations**
-
-In `src/PSMPE.Portal.Domain/Enums/PaymentKind.cs`, add a third case (safe to append - the enum is
-stored as text via `HasConversion<string>()`, so there's no ordinal-shift risk for existing rows):
-
-```csharp
-namespace PSMPE.Portal.Domain.Enums;
-
-/// <summary>
-/// What a payment buys. NewMembership/Renewal both differ in what verifying them does (see
-/// PaymentVerification.Apply). EventRegistration differs more sharply: verifying it does not touch
-/// MembershipStatus or RenewalDueDate at all, it moves the linked EventRegistration.Status instead
-/// (see EventPaymentVerification.Apply) - see add-events-cpd-tracker/proposal.md.
-/// </summary>
-public enum PaymentKind
-{
-    NewMembership,
-    Renewal,
-    EventRegistration,
-}
-```
-
-In `src/PSMPE.Portal.Domain/Entities/Payment.cs`, add after the `MemberId`/`Member` properties:
-
-```csharp
-    /// <summary>Set only when Kind is EventRegistration. Nullable because NewMembership/Renewal
-    /// payments have no event. A registration can have more than one Payment row over time (e.g. a
-    /// Rejected one followed by a resubmission), same as a member's own NewMembership/Renewal
-    /// history - only one may be Submitted or Verified at a time, enforced in PaymentService.</summary>
-    public Guid? EventRegistrationId { get; set; }
-    public EventRegistration? EventRegistration { get; set; }
-```
-
-- [ ] **Step 7: Add the four new `DbSet`s to `IApplicationDbContext`**
-
-In `src/PSMPE.Portal.Application/Common/Interfaces/IApplicationDbContext.cs`, add after
-`DbSet<Payment> Payments { get; }`:
-
-```csharp
-    DbSet<Event> Events { get; }
-    DbSet<EventSession> EventSessions { get; }
-    DbSet<EventRegistration> EventRegistrations { get; }
-    DbSet<EventAttendance> EventAttendances { get; }
-```
-
-- [ ] **Step 8: Add the four new `DbSet`s to `ApplicationDbContext`**
-
-In `src/PSMPE.Portal.Infrastructure/Persistence/ApplicationDbContext.cs`, add after
-`public DbSet<Payment> Payments => Set<Payment>();`:
-
-```csharp
-    public DbSet<Event> Events => Set<Event>();
-    public DbSet<EventSession> EventSessions => Set<EventSession>();
-    public DbSet<EventRegistration> EventRegistrations => Set<EventRegistration>();
-    public DbSet<EventAttendance> EventAttendances => Set<EventAttendance>();
-```
-
-- [ ] **Step 9: Add the four new `DbSet`s to `TestDbContext`**
-
-In `tests/PSMPE.Portal.Application.UnitTests/TestSupport/TestDbContext.cs`, add the same four
-properties (identical syntax to Step 8) so Application-layer unit tests can seed/assert against all
-four tables.
-
-- [ ] **Step 10: Build to confirm everything compiles**
-
-Run: `dotnet build src/PSMPE.Portal.sln`
-Expected: build succeeds (0 errors). All four new entities are part of the EF model but have no
-table yet — that's Task 2.
-
-- [ ] **Step 11: Commit**
-
-```bash
-git add src/PSMPE.Portal.Domain/Entities/Event.cs src/PSMPE.Portal.Domain/Entities/EventSession.cs \
-  src/PSMPE.Portal.Domain/Entities/EventRegistration.cs src/PSMPE.Portal.Domain/Entities/EventAttendance.cs \
-  src/PSMPE.Portal.Domain/Enums/EventRegistrationStatus.cs src/PSMPE.Portal.Domain/Enums/EventMode.cs \
-  src/PSMPE.Portal.Domain/Enums/PaymentKind.cs src/PSMPE.Portal.Domain/Entities/Payment.cs \
-  src/PSMPE.Portal.Application/Common/Interfaces/IApplicationDbContext.cs \
-  src/PSMPE.Portal.Infrastructure/Persistence/ApplicationDbContext.cs \
-  tests/PSMPE.Portal.Application.UnitTests/TestSupport/TestDbContext.cs
-git commit -m "feat: add Event, EventSession, EventRegistration and EventAttendance entities"
-```
-
----
-
-## 2. EF configurations and migration
-
-**Files:**
-- Create: `src/PSMPE.Portal.Infrastructure/Persistence/Configurations/EventConfiguration.cs`
-- Create: `src/PSMPE.Portal.Infrastructure/Persistence/Configurations/EventSessionConfiguration.cs`
-- Create: `src/PSMPE.Portal.Infrastructure/Persistence/Configurations/EventRegistrationConfiguration.cs`
-- Create: `src/PSMPE.Portal.Infrastructure/Persistence/Configurations/EventAttendanceConfiguration.cs`
-- Modify: `src/PSMPE.Portal.Infrastructure/Persistence/Configurations/PaymentConfiguration.cs`
-- Create: a new migration under `src/PSMPE.Portal.Infrastructure/Persistence/Migrations`
-
-- [ ] **Step 1: Create `EventConfiguration`**
+- [ ] **Step 4: Modify `EventConfiguration.cs`** — replace `Fee`'s mapping with `FeeOnsite`/
+      `FeeOnline`, and map the five new columns. Full replacement content:
 
 ```csharp
 using Microsoft.EntityFrameworkCore;
@@ -334,11 +226,18 @@ public class EventConfiguration : IEntityTypeConfiguration<Event>
     {
         builder.Property(e => e.Title).IsRequired().HasMaxLength(256);
         builder.Property(e => e.Description).HasMaxLength(4000);
+        builder.Property(e => e.Objectives).HasMaxLength(4000);
+        builder.Property(e => e.Type).HasMaxLength(64);
         builder.Property(e => e.Chapter).HasMaxLength(64);
         builder.Property(e => e.Venue).HasMaxLength(256);
-        builder.Property(e => e.Fee).HasPrecision(12, 2);
+        builder.Property(e => e.Hours).HasPrecision(6, 2);
+        builder.Property(e => e.FeeOnsite).HasPrecision(12, 2);
+        builder.Property(e => e.FeeOnline).HasPrecision(12, 2);
         builder.Property(e => e.CpdUnitsOnsite).HasPrecision(6, 2);
         builder.Property(e => e.CpdUnitsOnline).HasPrecision(6, 2);
+        builder.Property(e => e.CpdCodeOnsite).HasMaxLength(64);
+        builder.Property(e => e.CpdCodeOnline).HasMaxLength(64);
+        builder.Property(e => e.PosterImageStorageKey).HasMaxLength(512);
 
         // The events list filters/sorts on StartsAt; the admin roster looks events up by id only.
         builder.HasIndex(e => e.StartsAt);
@@ -346,7 +245,8 @@ public class EventConfiguration : IEntityTypeConfiguration<Event>
 }
 ```
 
-- [ ] **Step 2: Create `EventSessionConfiguration`**
+- [ ] **Step 5: Modify `EventSessionConfiguration.cs`** — add the `Venue` mapping (one new line,
+      everything else unchanged):
 
 ```csharp
 using Microsoft.EntityFrameworkCore;
@@ -360,6 +260,7 @@ public class EventSessionConfiguration : IEntityTypeConfiguration<EventSession>
     public void Configure(EntityTypeBuilder<EventSession> builder)
     {
         builder.Property(s => s.Title).IsRequired().HasMaxLength(256);
+        builder.Property(s => s.Venue).HasMaxLength(256);
 
         builder.HasIndex(s => s.EventId);
 
@@ -376,257 +277,74 @@ public class EventSessionConfiguration : IEntityTypeConfiguration<EventSession>
 }
 ```
 
-- [ ] **Step 3: Create `EventRegistrationConfiguration`**
+- [ ] **Step 6: Verify the solution still builds** (it will not yet — `EventService.cs` and its
+      tests still reference the old `Fee`/`EventSessionDto` shapes; Task 2 fixes that). Just confirm
+      the compiler errors are limited to those expected spots:
 
-```csharp
-using Microsoft.EntityFrameworkCore;
-using Microsoft.EntityFrameworkCore.Metadata.Builders;
-using PSMPE.Portal.Domain.Entities;
+Run: `dotnet build`
+Expected: Errors only in `EventService.cs`, `EventDto.cs`, `EventServiceTests.cs`,
+`PaymentServiceTests.cs`, and `EventsControllerTests.cs` (all fixed in later tasks below) — no errors
+in `Event.cs`, `EventSession.cs`, `EventConfiguration.cs`, or `EventSessionConfiguration.cs`
+themselves.
 
-namespace PSMPE.Portal.Infrastructure.Persistence.Configurations;
-
-public class EventRegistrationConfiguration : IEntityTypeConfiguration<EventRegistration>
-{
-    public void Configure(EntityTypeBuilder<EventRegistration> builder)
-    {
-        builder.Property(r => r.EvaluationComments).HasMaxLength(2000);
-
-        // Stored as text, matching Payment/MemberUpload's convention: an int ordinal silently
-        // remaps every existing row if a value is ever inserted into the middle of the enum.
-        builder.Property(r => r.Mode).HasConversion<string>().HasMaxLength(16);
-        builder.Property(r => r.Status).HasConversion<string>().HasMaxLength(32);
-
-        // The roster query filters on EventId; "one non-cancelled registration per member per
-        // event" is enforced in EventService, not by a DB constraint, since Cancelled rows must
-        // stay queryable without blocking a fresh registration.
-        builder.HasIndex(r => r.EventId);
-        builder.HasIndex(r => r.MemberId);
-
-        // Restrict, matching Payment.MemberId - deleting an Event or a Member must not silently
-        // take registration history with it. Neither Event nor Member deletion exists in this
-        // pass, but the FK still needs an explicit choice.
-        builder.HasOne(r => r.Event)
-            .WithMany()
-            .HasForeignKey(r => r.EventId)
-            .OnDelete(DeleteBehavior.Restrict);
-
-        builder.HasOne(r => r.Member)
-            .WithMany()
-            .HasForeignKey(r => r.MemberId)
-            .OnDelete(DeleteBehavior.Restrict);
-    }
-}
-```
-
-- [ ] **Step 4: Create `EventAttendanceConfiguration`**
-
-```csharp
-using Microsoft.EntityFrameworkCore;
-using Microsoft.EntityFrameworkCore.Metadata.Builders;
-using PSMPE.Portal.Domain.Entities;
-
-namespace PSMPE.Portal.Infrastructure.Persistence.Configurations;
-
-public class EventAttendanceConfiguration : IEntityTypeConfiguration<EventAttendance>
-{
-    public void Configure(EntityTypeBuilder<EventAttendance> builder)
-    {
-        // Defensive: EventService.RecordAttendanceAsync always fully replaces a registration's
-        // attendance rows in one call rather than upserting, so this should never fire in
-        // practice, but a duplicate (registration, session) pair would silently double-count
-        // toward "sessions attended" if it ever did.
-        builder.HasIndex(a => new { a.EventRegistrationId, a.EventSessionId }).IsUnique();
-
-        // Cascade - an attendance row has no meaning once its registration is gone, mirroring
-        // EventSessionConfiguration's reasoning for Event -> EventSession.
-        builder.HasOne(a => a.EventRegistration)
-            .WithMany()
-            .HasForeignKey(a => a.EventRegistrationId)
-            .OnDelete(DeleteBehavior.Cascade);
-
-        // Restrict - unlike Event -> EventSession, a session with recorded attendance must not be
-        // removable out from under that history. EventService.UpdateAsync checks this explicitly
-        // before attempting the delete (see Task 4), so this is a defense-in-depth constraint, not
-        // the primary guard.
-        builder.HasOne(a => a.EventSession)
-            .WithMany()
-            .HasForeignKey(a => a.EventSessionId)
-            .OnDelete(DeleteBehavior.Restrict);
-    }
-}
-```
-
-- [ ] **Step 5: Extend `PaymentConfiguration` for the new FK**
-
-In `src/PSMPE.Portal.Infrastructure/Persistence/Configurations/PaymentConfiguration.cs`, add inside
-`Configure`, after the existing `builder.HasOne(p => p.Member)...` block:
-
-```csharp
-        // Restrict, same reasoning as MemberId - a registration with payment history shouldn't
-        // vanish out from under its payment row.
-        builder.HasOne(p => p.EventRegistration)
-            .WithMany()
-            .HasForeignKey(p => p.EventRegistrationId)
-            .OnDelete(DeleteBehavior.Restrict);
-```
-
-- [ ] **Step 6: Build to confirm the configurations compile**
-
-Run: `dotnet build src/PSMPE.Portal.sln`
-Expected: build succeeds (0 errors).
-
-- [ ] **Step 7: Add the migration**
+- [ ] **Step 7: Commit**
 
 ```bash
-dotnet ef migrations add AddEventsAndCpdTracker \
-  --project src/PSMPE.Portal.Infrastructure/PSMPE.Portal.Infrastructure.csproj \
-  --startup-project src/PSMPE.Portal.WebAPI/PSMPE.Portal.WebAPI.csproj \
-  --output-dir Persistence/Migrations
-```
-
-Expected: a new `Persistence/Migrations/<timestamp>_AddEventsAndCpdTracker.cs` file is generated.
-Open it and confirm it creates four tables (`Events`, `EventSessions`, `EventRegistrations`,
-`EventAttendances`) and adds one nullable `EventRegistrationId` column + FK to `Payments` — matching
-the configurations above. Confirm `EventSessions.EventId` cascades on delete and
-`EventAttendances.EventSessionId` restricts, per Steps 2 and 4. If the generated `Up()` looks
-materially different from that (e.g. it tries to touch unrelated tables), stop and re-check Steps
-1–5 before proceeding; don't hand-edit the migration to force it to match.
-
-- [ ] **Step 8: Verify against a running database**
-
-Run: `docker compose up -d postgres` (if not already running), then start the API once with
-`dotnet run --project src/PSMPE.Portal.WebAPI` and confirm the startup log shows the migration
-applying cleanly (this app auto-migrates on startup when `Seed:Enabled` is true — see
-`README.md`'s "Migrations and seeding" section). Stop the API afterward (`Ctrl+C`).
-Expected: no migration errors in the log; `Events`, `EventSessions`, `EventRegistrations`, and
-`EventAttendances` tables exist in Postgres, and `Payments` has a new nullable
-`EventRegistrationId` column.
-
-- [ ] **Step 9: Commit**
-
-```bash
-git add src/PSMPE.Portal.Infrastructure/Persistence/Configurations/EventConfiguration.cs \
-  src/PSMPE.Portal.Infrastructure/Persistence/Configurations/EventSessionConfiguration.cs \
-  src/PSMPE.Portal.Infrastructure/Persistence/Configurations/EventRegistrationConfiguration.cs \
-  src/PSMPE.Portal.Infrastructure/Persistence/Configurations/EventAttendanceConfiguration.cs \
-  src/PSMPE.Portal.Infrastructure/Persistence/Configurations/PaymentConfiguration.cs \
-  src/PSMPE.Portal.Infrastructure/Persistence/Migrations/
-git commit -m "feat: add EF configurations and migration for events and CPD tracking"
+git add src/PSMPE.Portal.Domain/Enums/EventTypes.cs src/PSMPE.Portal.Domain/Entities/Event.cs src/PSMPE.Portal.Domain/Entities/EventSession.cs src/PSMPE.Portal.Infrastructure/Persistence/Configurations/EventConfiguration.cs src/PSMPE.Portal.Infrastructure/Persistence/Configurations/EventSessionConfiguration.cs
+git commit -m "feat: split Event.Fee into FeeOnsite/FeeOnline, add Type/Hours/Objectives/CpdCode/poster fields, add EventSession.Venue"
 ```
 
 ---
 
-## 3. Permissions
+## 2. Application layer: DTOs and EventService
 
 **Files:**
-- Modify: `src/PSMPE.Portal.Domain/Enums/Permissions.cs`
-- Modify: `src/PSMPE.Portal.Infrastructure/Persistence/Seed/IdentitySeeder.cs`
+- Modify: `src/PSMPE.Portal.Application/Events/Dtos/EventDto.cs`
+- Modify: `src/PSMPE.Portal.Application/Events/EventService.cs`
+- Modify: `tests/PSMPE.Portal.Application.UnitTests/Events/EventServiceTests.cs`
 
-- [ ] **Step 1: Add the `Events` permission group**
-
-In `src/PSMPE.Portal.Domain/Enums/Permissions.cs`, add a new nested class (after `Members`) and
-extend the `All` array:
-
-```csharp
-    public static class Events
-    {
-        public const string View = "events:view";
-        public const string Manage = "events:manage";
-    }
-```
-
-```csharp
-    public static readonly string[] All =
-    [
-        Content.Create, Content.Update, Content.Delete, Content.ManageOthers,
-        Layout.Create, Layout.Delete, Layout.DeleteSystem,
-        Admin.ManageUsers, Admin.ManageRoles,
-        Ai.UsePrompt,
-        Members.View, Members.Manage, Members.Approve,
-        Events.View, Events.Manage
-    ];
-```
-
-- [ ] **Step 2: Grant defaults in `IdentitySeeder`**
-
-In `src/PSMPE.Portal.Infrastructure/Persistence/Seed/IdentitySeeder.cs`, `Events.Manage` goes to
-Admin only (event creation/management is Admin/staff-only per the proposal — Super Admin already
-gets everything via `Permissions.All`); `Events.View` also goes to Manager, since Manager already
-holds `Members.View` for the same "can see, can't act" role. Update the `DefaultRolePermissions`
-dictionary:
-
-```csharp
-        [RoleNames.Admin] =
-        [
-            Permissions.Content.Create, Permissions.Content.Update, Permissions.Content.Delete, Permissions.Content.ManageOthers,
-            Permissions.Layout.Create, Permissions.Layout.Delete,
-            Permissions.Admin.ManageUsers,
-            Permissions.Ai.UsePrompt,
-            Permissions.Members.View, Permissions.Members.Manage,
-            Permissions.Events.View, Permissions.Events.Manage
-        ],
-        [RoleNames.Manager] =
-        [
-            Permissions.Content.Create, Permissions.Content.Update, Permissions.Content.Delete,
-            Permissions.Layout.Create,
-            Permissions.Ai.UsePrompt,
-            Permissions.Members.View,
-            Permissions.Events.View
-        ],
-```
-
-(Only the `Admin` and `Manager` entries change — `Accounts`, `Approval`, `Member` and `SuperAdmin`
-are unmodified.)
-
-- [ ] **Step 3: Build to confirm it compiles**
-
-Run: `dotnet build src/PSMPE.Portal.sln`
-Expected: build succeeds (0 errors). New permission grants only take effect for roles created
-*after* this change on a fresh database — an existing dev database's roles keep whatever
-permissions they already have (`IdentitySeeder` only seeds a role's permissions the moment the role
-row itself is first created, never on top of one that already exists — see its own doc comment). If
-testing locally against an existing dev database, grant `Events.Manage`/`Events.View` to the Admin
-role by hand via `/admin/roles` once, or drop and reseed the database.
-
-- [ ] **Step 4: Commit**
-
-```bash
-git add src/PSMPE.Portal.Domain/Enums/Permissions.cs src/PSMPE.Portal.Infrastructure/Persistence/Seed/IdentitySeeder.cs
-git commit -m "feat: add Events.View and Events.Manage permissions"
-```
-
----
-
-## 4. Event CRUD and session management (Application layer)
-
-**Files:**
-- Create: `src/PSMPE.Portal.Application/Events/Dtos/EventDto.cs`
-- Create: `src/PSMPE.Portal.Application/Events/IEventService.cs`
-- Create: `src/PSMPE.Portal.Application/Events/EventService.cs`
-- Modify: `src/PSMPE.Portal.Application/DependencyInjection.cs`
-- Test: `tests/PSMPE.Portal.Application.UnitTests/Events/EventServiceTests.cs`
-
-- [ ] **Step 1: Create the `EventDto`, `EventSessionDto`, and request records**
+- [ ] **Step 1: Modify `EventDto.cs`** — full replacement content (new fields on `EventDto`,
+      `EventSessionDto`, `CreateEventRequest`, `UpdateEventRequest`, `EventSessionRequest`; the new
+      fields on the two request records default to `null` so every existing named-argument test call
+      that doesn't mention them keeps compiling):
 
 ```csharp
 namespace PSMPE.Portal.Application.Events.Dtos;
 
-public record EventSessionDto(Guid Id, string Title, DateTimeOffset StartsAt, DateTimeOffset EndsAt, int Order);
+public record EventSessionDto(
+    Guid Id,
+    string Title,
+    DateTimeOffset StartsAt,
+    DateTimeOffset EndsAt,
+    int Order,
+    /// <summary>Raw override, not resolved against the parent Event's Venue - a caller that needs
+    /// the effective venue computes `Venue ?? event.Venue` itself (see EventRegisterModal.tsx).</summary>
+    string? Venue);
 
 public record EventDto(
     Guid Id,
     string Title,
     string? Description,
+    string? Objectives,
+    /// <summary>Free text against EventTypes.All - see Event.Type's doc comment.</summary>
+    string? Type,
     string? Chapter,
     string? Venue,
     DateTimeOffset StartsAt,
     DateTimeOffset EndsAt,
+    decimal? Hours,
     int? Capacity,
     int RegisteredCount,
-    decimal Fee,
+    decimal FeeOnsite,
+    decimal FeeOnline,
     /// <summary>Null means "TBD" - see Event.CpdUnitsOnsite's doc comment.</summary>
     decimal? CpdUnitsOnsite,
     decimal? CpdUnitsOnline,
+    string? CpdCodeOnsite,
+    string? CpdCodeOnline,
+    /// <summary>Derived from PosterImageStorageKey being non-null, same pattern as
+    /// PaymentDto.HasProof - the key itself is never exposed to the client.</summary>
+    bool HasPoster,
     IReadOnlyList<EventSessionDto> Sessions);
 
 public record CreateEventRequest(
@@ -637,13 +355,18 @@ public record CreateEventRequest(
     DateTimeOffset StartsAt,
     DateTimeOffset EndsAt,
     int? Capacity,
-    decimal Fee);
+    decimal FeeOnsite,
+    decimal FeeOnline,
+    string? Type = null,
+    decimal? Hours = null,
+    string? Objectives = null);
 
 /// <summary>Id is null for a brand new session, set for an existing one being edited. Any existing
 /// session whose Id is absent from the list is removed - see EventService.UpdateAsync. CpdUnitsOnsite/
 /// CpdUnitsOnline are absent from CreateEventRequest - they start null/"TBD" and are only ever set
 /// through this request, never at creation.</summary>
-public record EventSessionRequest(Guid? Id, string Title, DateTimeOffset StartsAt, DateTimeOffset EndsAt, int Order);
+public record EventSessionRequest(
+    Guid? Id, string Title, DateTimeOffset StartsAt, DateTimeOffset EndsAt, int Order, string? Venue = null);
 
 public record UpdateEventRequest(
     string Title,
@@ -653,262 +376,21 @@ public record UpdateEventRequest(
     DateTimeOffset StartsAt,
     DateTimeOffset EndsAt,
     int? Capacity,
-    decimal Fee,
+    decimal FeeOnsite,
+    decimal FeeOnline,
     decimal? CpdUnitsOnsite,
     decimal? CpdUnitsOnline,
-    IReadOnlyList<EventSessionRequest> Sessions);
+    IReadOnlyList<EventSessionRequest> Sessions,
+    string? Type = null,
+    decimal? Hours = null,
+    string? Objectives = null,
+    string? CpdCodeOnsite = null,
+    string? CpdCodeOnline = null);
 ```
 
-- [ ] **Step 2: Create `IEventService` with just the event-management members for now**
-
-(Registration/attendance/evaluation/roster/CPD/certificate members are added in Tasks 5–11 — this
-interface grows across the plan rather than being fully declared up front, so each task's tests
-compile against only what exists so far.)
-
-```csharp
-using PSMPE.Portal.Application.Common.Models;
-using PSMPE.Portal.Application.Events.Dtos;
-
-namespace PSMPE.Portal.Application.Events;
-
-public interface IEventService
-{
-    Task<PagedResult<EventDto>> GetAllAsync(
-        int page, int pageSize, string? search, string? chapter, bool upcomingOnly,
-        CancellationToken cancellationToken = default);
-
-    Task<EventDto?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default);
-
-    Task<Result<EventDto>> CreateAsync(CreateEventRequest request, CancellationToken cancellationToken = default);
-
-    Task<Result<EventDto>> UpdateAsync(Guid id, UpdateEventRequest request, CancellationToken cancellationToken = default);
-}
-```
-
-- [ ] **Step 3: Write the failing tests for validation, session defaulting, and listing**
-
-```csharp
-using PSMPE.Portal.Application.Events;
-using PSMPE.Portal.Application.Events.Dtos;
-using PSMPE.Portal.Application.UnitTests.TestSupport;
-using PSMPE.Portal.Domain.Entities;
-using PSMPE.Portal.Domain.Enums;
-using Xunit;
-
-namespace PSMPE.Portal.Application.UnitTests.Events;
-
-public class EventServiceTests
-{
-    private static CreateEventRequest ValidCreateRequest(string title = "Water Sanitation Workshop") =>
-        new(title, "Cross-connection control", Chapters.Ncr, "PICC", DateTimeOffset.UtcNow.AddDays(10),
-            DateTimeOffset.UtcNow.AddDays(10).AddHours(4), Capacity: 100, Fee: 500m);
-
-    [Fact]
-    public async Task CreateAsync_ValidRequest_StartsWithBothCpdUnitsNull()
-    {
-        using var db = TestDbContext.CreateInMemory();
-        var service = new EventService(db);
-
-        var result = await service.CreateAsync(ValidCreateRequest());
-
-        Assert.True(result.Succeeded);
-        Assert.Null(result.Value!.CpdUnitsOnsite);
-        Assert.Null(result.Value.CpdUnitsOnline);
-    }
-
-    [Fact]
-    public async Task CreateAsync_CreatesExactlyOneDefaultSessionSpanningTheWholeEvent()
-    {
-        using var db = TestDbContext.CreateInMemory();
-        var service = new EventService(db);
-        var request = ValidCreateRequest();
-
-        var result = await service.CreateAsync(request);
-
-        var session = Assert.Single(result.Value!.Sessions);
-        Assert.Equal(request.StartsAt, session.StartsAt);
-        Assert.Equal(request.EndsAt, session.EndsAt);
-    }
-
-    [Fact]
-    public async Task CreateAsync_EndsAtBeforeStartsAt_Fails()
-    {
-        using var db = TestDbContext.CreateInMemory();
-        var service = new EventService(db);
-        var starts = DateTimeOffset.UtcNow.AddDays(10);
-        var request = ValidCreateRequest() with { StartsAt = starts, EndsAt = starts.AddHours(-1) };
-
-        var result = await service.CreateAsync(request);
-
-        Assert.False(result.Succeeded);
-    }
-
-    [Fact]
-    public async Task CreateAsync_BlankTitle_Fails()
-    {
-        using var db = TestDbContext.CreateInMemory();
-        var service = new EventService(db);
-
-        var result = await service.CreateAsync(ValidCreateRequest() with { Title = "  " });
-
-        Assert.False(result.Succeeded);
-    }
-
-    [Fact]
-    public async Task UpdateAsync_SetsOneModalitysUnitsWhileTheOtherStaysTbd()
-    {
-        using var db = TestDbContext.CreateInMemory();
-        var service = new EventService(db);
-        var created = (await service.CreateAsync(ValidCreateRequest())).Value!;
-        var updateRequest = ToUpdateRequest(created) with { CpdUnitsOnsite = 8m, CpdUnitsOnline = null };
-
-        var result = await service.UpdateAsync(created.Id, updateRequest);
-
-        Assert.True(result.Succeeded);
-        Assert.Equal(8m, result.Value!.CpdUnitsOnsite);
-        Assert.Null(result.Value.CpdUnitsOnline);
-    }
-
-    /// <summary>Matches spec.md's "CPD units are set after the event has already happened" -
-    /// nothing about Update gates on StartsAt/EndsAt.</summary>
-    [Fact]
-    public async Task UpdateAsync_EventAlreadyEnded_CanStillSetCpdUnits()
-    {
-        using var db = TestDbContext.CreateInMemory();
-        var service = new EventService(db);
-        var pastRequest = ValidCreateRequest() with
-        {
-            StartsAt = DateTimeOffset.UtcNow.AddDays(-10),
-            EndsAt = DateTimeOffset.UtcNow.AddDays(-9),
-        };
-        var created = (await service.CreateAsync(pastRequest)).Value!;
-        var updateRequest = ToUpdateRequest(created) with { CpdUnitsOnsite = 8m, CpdUnitsOnline = 4m };
-
-        var result = await service.UpdateAsync(created.Id, updateRequest);
-
-        Assert.True(result.Succeeded);
-        Assert.Equal(8m, result.Value!.CpdUnitsOnsite);
-    }
-
-    [Fact]
-    public async Task UpdateAsync_AddsAndRemovesSessions()
-    {
-        using var db = TestDbContext.CreateInMemory();
-        var service = new EventService(db);
-        var created = (await service.CreateAsync(ValidCreateRequest())).Value!;
-        var defaultSession = created.Sessions.Single();
-        var sessions = new List<EventSessionRequest>
-        {
-            new(defaultSession.Id, "Day 1: Opening", defaultSession.StartsAt, defaultSession.StartsAt.AddHours(2), 1),
-            new(null, "Day 1: Cross-Connection Control", defaultSession.StartsAt.AddHours(2), defaultSession.EndsAt, 2),
-        };
-        var updateRequest = ToUpdateRequest(created) with { Sessions = sessions };
-
-        var result = await service.UpdateAsync(created.Id, updateRequest);
-
-        Assert.True(result.Succeeded);
-        Assert.Equal(2, result.Value!.Sessions.Count);
-        Assert.Contains(result.Value.Sessions, s => s.Title == "Day 1: Cross-Connection Control");
-    }
-
-    [Fact]
-    public async Task UpdateAsync_RemovingSessionWithRecordedAttendance_Fails()
-    {
-        using var db = TestDbContext.CreateInMemory();
-        var service = new EventService(db);
-        var created = (await service.CreateAsync(ValidCreateRequest())).Value!;
-        var sessionId = created.Sessions.Single().Id;
-        var member = await SeedMemberForEventTestsAsync(db);
-        var registration = new EventRegistration { EventId = created.Id, MemberId = member.Id, Mode = EventMode.Onsite };
-        db.EventRegistrations.Add(registration);
-        await db.SaveChangesAsync();
-        db.EventAttendances.Add(new EventAttendance { EventRegistrationId = registration.Id, EventSessionId = sessionId, RecordedBy = Guid.NewGuid() });
-        await db.SaveChangesAsync();
-        // Replaces the only session with a brand new one, which would drop the attended session.
-        var updateRequest = ToUpdateRequest(created) with
-        {
-            Sessions = [new EventSessionRequest(null, "Replacement Session", created.StartsAt, created.EndsAt, 1)],
-        };
-
-        var result = await service.UpdateAsync(created.Id, updateRequest);
-
-        Assert.False(result.Succeeded);
-    }
-
-    [Fact]
-    public async Task UpdateAsync_NoSessions_Fails()
-    {
-        using var db = TestDbContext.CreateInMemory();
-        var service = new EventService(db);
-        var created = (await service.CreateAsync(ValidCreateRequest())).Value!;
-        var updateRequest = ToUpdateRequest(created) with { Sessions = [] };
-
-        var result = await service.UpdateAsync(created.Id, updateRequest);
-
-        Assert.False(result.Succeeded);
-    }
-
-    /// <summary>
-    /// GetAllAsync's RegisteredCount must reflect non-cancelled registrations only - a cancelled
-    /// slot must free up capacity in what admins see, matching the "one non-cancelled registration
-    /// per member per event" rule the registration flow enforces (Task 5).
-    /// </summary>
-    [Fact]
-    public async Task GetAllAsync_RegisteredCount_ExcludesCancelledRegistrations()
-    {
-        using var db = TestDbContext.CreateInMemory();
-        var service = new EventService(db);
-        var created = (await service.CreateAsync(ValidCreateRequest())).Value!;
-        var member = await SeedMemberForEventTestsAsync(db);
-        db.EventRegistrations.Add(new EventRegistration
-        {
-            EventId = created.Id, MemberId = member.Id, Mode = EventMode.Onsite,
-            Status = EventRegistrationStatus.Cancelled,
-        });
-        await db.SaveChangesAsync();
-
-        var page = await service.GetAllAsync(1, 20, search: null, chapter: null, upcomingOnly: false);
-
-        Assert.Equal(0, page.Items.Single().RegisteredCount);
-    }
-
-    [Fact]
-    public async Task GetAllAsync_SearchFiltersByTitle()
-    {
-        using var db = TestDbContext.CreateInMemory();
-        var service = new EventService(db);
-        await service.CreateAsync(ValidCreateRequest("National Convention"));
-        await service.CreateAsync(ValidCreateRequest("Plumbing Code Seminar"));
-
-        var page = await service.GetAllAsync(1, 20, search: "seminar", chapter: null, upcomingOnly: false);
-
-        Assert.Equal(["Plumbing Code Seminar"], page.Items.Select(e => e.Title));
-    }
-
-    private static UpdateEventRequest ToUpdateRequest(EventDto e) =>
-        new(e.Title, e.Description, e.Chapter, e.Venue, e.StartsAt, e.EndsAt, e.Capacity, e.Fee,
-            e.CpdUnitsOnsite, e.CpdUnitsOnline,
-            e.Sessions.Select(s => new EventSessionRequest(s.Id, s.Title, s.StartsAt, s.EndsAt, s.Order)).ToList());
-
-    internal static async Task<Member> SeedMemberForEventTestsAsync(TestDbContext db, string? email = null)
-    {
-        email ??= $"{Guid.NewGuid()}@example.com";
-        var user = new ApplicationUser { UserName = email, Email = email };
-        db.Add(user);
-        var member = new Member { UserId = user.Id, User = user, FirstName = "Juan", LastName = "Dela Cruz", Chapter = Chapters.Ncr, MemberType = MemberTypes.Regular };
-        db.Members.Add(member);
-        await db.SaveChangesAsync();
-        return member;
-    }
-}
-```
-
-- [ ] **Step 4: Run the tests to verify they fail**
-
-Run: `dotnet test tests/PSMPE.Portal.Application.UnitTests --filter EventServiceTests`
-Expected: FAIL to compile — `EventService` doesn't exist yet.
-
-- [ ] **Step 5: Implement `EventService`**
+- [ ] **Step 2: Modify `EventService.cs`** — extend `ValidateCore`, `CreateAsync`, `UpdateAsync`, and
+      `ToDto` to carry the new fields and validate `Type`/`Hours`/the split fee. Full replacement
+      content:
 
 ```csharp
 using Microsoft.EntityFrameworkCore;
@@ -926,12 +408,17 @@ public partial class EventService(IApplicationDbContext db) : IEventService
         int page, int pageSize, string? search, string? chapter, bool upcomingOnly,
         CancellationToken cancellationToken = default)
     {
-        var query = db.Events.Include(e => e.Sessions).AsQueryable();
+        page = Math.Max(page, 1);
+        pageSize = Math.Clamp(pageSize, 1, 100);
+
+        var query = db.Events.AsNoTracking().Include(e => e.Sessions).AsQueryable();
 
         if (!string.IsNullOrWhiteSpace(search))
         {
-            var term = search.Trim();
-            query = query.Where(e => e.Title.Contains(term, StringComparison.OrdinalIgnoreCase));
+            // Same case-insensitive .ToLower().Contains() idiom used in MemberService.GetAllAsync -
+            // Contains(string, StringComparison) doesn't translate to SQL against Npgsql.
+            var normalizedSearch = search.Trim().ToLower();
+            query = query.Where(e => e.Title.ToLower().Contains(normalizedSearch));
         }
 
         if (!string.IsNullOrWhiteSpace(chapter))
@@ -965,7 +452,7 @@ public partial class EventService(IApplicationDbContext db) : IEventService
 
     public async Task<EventDto?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default)
     {
-        var @event = await db.Events.Include(e => e.Sessions).FirstOrDefaultAsync(e => e.Id == id, cancellationToken);
+        var @event = await db.Events.AsNoTracking().Include(e => e.Sessions).FirstOrDefaultAsync(e => e.Id == id, cancellationToken);
         if (@event is null)
         {
             return null;
@@ -978,7 +465,9 @@ public partial class EventService(IApplicationDbContext db) : IEventService
 
     public async Task<Result<EventDto>> CreateAsync(CreateEventRequest request, CancellationToken cancellationToken = default)
     {
-        var validation = ValidateCore(request.Title, request.StartsAt, request.EndsAt, request.Capacity, request.Fee, request.Chapter);
+        var validation = ValidateCore(
+            request.Title, request.StartsAt, request.EndsAt, request.Capacity,
+            request.FeeOnsite, request.FeeOnline, request.Chapter, request.Type, request.Hours);
         if (validation is not null)
         {
             return Result<EventDto>.Failure(validation);
@@ -988,12 +477,16 @@ public partial class EventService(IApplicationDbContext db) : IEventService
         {
             Title = request.Title.Trim(),
             Description = request.Description,
+            Objectives = request.Objectives,
+            Type = request.Type,
             Chapter = request.Chapter,
             Venue = request.Venue,
             StartsAt = request.StartsAt,
             EndsAt = request.EndsAt,
+            Hours = request.Hours,
             Capacity = request.Capacity,
-            Fee = request.Fee,
+            FeeOnsite = request.FeeOnsite,
+            FeeOnline = request.FeeOnline,
         };
         // Every event gets at least one session, even with no separate lectures - see
         // Event.Sessions's doc comment. Admins split this into real lectures via UpdateAsync.
@@ -1013,7 +506,9 @@ public partial class EventService(IApplicationDbContext db) : IEventService
 
     public async Task<Result<EventDto>> UpdateAsync(Guid id, UpdateEventRequest request, CancellationToken cancellationToken = default)
     {
-        var validation = ValidateCore(request.Title, request.StartsAt, request.EndsAt, request.Capacity, request.Fee, request.Chapter);
+        var validation = ValidateCore(
+            request.Title, request.StartsAt, request.EndsAt, request.Capacity,
+            request.FeeOnsite, request.FeeOnline, request.Chapter, request.Type, request.Hours);
         if (validation is not null)
         {
             return Result<EventDto>.Failure(validation);
@@ -1048,6 +543,17 @@ public partial class EventService(IApplicationDbContext db) : IEventService
         }
 
         var requestedIds = request.Sessions.Where(s => s.Id.HasValue).Select(s => s.Id!.Value).ToHashSet();
+
+        // Validate every referenced session Id actually belongs to this event before mutating
+        // anything - a stale payload or an Id copy-pasted from another event's session must fail
+        // cleanly here rather than throw partway through the mutation loop below.
+        var existingSessionIds = @event.Sessions.Select(s => s.Id).ToHashSet();
+        var unknownIds = requestedIds.Where(sid => !existingSessionIds.Contains(sid)).ToList();
+        if (unknownIds.Count > 0)
+        {
+            return Result<EventDto>.Failure($"Session '{unknownIds[0]}' does not belong to this event.");
+        }
+
         var removedSessions = @event.Sessions.Where(s => !requestedIds.Contains(s.Id)).ToList();
         if (removedSessions.Count > 0)
         {
@@ -1067,35 +573,50 @@ public partial class EventService(IApplicationDbContext db) : IEventService
         {
             if (sessionRequest.Id is { } sessionId)
             {
+                // Safe to use First: the "unknown session Id" check above already guarantees
+                // sessionId is one of @event.Sessions's Ids.
                 var existing = @event.Sessions.First(s => s.Id == sessionId);
                 existing.Title = sessionRequest.Title.Trim();
                 existing.StartsAt = sessionRequest.StartsAt;
                 existing.EndsAt = sessionRequest.EndsAt;
                 existing.Order = sessionRequest.Order;
+                existing.Venue = sessionRequest.Venue;
             }
             else
             {
-                @event.Sessions.Add(new EventSession
+                // Added via the DbSet (not @event.Sessions.Add) so EF marks it Added rather than
+                // Modified: @event is already tracked (loaded, not newly Add()-ed), and EventSession's
+                // client-generated non-default Guid key makes the navigation-fixup heuristic assume
+                // an existing row otherwise, causing SaveChanges to attempt an UPDATE on a row that
+                // doesn't exist yet.
+                db.EventSessions.Add(new EventSession
                 {
                     EventId = @event.Id,
                     Title = sessionRequest.Title.Trim(),
                     StartsAt = sessionRequest.StartsAt,
                     EndsAt = sessionRequest.EndsAt,
                     Order = sessionRequest.Order,
+                    Venue = sessionRequest.Venue,
                 });
             }
         }
 
         @event.Title = request.Title.Trim();
         @event.Description = request.Description;
+        @event.Objectives = request.Objectives;
+        @event.Type = request.Type;
         @event.Chapter = request.Chapter;
         @event.Venue = request.Venue;
         @event.StartsAt = request.StartsAt;
         @event.EndsAt = request.EndsAt;
+        @event.Hours = request.Hours;
         @event.Capacity = request.Capacity;
-        @event.Fee = request.Fee;
+        @event.FeeOnsite = request.FeeOnsite;
+        @event.FeeOnline = request.FeeOnline;
         @event.CpdUnitsOnsite = request.CpdUnitsOnsite;
         @event.CpdUnitsOnline = request.CpdUnitsOnline;
+        @event.CpdCodeOnsite = request.CpdCodeOnsite;
+        @event.CpdCodeOnline = request.CpdCodeOnline;
         @event.UpdatedAt = DateTimeOffset.UtcNow;
         await db.SaveChangesAsync(cancellationToken);
 
@@ -1104,7 +625,9 @@ public partial class EventService(IApplicationDbContext db) : IEventService
         return Result<EventDto>.Success(ToDto(@event, registeredCount));
     }
 
-    private static string? ValidateCore(string title, DateTimeOffset startsAt, DateTimeOffset endsAt, int? capacity, decimal fee, string? chapter)
+    private static string? ValidateCore(
+        string title, DateTimeOffset startsAt, DateTimeOffset endsAt, int? capacity,
+        decimal feeOnsite, decimal feeOnline, string? chapter, string? type, decimal? hours)
     {
         if (string.IsNullOrWhiteSpace(title))
         {
@@ -1118,7 +641,7 @@ public partial class EventService(IApplicationDbContext db) : IEventService
         {
             return "Capacity must be at least 1 if set.";
         }
-        if (fee < 0)
+        if (feeOnsite < 0 || feeOnline < 0)
         {
             return "Fee can't be negative.";
         }
@@ -1126,2509 +649,576 @@ public partial class EventService(IApplicationDbContext db) : IEventService
         {
             return $"'{chapter}' is not a recognized chapter.";
         }
+        if (type is not null && !EventTypes.All.Contains(type))
+        {
+            return $"'{type}' is not a recognized event type.";
+        }
+        if (hours is < 0)
+        {
+            return "Hours can't be negative if set.";
+        }
         return null;
     }
 
     private static EventDto ToDto(Event e, int registeredCount) =>
-        new(e.Id, e.Title, e.Description, e.Chapter, e.Venue, e.StartsAt, e.EndsAt, e.Capacity,
-            registeredCount, e.Fee, e.CpdUnitsOnsite, e.CpdUnitsOnline,
+        new(e.Id, e.Title, e.Description, e.Objectives, e.Type, e.Chapter, e.Venue, e.StartsAt, e.EndsAt,
+            e.Hours, e.Capacity, registeredCount, e.FeeOnsite, e.FeeOnline, e.CpdUnitsOnsite, e.CpdUnitsOnline,
+            e.CpdCodeOnsite, e.CpdCodeOnline, e.PosterImageStorageKey is not null,
             e.Sessions.OrderBy(s => s.Order)
-                .Select(s => new EventSessionDto(s.Id, s.Title, s.StartsAt, s.EndsAt, s.Order))
+                .Select(s => new EventSessionDto(s.Id, s.Title, s.StartsAt, s.EndsAt, s.Order, s.Venue))
                 .ToList());
 }
 ```
 
-`EventService` is declared `partial` because Tasks 5–11 each add another `partial class EventService`
-block to the same `EventService.cs` file rather than one enormous file — see those tasks' Step 5/6
-for the exact placement. (`IEventService` is not partial; each task instead adds new members to the
-single interface declaration from Step 2 above.)
-
-- [ ] **Step 6: Register `EventService` in DI**
-
-In `src/PSMPE.Portal.Application/DependencyInjection.cs`, add after
-`services.AddScoped<IPaymentService, PaymentService>();`:
+- [ ] **Step 3: Fix the two broken helper methods in `EventServiceTests.cs`** — `ValidCreateRequest`
+      (line ~15-17) currently ends `Capacity: 100, Fee: 500m)`; change the named argument. `ToUpdateRequest`
+      (line ~222-225) currently reads `e.Capacity, e.Fee,`; change to the two split fields:
 
 ```csharp
-        services.AddScoped<IEventService, EventService>();
+    private static CreateEventRequest ValidCreateRequest(string title = "Water Sanitation Workshop") =>
+        new(title, "Cross-connection control", Chapters.Ncr, "PICC", DateTimeOffset.UtcNow.AddDays(10),
+            DateTimeOffset.UtcNow.AddDays(10).AddHours(4), Capacity: 100, FeeOnsite: 500m, FeeOnline: 200m);
 ```
-
-- [ ] **Step 7: Run the tests to verify they pass**
-
-Run: `dotnet test tests/PSMPE.Portal.Application.UnitTests --filter EventServiceTests`
-Expected: PASS (11 tests).
-
-- [ ] **Step 8: Commit**
-
-```bash
-git add src/PSMPE.Portal.Application/Events/ src/PSMPE.Portal.Application/DependencyInjection.cs \
-  tests/PSMPE.Portal.Application.UnitTests/Events/EventServiceTests.cs
-git commit -m "feat: add EventService with event and session CRUD"
-```
-
----
-
-## 5. Registration and cancellation
-
-**Files:**
-- Create: `src/PSMPE.Portal.Application/Events/Dtos/EventRegistrationDto.cs`
-- Modify: `src/PSMPE.Portal.Application/Events/IEventService.cs`
-- Modify: `src/PSMPE.Portal.Application/Events/EventService.cs`
-- Test: `tests/PSMPE.Portal.Application.UnitTests/Events/EventServiceTests.cs`
-
-- [ ] **Step 1: Create `EventRegistrationDto`**
 
 ```csharp
-namespace PSMPE.Portal.Application.Events.Dtos;
-
-/// <summary>Mode/Status are strings (enum.ToString()), not the raw enums - see the design note at
-/// the top of tasks.md: this is deliberately serialized so the frontend's string literal types
-/// actually match what's sent over the wire, unlike PaymentDto.Kind/Status.</summary>
-public record EventRegistrationDto(
-    Guid Id,
-    Guid EventId,
-    string EventTitle,
-    DateTimeOffset EventStartsAt,
-    Guid MemberId,
-    string MemberName,
-    string? MembershipNo,
-    string Mode,
-    string Status,
-    int SessionsAttended,
-    int TotalSessions,
-    int? EvaluationRating,
-    string? EvaluationComments,
-    DateTimeOffset? EvaluationSubmittedAt,
-    /// <summary>Null until this registration reaches EvaluationSubmitted with a non-null unit
-    /// value for its Mode - see Application/Events/CpdCredit.cs.</summary>
-    decimal? CreditUnits);
-
-public record RegisterForEventRequest(string Mode);
+    private static UpdateEventRequest ToUpdateRequest(EventDto e) =>
+        new(e.Title, e.Description, e.Chapter, e.Venue, e.StartsAt, e.EndsAt, e.Capacity, e.FeeOnsite, e.FeeOnline,
+            e.CpdUnitsOnsite, e.CpdUnitsOnline,
+            e.Sessions.Select(s => new EventSessionRequest(s.Id, s.Title, s.StartsAt, s.EndsAt, s.Order, s.Venue)).ToList());
 ```
 
-- [ ] **Step 2: Add the new members to `IEventService`**
+- [ ] **Step 4: Run the existing Event tests to confirm they still pass after the rename**
 
-```csharp
-    Task<Result<EventRegistrationDto>> RegisterAsync(Guid userId, Guid eventId, string mode, CancellationToken cancellationToken = default);
+Run: `dotnet test tests/PSMPE.Portal.Application.UnitTests --filter FullyQualifiedName~EventServiceTests`
+Expected: All previously-passing tests still PASS (no behavior changed yet, only the Fee shape).
 
-    Task<Result> CancelRegistrationAsync(Guid userId, Guid registrationId, CancellationToken cancellationToken = default);
-```
-
-- [ ] **Step 3: Write the failing tests**
-
-Append to `EventServiceTests.cs`:
+- [ ] **Step 5: Write three new failing tests for the genuinely new validation/behavior**, appended
+      to `EventServiceTests.cs` (anywhere among the other `[Fact]` methods in the class):
 
 ```csharp
     [Fact]
-    public async Task RegisterAsync_ValidMode_CreatesRegistrationInRegisteredStatus()
+    public async Task CreateAsync_UnrecognizedType_Fails()
     {
         using var db = TestDbContext.CreateInMemory();
         var service = new EventService(db);
-        var @event = (await service.CreateAsync(ValidCreateRequest())).Value!;
-        var member = await SeedMemberForEventTestsAsync(db);
 
-        var result = await service.RegisterAsync(member.UserId, @event.Id, "Online");
+        var result = await service.CreateAsync(ValidCreateRequest() with { Type = "Not A Real Type" });
+
+        Assert.False(result.Succeeded);
+    }
+
+    [Fact]
+    public async Task CreateAsync_RecognizedType_Succeeds()
+    {
+        using var db = TestDbContext.CreateInMemory();
+        var service = new EventService(db);
+
+        var result = await service.CreateAsync(ValidCreateRequest() with { Type = EventTypes.Seminar });
 
         Assert.True(result.Succeeded);
-        Assert.Equal("Registered", result.Value!.Status);
-        Assert.Equal("Online", result.Value.Mode);
+        Assert.Equal(EventTypes.Seminar, result.Value!.Type);
     }
 
     [Fact]
-    public async Task RegisterAsync_UnrecognizedMode_Fails()
+    public async Task UpdateAsync_SessionVenueOverride_PersistsAndFallsBackWhenCleared()
     {
         using var db = TestDbContext.CreateInMemory();
         var service = new EventService(db);
-        var @event = (await service.CreateAsync(ValidCreateRequest())).Value!;
-        var member = await SeedMemberForEventTestsAsync(db);
-
-        var result = await service.RegisterAsync(member.UserId, @event.Id, "InPerson");
-
-        Assert.False(result.Succeeded);
-    }
-
-    /// <summary>Matches spec.md's "A member cannot register twice for the same event" - even under
-    /// a different Mode.</summary>
-    [Fact]
-    public async Task RegisterAsync_Twice_SecondCallFailsEvenUnderADifferentMode()
-    {
-        using var db = TestDbContext.CreateInMemory();
-        var service = new EventService(db);
-        var @event = (await service.CreateAsync(ValidCreateRequest())).Value!;
-        var member = await SeedMemberForEventTestsAsync(db);
-        await service.RegisterAsync(member.UserId, @event.Id, "Onsite");
-
-        var result = await service.RegisterAsync(member.UserId, @event.Id, "Online");
-
-        Assert.False(result.Succeeded);
-    }
-
-    /// <summary>A cancelled registration frees the member to register again - this is what makes
-    /// Cancelled a real off-ramp rather than a dead end.</summary>
-    [Fact]
-    public async Task RegisterAsync_AfterCancelling_Succeeds()
-    {
-        using var db = TestDbContext.CreateInMemory();
-        var service = new EventService(db);
-        var @event = (await service.CreateAsync(ValidCreateRequest())).Value!;
-        var member = await SeedMemberForEventTestsAsync(db);
-        var first = await service.RegisterAsync(member.UserId, @event.Id, "Onsite");
-        await service.CancelRegistrationAsync(member.UserId, first.Value!.Id);
-
-        var result = await service.RegisterAsync(member.UserId, @event.Id, "Onsite");
-
-        Assert.True(result.Succeeded);
-    }
-
-    [Fact]
-    public async Task CancelRegistrationAsync_NotOwner_Forbidden()
-    {
-        using var db = TestDbContext.CreateInMemory();
-        var service = new EventService(db);
-        var @event = (await service.CreateAsync(ValidCreateRequest())).Value!;
-        var member = await SeedMemberForEventTestsAsync(db);
-        var registration = (await service.RegisterAsync(member.UserId, @event.Id, "Onsite")).Value!;
-        var otherUserId = Guid.NewGuid();
-
-        var result = await service.CancelRegistrationAsync(otherUserId, registration.Id);
-
-        Assert.False(result.Succeeded);
-        Assert.Equal(ResultErrorType.Forbidden, result.ErrorType);
-    }
-
-    [Fact]
-    public async Task CancelRegistrationAsync_AfterPaymentVerified_Fails()
-    {
-        using var db = TestDbContext.CreateInMemory();
-        var service = new EventService(db);
-        var @event = (await service.CreateAsync(ValidCreateRequest())).Value!;
-        var member = await SeedMemberForEventTestsAsync(db);
-        var registration = (await service.RegisterAsync(member.UserId, @event.Id, "Onsite")).Value!;
-        var entity = await db.EventRegistrations.FindAsync(registration.Id);
-        entity!.Status = EventRegistrationStatus.PaymentVerified;
-        await db.SaveChangesAsync();
-
-        var result = await service.CancelRegistrationAsync(member.UserId, registration.Id);
-
-        Assert.False(result.Succeeded);
-    }
-```
-
-Add the `using PSMPE.Portal.Application.Common.Models;` import to `EventServiceTests.cs` for
-`ResultErrorType`, if not already present.
-
-- [ ] **Step 4: Run the tests to verify they fail**
-
-Run: `dotnet test tests/PSMPE.Portal.Application.UnitTests --filter EventServiceTests`
-Expected: FAIL to compile — the new `IEventService` members have no implementation yet.
-
-- [ ] **Step 5: Implement the new members in a second `EventService` partial block**
-
-Create `src/PSMPE.Portal.Application/Events/EventService.Registration.cs` (a second file for the
-same `partial class EventService` declared in Task 4 — keeps each concern's file small rather than
-growing one file across eight tasks):
-
-```csharp
-using Microsoft.EntityFrameworkCore;
-using PSMPE.Portal.Application.Common.Models;
-using PSMPE.Portal.Application.Events.Dtos;
-using PSMPE.Portal.Domain.Entities;
-using PSMPE.Portal.Domain.Enums;
-
-namespace PSMPE.Portal.Application.Events;
-
-public partial class EventService
-{
-    public async Task<Result<EventRegistrationDto>> RegisterAsync(
-        Guid userId, Guid eventId, string mode, CancellationToken cancellationToken = default)
-    {
-        if (!Enum.TryParse<EventMode>(mode, ignoreCase: true, out var parsedMode))
+        var created = (await service.CreateAsync(ValidCreateRequest() with { Venue = "PICC" })).Value!;
+        var defaultSession = created.Sessions.Single();
+        var withOverride = ToUpdateRequest(created) with
         {
-            return Result<EventRegistrationDto>.Failure($"'{mode}' is not a recognized registration mode. Use 'Onsite' or 'Online'.");
-        }
-
-        var member = await db.Members.FirstOrDefaultAsync(m => m.UserId == userId, cancellationToken);
-        if (member is null)
-        {
-            return Result<EventRegistrationDto>.Failure("No member profile found for this account.");
-        }
-
-        var @event = await db.Events.Include(e => e.Sessions).FirstOrDefaultAsync(e => e.Id == eventId, cancellationToken);
-        if (@event is null)
-        {
-            return Result<EventRegistrationDto>.NotFound($"Event '{eventId}' was not found.");
-        }
-
-        var alreadyRegistered = await db.EventRegistrations.AnyAsync(
-            r => r.EventId == eventId && r.MemberId == member.Id && r.Status != EventRegistrationStatus.Cancelled,
-            cancellationToken);
-        if (alreadyRegistered)
-        {
-            return Result<EventRegistrationDto>.Conflict("You're already registered for this event.");
-        }
-
-        var registration = new EventRegistration { EventId = eventId, MemberId = member.Id, Mode = parsedMode };
-        db.EventRegistrations.Add(registration);
-        await db.SaveChangesAsync(cancellationToken);
-
-        return Result<EventRegistrationDto>.Success(
-            ToRegistrationDto(registration, @event, member, sessionsAttended: 0, totalSessions: @event.Sessions.Count));
-    }
-
-    public async Task<Result> CancelRegistrationAsync(Guid userId, Guid registrationId, CancellationToken cancellationToken = default)
-    {
-        var registration = await db.EventRegistrations
-            .Include(r => r.Member)
-            .FirstOrDefaultAsync(r => r.Id == registrationId, cancellationToken);
-        if (registration is null)
-        {
-            return Result.NotFound($"Registration '{registrationId}' was not found.");
-        }
-        if (registration.Member.UserId != userId)
-        {
-            return Result.Forbidden("This isn't your registration.");
-        }
-
-        // Once a payment is verified, cancelling would need refund handling - explicitly out of
-        // scope (see proposal.md's "Not Built"). Before that point there's nothing to unwind.
-        if (registration.Status is not (EventRegistrationStatus.Registered or EventRegistrationStatus.PaymentSubmitted or EventRegistrationStatus.Rejected))
-        {
-            return Result.Failure("This registration can no longer be cancelled.");
-        }
-
-        registration.Status = EventRegistrationStatus.Cancelled;
-        registration.UpdatedAt = DateTimeOffset.UtcNow;
-        await db.SaveChangesAsync(cancellationToken);
-        return Result.Success();
-    }
-
-    /// <summary>Shared by every task that returns an EventRegistrationDto (this one, and Tasks
-    /// 6–7's attendance/evaluation methods).</summary>
-    private static EventRegistrationDto ToRegistrationDto(
-        EventRegistration r, Event e, Member m, int sessionsAttended, int totalSessions) =>
-        new(r.Id, r.EventId, e.Title, e.StartsAt, r.MemberId, $"{m.FirstName} {m.LastName}", m.MembershipNo,
-            r.Mode.ToString(), r.Status.ToString(), sessionsAttended, totalSessions,
-            r.EvaluationRating, r.EvaluationComments, r.EvaluationSubmittedAt,
-            CpdCredit.For(r, e, sessionsAttended, totalSessions));
-}
-```
-
-This references `CpdCredit.For`, which doesn't exist yet — that's Task 8. Create a temporary
-placeholder now so this compiles, at `src/PSMPE.Portal.Application/Events/CpdCredit.cs`:
-
-```csharp
-namespace PSMPE.Portal.Application.Events;
-
-using PSMPE.Portal.Domain.Entities;
-
-/// <summary>Real implementation lands in Task 8 - see CpdCreditTests.cs there. This placeholder
-/// only unblocks the build for Tasks 5–7.</summary>
-internal static class CpdCredit
-{
-    public static decimal? For(EventRegistration registration, Event @event, int sessionsAttended, int totalSessions) => null;
-}
-```
-
-- [ ] **Step 6: Run the tests to verify they pass**
-
-Run: `dotnet test tests/PSMPE.Portal.Application.UnitTests --filter EventServiceTests`
-Expected: PASS (all tests from Step 3 and Task 4). `CreditUnits` is asserted as null nowhere in
-this task's own tests, so the `CpdCredit` placeholder returning `null` unconditionally doesn't
-break anything yet.
-
-- [ ] **Step 7: Commit**
-
-```bash
-git add src/PSMPE.Portal.Application/Events/ tests/PSMPE.Portal.Application.UnitTests/Events/EventServiceTests.cs
-git commit -m "feat: add event registration and cancellation to EventService"
-```
-
----
-
-## 6. Attendance: admin roster reconciliation
-
-**Files:**
-- Create: `src/PSMPE.Portal.Application/Events/Dtos/EventAttendanceDto.cs`
-- Modify: `src/PSMPE.Portal.Application/Events/IEventService.cs`
-- Create: `src/PSMPE.Portal.Application/Events/EventService.Attendance.cs`
-- Test: `tests/PSMPE.Portal.Application.UnitTests/Events/EventServiceTests.cs`
-
-There is no member self-check-in anywhere in this design — attendance is recorded exclusively by an
-Admin, after the event, reconciling against PSMPE's own PRC sign-in sheet. `RecordAttendanceAsync`
-takes the full, authoritative set of sessions each registrant attended on every call (a full
-replace, not an incremental add), so an admin correcting a mistake just calls it again with the
-corrected set.
-
-- [ ] **Step 1: Create the attendance request DTOs**
-
-```csharp
-namespace PSMPE.Portal.Application.Events.Dtos;
-
-/// <summary>One registrant's authoritative set of attended sessions for this call - SessionIds
-/// fully replaces whatever EventAttendance rows already exist for RegistrationId, so re-running
-/// reconciliation with a corrected set is how a mistake gets fixed (see spec.md's "admin reconciles
-/// roster attendance" scenarios).</summary>
-public record RegistrantAttendanceRequest(Guid RegistrationId, IReadOnlyList<Guid> SessionIds);
-
-/// <summary>The request body for POST /api/events/{id}/roster/attendance - one call reconciles the
-/// whole roster, not just one registrant, since that's how an admin actually works through a
-/// printed sign-in sheet.</summary>
-public record RecordAttendanceRequest(IReadOnlyList<RegistrantAttendanceRequest> Registrants);
-```
-
-- [ ] **Step 2: Add the new member to `IEventService`**
-
-```csharp
-    Task<Result> RecordAttendanceAsync(
-        Guid eventId, IReadOnlyList<RegistrantAttendanceRequest> registrants, Guid adminUserId, CancellationToken cancellationToken = default);
-```
-
-- [ ] **Step 3: Write the failing tests**
-
-Append to `EventServiceTests.cs`:
-
-```csharp
-    [Fact]
-    public async Task RecordAttendanceAsync_BeforePaymentVerified_Fails()
-    {
-        using var db = TestDbContext.CreateInMemory();
-        var service = new EventService(db);
-        var @event = (await service.CreateAsync(ValidCreateRequest())).Value!;
-        var member = await SeedMemberForEventTestsAsync(db);
-        var registration = (await service.RegisterAsync(member.UserId, @event.Id, "Onsite")).Value!;
-        var sessionId = @event.Sessions.Single().Id;
-
-        var result = await service.RecordAttendanceAsync(
-            @event.Id, [new RegistrantAttendanceRequest(registration.Id, [sessionId])], Guid.NewGuid());
-
-        Assert.False(result.Succeeded);
-    }
-
-    [Fact]
-    public async Task RecordAttendanceAsync_RecordsSessions_MovesRegistrationToAttended()
-    {
-        using var db = TestDbContext.CreateInMemory();
-        var service = new EventService(db);
-        var @event = (await service.CreateAsync(ValidCreateRequest())).Value!;
-        var member = await SeedMemberForEventTestsAsync(db);
-        var registration = (await service.RegisterAsync(member.UserId, @event.Id, "Onsite")).Value!;
-        await MarkPaymentVerifiedAsync(db, registration.Id);
-        var sessionId = @event.Sessions.Single().Id;
-        var adminUserId = Guid.NewGuid();
-
-        var result = await service.RecordAttendanceAsync(
-            @event.Id, [new RegistrantAttendanceRequest(registration.Id, [sessionId])], adminUserId);
-
-        Assert.True(result.Succeeded);
-        var updated = await db.EventRegistrations.FindAsync(registration.Id);
-        Assert.Equal(EventRegistrationStatus.Attended, updated!.Status);
-        var attendance = Assert.Single(db.EventAttendances.Where(a => a.EventRegistrationId == registration.Id));
-        Assert.Equal(adminUserId, attendance.RecordedBy);
-    }
-
-    /// <summary>Matches spec.md's "A member attends only part of a multi-session event": 3 of 6
-    /// sessions produces exactly 3 EventAttendance rows.</summary>
-    [Fact]
-    public async Task RecordAttendanceAsync_PartialAttendance_RecordsExactlyThatManySessions()
-    {
-        using var db = TestDbContext.CreateInMemory();
-        var service = new EventService(db);
-        var created = (await service.CreateAsync(ValidCreateRequest())).Value!;
-        var sixSessions = Enumerable.Range(1, 6)
-            .Select(i => new EventSessionRequest(i == 1 ? created.Sessions[0].Id : null, $"Lecture {i}", created.StartsAt.AddHours(i), created.StartsAt.AddHours(i + 1), i))
-            .ToList();
-        var @event = (await service.UpdateAsync(created.Id, ToUpdateRequest(created) with { Sessions = sixSessions })).Value!;
-        var member = await SeedMemberForEventTestsAsync(db);
-        var registration = (await service.RegisterAsync(member.UserId, @event.Id, "Onsite")).Value!;
-        await MarkPaymentVerifiedAsync(db, registration.Id);
-        var attendedSessionIds = @event.Sessions.Take(3).Select(s => s.Id).ToList();
-
-        var result = await service.RecordAttendanceAsync(
-            @event.Id, [new RegistrantAttendanceRequest(registration.Id, attendedSessionIds)], Guid.NewGuid());
-
-        Assert.True(result.Succeeded);
-        Assert.Equal(3, db.EventAttendances.Count(a => a.EventRegistrationId == registration.Id));
-        var updated = await db.EventRegistrations.FindAsync(registration.Id);
-        Assert.Equal(EventRegistrationStatus.Attended, updated!.Status);
-    }
-
-    [Fact]
-    public async Task RecordAttendanceAsync_SessionFromDifferentEvent_Fails()
-    {
-        using var db = TestDbContext.CreateInMemory();
-        var service = new EventService(db);
-        var @event = (await service.CreateAsync(ValidCreateRequest())).Value!;
-        var otherEvent = (await service.CreateAsync(ValidCreateRequest("Other Event"))).Value!;
-        var member = await SeedMemberForEventTestsAsync(db);
-        var registration = (await service.RegisterAsync(member.UserId, @event.Id, "Onsite")).Value!;
-        await MarkPaymentVerifiedAsync(db, registration.Id);
-        var otherEventSessionId = otherEvent.Sessions.Single().Id;
-
-        var result = await service.RecordAttendanceAsync(
-            @event.Id, [new RegistrantAttendanceRequest(registration.Id, [otherEventSessionId])], Guid.NewGuid());
-
-        Assert.False(result.Succeeded);
-        Assert.Empty(db.EventAttendances.Where(a => a.EventRegistrationId == registration.Id));
-    }
-
-    [Fact]
-    public async Task RecordAttendanceAsync_CalledAgainWithCorrectedSet_ReplacesPreviousRows()
-    {
-        using var db = TestDbContext.CreateInMemory();
-        var service = new EventService(db);
-        var created = (await service.CreateAsync(ValidCreateRequest())).Value!;
-        var twoSessions = new List<EventSessionRequest>
-        {
-            new(created.Sessions[0].Id, "Lecture 1", created.StartsAt, created.StartsAt.AddHours(1), 1),
-            new(null, "Lecture 2", created.StartsAt.AddHours(1), created.EndsAt, 2),
+            Sessions = [new EventSessionRequest(defaultSession.Id, defaultSession.Title, defaultSession.StartsAt, defaultSession.EndsAt, 1, "Cebu IT Park")],
         };
-        var @event = (await service.UpdateAsync(created.Id, ToUpdateRequest(created) with { Sessions = twoSessions })).Value!;
-        var member = await SeedMemberForEventTestsAsync(db);
-        var registration = (await service.RegisterAsync(member.UserId, @event.Id, "Onsite")).Value!;
-        await MarkPaymentVerifiedAsync(db, registration.Id);
-        await service.RecordAttendanceAsync(@event.Id, [new RegistrantAttendanceRequest(registration.Id, [@event.Sessions[0].Id])], Guid.NewGuid());
 
-        var result = await service.RecordAttendanceAsync(
-            @event.Id, [new RegistrantAttendanceRequest(registration.Id, [@event.Sessions[0].Id, @event.Sessions[1].Id])], Guid.NewGuid());
+        var overridden = (await service.UpdateAsync(created.Id, withOverride)).Value!;
+        Assert.Equal("Cebu IT Park", overridden.Sessions.Single().Venue);
 
-        Assert.True(result.Succeeded);
-        Assert.Equal(2, db.EventAttendances.Count(a => a.EventRegistrationId == registration.Id));
-    }
+        var cleared = ToUpdateRequest(overridden) with
+        {
+            Sessions = [new EventSessionRequest(defaultSession.Id, defaultSession.Title, defaultSession.StartsAt, defaultSession.EndsAt, 1, null)],
+        };
+        var result = await service.UpdateAsync(created.Id, cleared);
 
-    private static async Task MarkPaymentVerifiedAsync(TestDbContext db, Guid registrationId)
-    {
-        var registration = await db.EventRegistrations.FindAsync(registrationId);
-        registration!.Status = EventRegistrationStatus.PaymentVerified;
-        await db.SaveChangesAsync();
+        Assert.Null(result.Value!.Sessions.Single().Venue);
     }
 ```
 
-- [ ] **Step 4: Run the tests to verify they fail**
+Add the necessary `using PSMPE.Portal.Domain.Enums;` at the top of the file if not already present
+(it already is — `EventServiceTests.cs` already references `Chapters`/`EventMode` from that
+namespace).
 
-Run: `dotnet test tests/PSMPE.Portal.Application.UnitTests --filter EventServiceTests`
-Expected: FAIL to compile — `RecordAttendanceAsync` doesn't exist yet.
+- [ ] **Step 6: Run the new tests to verify they fail first (for the two genuinely new-behavior
+      ones), then pass after Step 2's `EventService.cs` change**
 
-- [ ] **Step 5: Implement `RecordAttendanceAsync`**
-
-```csharp
-using Microsoft.EntityFrameworkCore;
-using PSMPE.Portal.Application.Common.Models;
-using PSMPE.Portal.Application.Events.Dtos;
-using PSMPE.Portal.Domain.Entities;
-using PSMPE.Portal.Domain.Enums;
-
-namespace PSMPE.Portal.Application.Events;
-
-public partial class EventService
-{
-    public async Task<Result> RecordAttendanceAsync(
-        Guid eventId, IReadOnlyList<RegistrantAttendanceRequest> registrants, Guid adminUserId,
-        CancellationToken cancellationToken = default)
-    {
-        var registrationIds = registrants.Select(r => r.RegistrationId).ToList();
-        var registrations = await db.EventRegistrations
-            .Where(r => registrationIds.Contains(r.Id))
-            .ToDictionaryAsync(r => r.Id, cancellationToken);
-
-        var validSessionIds = (await db.EventSessions
-            .Where(s => s.EventId == eventId)
-            .Select(s => s.Id)
-            .ToListAsync(cancellationToken))
-            .ToHashSet();
-
-        foreach (var registrant in registrants)
-        {
-            if (!registrations.TryGetValue(registrant.RegistrationId, out var registration) || registration.EventId != eventId)
-            {
-                return Result.Failure($"Registration '{registrant.RegistrationId}' does not belong to this event.");
-            }
-
-            if (registration.Status is not (EventRegistrationStatus.PaymentVerified or EventRegistrationStatus.Attended or EventRegistrationStatus.EvaluationSubmitted))
-            {
-                return Result.Failure($"Registration '{registrant.RegistrationId}' needs a verified payment before attendance can be recorded.");
-            }
-
-            if (registrant.SessionIds.Any(id => !validSessionIds.Contains(id)))
-            {
-                return Result.Failure("One or more sessions do not belong to this event.");
-            }
-        }
-
-        foreach (var registrant in registrants)
-        {
-            var registration = registrations[registrant.RegistrationId];
-
-            var existing = await db.EventAttendances
-                .Where(a => a.EventRegistrationId == registrant.RegistrationId)
-                .ToListAsync(cancellationToken);
-            db.EventAttendances.RemoveRange(existing);
-
-            foreach (var sessionId in registrant.SessionIds.Distinct())
-            {
-                db.EventAttendances.Add(new EventAttendance
-                {
-                    EventRegistrationId = registrant.RegistrationId,
-                    EventSessionId = sessionId,
-                    RecordedBy = adminUserId,
-                    RecordedAt = DateTimeOffset.UtcNow,
-                });
-            }
-
-            if (registrant.SessionIds.Count > 0 && registration.Status == EventRegistrationStatus.PaymentVerified)
-            {
-                registration.Status = EventRegistrationStatus.Attended;
-                registration.UpdatedAt = DateTimeOffset.UtcNow;
-            }
-        }
-
-        await db.SaveChangesAsync(cancellationToken);
-        return Result.Success();
-    }
-}
-```
-
-- [ ] **Step 6: Run the tests to verify they pass**
-
-Run: `dotnet test tests/PSMPE.Portal.Application.UnitTests --filter EventServiceTests`
-Expected: PASS (all tests from Step 3 and prior tasks).
+Run: `dotnet test tests/PSMPE.Portal.Application.UnitTests --filter FullyQualifiedName~EventServiceTests`
+Expected: PASS — `CreateAsync_UnrecognizedType_Fails`, `CreateAsync_RecognizedType_Succeeds`, and
+`UpdateAsync_SessionVenueOverride_PersistsAndFallsBackWhenCleared` all green, alongside every
+pre-existing test in the file.
 
 - [ ] **Step 7: Commit**
 
 ```bash
-git add src/PSMPE.Portal.Application/Events/ tests/PSMPE.Portal.Application.UnitTests/Events/EventServiceTests.cs
-git commit -m "feat: add admin roster attendance reconciliation to EventService"
+git add src/PSMPE.Portal.Application/Events/Dtos/EventDto.cs src/PSMPE.Portal.Application/Events/EventService.cs tests/PSMPE.Portal.Application.UnitTests/Events/EventServiceTests.cs
+git commit -m "feat: extend EventDto/EventService for FeeOnsite/FeeOnline, Type, Hours, Objectives, CpdCode fields, and session Venue"
 ```
 
 ---
 
-## 7. Post-event evaluation
+## 3. `EventPosterService` and its two endpoints
 
 **Files:**
-- Create: `src/PSMPE.Portal.Application/Events/Dtos/SubmitEvaluationRequest.cs`
-- Modify: `src/PSMPE.Portal.Application/Events/IEventService.cs`
-- Create: `src/PSMPE.Portal.Application/Events/EventService.Evaluation.cs`
-- Test: `tests/PSMPE.Portal.Application.UnitTests/Events/EventServiceTests.cs`
+- Create: `src/PSMPE.Portal.Application/Events/IEventPosterService.cs`
+- Create: `src/PSMPE.Portal.Application/Events/EventPosterService.cs`
+- Modify: `src/PSMPE.Portal.Application/DependencyInjection.cs`
+- Modify: `src/PSMPE.Portal.WebAPI/Controllers/EventsController.cs`
 
-- [ ] **Step 1: Create `SubmitEvaluationRequest`**
+This mirrors `MemberUploadService`'s validate → downscale → re-encode → save pipeline
+(`src/PSMPE.Portal.Application/Members/MemberUploadService.cs`), simplified: a poster is always an
+image (no PDF case), there's exactly one per event, and the key lives directly on `Event`
+(`PosterImageStorageKey`), not in a separate join table like `MemberUpload`. No dedicated unit test
+file — exactly like `MemberUploadService`, which has no unit tests either (SkiaSharp decode/encode
+needs a real image byte stream, which is exercised at the integration level instead, same as
+`MemberUploadsTests.cs` does for member uploads). Task 4 adds the integration test for this.
 
-```csharp
-namespace PSMPE.Portal.Application.Events.Dtos;
-
-public record SubmitEvaluationRequest(int Rating, string? Comments);
-```
-
-- [ ] **Step 2: Add the new member to `IEventService`**
-
-```csharp
-    Task<Result> SubmitEvaluationAsync(Guid userId, Guid registrationId, int rating, string? comments, CancellationToken cancellationToken = default);
-```
-
-- [ ] **Step 3: Write the failing tests**
-
-Append to `EventServiceTests.cs`:
+- [ ] **Step 1: Create `IEventPosterService.cs`**
 
 ```csharp
-    [Fact]
-    public async Task SubmitEvaluationAsync_BeforeAttended_Fails()
-    {
-        using var db = TestDbContext.CreateInMemory();
-        var service = new EventService(db);
-        var @event = (await service.CreateAsync(ValidCreateRequest())).Value!;
-        var member = await SeedMemberForEventTestsAsync(db);
-        var registration = (await service.RegisterAsync(member.UserId, @event.Id, "Onsite")).Value!;
+using PSMPE.Portal.Application.Common.Models;
 
-        var result = await service.SubmitEvaluationAsync(member.UserId, registration.Id, rating: 5, comments: "Great");
+namespace PSMPE.Portal.Application.Events;
 
-        Assert.False(result.Succeeded);
-    }
+public interface IEventPosterService
+{
+    Task<Result> UploadAsync(
+        Guid eventId, Stream content, string fileName, long contentLength, CancellationToken cancellationToken = default);
 
-    [Fact]
-    public async Task SubmitEvaluationAsync_AfterAttended_MovesToEvaluationSubmitted()
-    {
-        using var db = TestDbContext.CreateInMemory();
-        var service = new EventService(db);
-        var @event = (await service.CreateAsync(ValidCreateRequest())).Value!;
-        var member = await SeedMemberForEventTestsAsync(db);
-        var registration = (await service.RegisterAsync(member.UserId, @event.Id, "Onsite")).Value!;
-        await MarkAttendedAsync(db, registration.Id);
-
-        var result = await service.SubmitEvaluationAsync(member.UserId, registration.Id, rating: 4, comments: "Good session");
-
-        Assert.True(result.Succeeded);
-        var updated = await db.EventRegistrations.FindAsync(registration.Id);
-        Assert.Equal(EventRegistrationStatus.EvaluationSubmitted, updated!.Status);
-        Assert.NotNull(updated.EvaluationSubmittedAt);
-    }
-
-    [Fact]
-    public async Task SubmitEvaluationAsync_NotOwner_Forbidden()
-    {
-        using var db = TestDbContext.CreateInMemory();
-        var service = new EventService(db);
-        var @event = (await service.CreateAsync(ValidCreateRequest())).Value!;
-        var member = await SeedMemberForEventTestsAsync(db);
-        var registration = (await service.RegisterAsync(member.UserId, @event.Id, "Onsite")).Value!;
-        await MarkAttendedAsync(db, registration.Id);
-
-        var result = await service.SubmitEvaluationAsync(Guid.NewGuid(), registration.Id, rating: 4, comments: null);
-
-        Assert.False(result.Succeeded);
-        Assert.Equal(ResultErrorType.Forbidden, result.ErrorType);
-    }
-
-    [Theory]
-    [InlineData(0)]
-    [InlineData(6)]
-    public async Task SubmitEvaluationAsync_RatingOutOfRange_Fails(int rating)
-    {
-        using var db = TestDbContext.CreateInMemory();
-        var service = new EventService(db);
-        var @event = (await service.CreateAsync(ValidCreateRequest())).Value!;
-        var member = await SeedMemberForEventTestsAsync(db);
-        var registration = (await service.RegisterAsync(member.UserId, @event.Id, "Onsite")).Value!;
-        await MarkAttendedAsync(db, registration.Id);
-
-        var result = await service.SubmitEvaluationAsync(member.UserId, registration.Id, rating, comments: null);
-
-        Assert.False(result.Succeeded);
-    }
-
-    private static async Task MarkAttendedAsync(TestDbContext db, Guid registrationId)
-    {
-        var registration = await db.EventRegistrations.FindAsync(registrationId);
-        registration!.Status = EventRegistrationStatus.Attended;
-        await db.SaveChangesAsync();
-    }
+    Task<(Stream Content, string ContentType)?> GetAsync(Guid eventId, CancellationToken cancellationToken = default);
+}
 ```
 
-- [ ] **Step 4: Run the tests to verify they fail**
-
-Run: `dotnet test tests/PSMPE.Portal.Application.UnitTests --filter EventServiceTests`
-Expected: FAIL to compile — `SubmitEvaluationAsync` doesn't exist yet.
-
-- [ ] **Step 5: Implement `SubmitEvaluationAsync`**
+- [ ] **Step 2: Create `EventPosterService.cs`**
 
 ```csharp
 using Microsoft.EntityFrameworkCore;
+using PSMPE.Portal.Application.Common.Interfaces;
 using PSMPE.Portal.Application.Common.Models;
-using PSMPE.Portal.Domain.Enums;
+using SkiaSharp;
 
 namespace PSMPE.Portal.Application.Events;
-
-public partial class EventService
-{
-    public async Task<Result> SubmitEvaluationAsync(
-        Guid userId, Guid registrationId, int rating, string? comments, CancellationToken cancellationToken = default)
-    {
-        if (rating is < 1 or > 5)
-        {
-            return Result.Failure("Rating must be between 1 and 5.");
-        }
-
-        var registration = await db.EventRegistrations
-            .Include(r => r.Member)
-            .FirstOrDefaultAsync(r => r.Id == registrationId, cancellationToken);
-        if (registration is null)
-        {
-            return Result.NotFound($"Registration '{registrationId}' was not found.");
-        }
-        if (registration.Member.UserId != userId)
-        {
-            return Result.Forbidden("This isn't your registration.");
-        }
-        if (registration.Status != EventRegistrationStatus.Attended)
-        {
-            return Result.Failure("You need to be marked attended before you can submit the evaluation.");
-        }
-
-        registration.Status = EventRegistrationStatus.EvaluationSubmitted;
-        registration.EvaluationRating = rating;
-        registration.EvaluationComments = comments;
-        registration.EvaluationSubmittedAt = DateTimeOffset.UtcNow;
-        registration.UpdatedAt = DateTimeOffset.UtcNow;
-        await db.SaveChangesAsync(cancellationToken);
-        return Result.Success();
-    }
-}
-```
-
-- [ ] **Step 6: Run the tests to verify they pass**
-
-Run: `dotnet test tests/PSMPE.Portal.Application.UnitTests --filter EventServiceTests`
-Expected: PASS (all tests from Step 3 and prior tasks).
-
-- [ ] **Step 7: Commit**
-
-```bash
-git add src/PSMPE.Portal.Application/Events/ tests/PSMPE.Portal.Application.UnitTests/Events/EventServiceTests.cs
-git commit -m "feat: add post-event evaluation submission to EventService"
-```
-
----
-
-## 8. CPD credit computation and "My CPD" query
-
-**Files:**
-- Modify: `src/PSMPE.Portal.Application/Events/CpdCredit.cs`
-- Create: `src/PSMPE.Portal.Application/Events/Dtos/MyCpdSummaryDto.cs`
-- Modify: `src/PSMPE.Portal.Application/Events/IEventService.cs`
-- Create: `src/PSMPE.Portal.Application/Events/EventService.Cpd.cs`
-- Test: `tests/PSMPE.Portal.Application.UnitTests/Events/CpdCreditTests.cs`
-- Test: `tests/PSMPE.Portal.Application.UnitTests/Events/EventServiceTests.cs`
-
-- [ ] **Step 1: Write the failing tests for `CpdCredit.For`**
-
-```csharp
-using PSMPE.Portal.Application.Events;
-using PSMPE.Portal.Domain.Entities;
-using PSMPE.Portal.Domain.Enums;
-using Xunit;
-
-namespace PSMPE.Portal.Application.UnitTests.Events;
-
-public class CpdCreditTests
-{
-    private static EventRegistration Registration(EventMode mode, EventRegistrationStatus status = EventRegistrationStatus.EvaluationSubmitted) =>
-        new() { Mode = mode, Status = status };
-
-    [Fact]
-    public void For_NotEvaluationSubmitted_ReturnsNull()
-    {
-        var registration = Registration(EventMode.Onsite, EventRegistrationStatus.Attended);
-        var @event = new Event { CpdUnitsOnsite = 8m };
-
-        var credit = CpdCredit.For(registration, @event, sessionsAttended: 6, totalSessions: 6);
-
-        Assert.Null(credit);
-    }
-
-    [Fact]
-    public void For_ApplicableModalityUnitsStillNull_ReturnsNull()
-    {
-        var registration = Registration(EventMode.Online);
-        var @event = new Event { CpdUnitsOnsite = 8m, CpdUnitsOnline = null };
-
-        var credit = CpdCredit.For(registration, @event, sessionsAttended: 6, totalSessions: 6);
-
-        Assert.Null(credit);
-    }
-
-    /// <summary>Matches spec.md's "Partial attendance earns prorated credit": 3 of 6 sessions on an
-    /// 8-unit event earns 4 (8 x 3/6).</summary>
-    [Fact]
-    public void For_PartialAttendance_ReturnsProratedValue()
-    {
-        var registration = Registration(EventMode.Onsite);
-        var @event = new Event { CpdUnitsOnsite = 8m };
-
-        var credit = CpdCredit.For(registration, @event, sessionsAttended: 3, totalSessions: 6);
-
-        Assert.Equal(4m, credit);
-    }
-
-    /// <summary>Matches spec.md's "Onsite and Online registrations on the same event earn different
-    /// credit".</summary>
-    [Theory]
-    [InlineData(EventMode.Onsite, 8)]
-    [InlineData(EventMode.Online, 4)]
-    public void For_FullAttendance_UsesUnitsForTheRegistrationsOwnMode(EventMode mode, decimal expected)
-    {
-        var registration = Registration(mode);
-        var @event = new Event { CpdUnitsOnsite = 8m, CpdUnitsOnline = 4m };
-
-        var credit = CpdCredit.For(registration, @event, sessionsAttended: 6, totalSessions: 6);
-
-        Assert.Equal(expected, credit);
-    }
-
-    [Fact]
-    public void For_ZeroTotalSessions_ReturnsNull()
-    {
-        var registration = Registration(EventMode.Onsite);
-        var @event = new Event { CpdUnitsOnsite = 8m };
-
-        var credit = CpdCredit.For(registration, @event, sessionsAttended: 0, totalSessions: 0);
-
-        Assert.Null(credit);
-    }
-}
-```
-
-- [ ] **Step 2: Run the tests to verify they fail**
-
-Run: `dotnet test tests/PSMPE.Portal.Application.UnitTests --filter CpdCreditTests`
-Expected: FAIL — the Task 5 placeholder always returns `null`, so
-`For_PartialAttendance_ReturnsProratedValue` and `For_FullAttendance_UsesUnitsForTheRegistrationsOwnMode`
-fail their `Assert.Equal`.
-
-- [ ] **Step 3: Replace the `CpdCredit` placeholder with the real implementation**
-
-```csharp
-namespace PSMPE.Portal.Application.Events;
-
-using PSMPE.Portal.Domain.Entities;
-using PSMPE.Portal.Domain.Enums;
 
 /// <summary>
-/// CPD credit is computed here, never stored on EventRegistration - see the design note at the top
-/// of tasks.md and add-events-cpd-tracker/proposal.md. A registration only counts once it has
-/// completed the full loop (evaluation submitted) AND the applicable modality's unit count has been
-/// set, and the value is prorated by how many of the event's sessions were actually attended.
+/// Validates, downscales, and stores an Event's poster/banner image via IFileStorageService,
+/// writing the resulting key directly onto Event.PosterImageStorageKey - same
+/// validate-downscale-reencode-via-SkiaSharp pipeline MemberUploadService uses for Member Photo
+/// (src/PSMPE.Portal.Application/Members/MemberUploadService.cs), simplified since a poster has
+/// exactly one allowed kind (image, no PDF) and lives directly on the owning row rather than a
+/// separate MemberUpload-style join table. See add-events-cpd-tracker/proposal.md's 2026-08-29
+/// revision.
 /// </summary>
-internal static class CpdCredit
+public class EventPosterService(IApplicationDbContext db, IFileStorageService storage) : IEventPosterService
 {
-    public static decimal? For(EventRegistration registration, Event @event, int sessionsAttended, int totalSessions)
+    private const long MaxPosterSizeBytes = 8 * 1024 * 1024;
+    private const int MaxPosterDimension = 1600;
+    private const int JpegQuality = 82;
+    private static readonly string[] AllowedExtensions = [".jpg", ".jpeg", ".png"];
+
+    public async Task<Result> UploadAsync(
+        Guid eventId, Stream content, string fileName, long contentLength, CancellationToken cancellationToken = default)
     {
-        if (registration.Status != EventRegistrationStatus.EvaluationSubmitted || totalSessions <= 0)
+        var @event = await db.Events.FirstOrDefaultAsync(e => e.Id == eventId, cancellationToken);
+        if (@event is null)
+        {
+            return Result.NotFound($"Event '{eventId}' was not found.");
+        }
+
+        if (contentLength == 0)
+        {
+            return Result.Failure("No file was provided.");
+        }
+
+        var extension = Path.GetExtension(fileName).ToLowerInvariant();
+        if (!AllowedExtensions.Contains(extension))
+        {
+            return Result.Failure("Only JPG or PNG files are allowed.");
+        }
+
+        if (contentLength > MaxPosterSizeBytes)
+        {
+            return Result.Failure("File exceeds the 8 MB size limit.");
+        }
+
+        using var original = SKBitmap.Decode(content);
+        if (original is null)
+        {
+            return Result.Failure("Could not read the image file - it may be corrupted.");
+        }
+
+        using var optimized = OptimizeImage(original);
+        using var optimizedImage = SKImage.FromBitmap(optimized);
+        using var jpegData = optimizedImage.Encode(SKEncodedImageFormat.Jpeg, JpegQuality);
+
+        var storageKey = $"events/{eventId}/poster.jpg";
+        using var jpegStream = jpegData.AsStream();
+        await storage.SaveAsync(storageKey, jpegStream, cancellationToken);
+
+        @event.PosterImageStorageKey = storageKey;
+        @event.UpdatedAt = DateTimeOffset.UtcNow;
+        await db.SaveChangesAsync(cancellationToken);
+
+        return Result.Success();
+    }
+
+    public async Task<(Stream Content, string ContentType)?> GetAsync(Guid eventId, CancellationToken cancellationToken = default)
+    {
+        var storageKey = await db.Events.AsNoTracking()
+            .Where(e => e.Id == eventId)
+            .Select(e => e.PosterImageStorageKey)
+            .FirstOrDefaultAsync(cancellationToken);
+        if (storageKey is null)
         {
             return null;
         }
 
-        var unitsForMode = registration.Mode == EventMode.Onsite ? @event.CpdUnitsOnsite : @event.CpdUnitsOnline;
-        return unitsForMode is null ? null : unitsForMode.Value * sessionsAttended / totalSessions;
+        var stream = await storage.OpenReadAsync(storageKey, cancellationToken);
+        return stream is null ? null : (stream, "image/jpeg");
+    }
+
+    /// <summary>Downscales only (never upscales) so the longest side is at most MaxPosterDimension -
+    /// same reasoning as MemberUploadService.OptimizeImage.</summary>
+    private static SKBitmap OptimizeImage(SKBitmap original)
+    {
+        var longestSide = Math.Max(original.Width, original.Height);
+        if (longestSide <= MaxPosterDimension)
+        {
+            return original.Copy();
+        }
+
+        var scale = (double)MaxPosterDimension / longestSide;
+        var newWidth = (int)Math.Round(original.Width * scale);
+        var newHeight = (int)Math.Round(original.Height * scale);
+
+        var resized = original.Resize(new SKImageInfo(newWidth, newHeight), SKFilterQuality.High);
+        return resized ?? original.Copy();
     }
 }
 ```
 
-- [ ] **Step 4: Run the `CpdCredit` tests to verify they pass**
-
-Run: `dotnet test tests/PSMPE.Portal.Application.UnitTests --filter CpdCreditTests`
-Expected: PASS (5 tests).
-
-- [ ] **Step 5: Create `MyCpdSummaryDto`**
+- [ ] **Step 3: Register the new service in `DependencyInjection.cs`** — add one line:
 
 ```csharp
-namespace PSMPE.Portal.Application.Events.Dtos;
-
-public record MyCpdRegistrationDto(
-    Guid RegistrationId,
-    Guid EventId,
-    string EventTitle,
-    DateTimeOffset EventStartsAt,
-    string Mode,
-    string Status,
-    int SessionsAttended,
-    int TotalSessions,
-    decimal? CreditUnits);
-
-public record MyCpdSummaryDto(decimal TotalCreditUnits, IReadOnlyList<MyCpdRegistrationDto> Registrations);
-```
-
-- [ ] **Step 6: Add the new member to `IEventService`**
-
-```csharp
-    Task<MyCpdSummaryDto> GetMyCpdAsync(Guid userId, CancellationToken cancellationToken = default);
-```
-
-- [ ] **Step 7: Write the failing tests for `GetMyCpdAsync`**
-
-Append to `EventServiceTests.cs`:
-
-```csharp
-    /// <summary>Matches spec.md's "A member's CPD total reflects only completed, credited
-    /// registrations".</summary>
-    [Fact]
-    public async Task GetMyCpdAsync_SumsOnlyEvaluationSubmittedRegistrationsWithNonNullUnits()
-    {
-        using var db = TestDbContext.CreateInMemory();
-        var service = new EventService(db);
-        var member = await SeedMemberForEventTestsAsync(db);
-
-        var creditedEvent = (await service.CreateAsync(ValidCreateRequest("Credited Event"))).Value!;
-        await service.UpdateAsync(creditedEvent.Id, ToUpdateRequest(creditedEvent) with { CpdUnitsOnsite = 8m });
-        var creditedRegistration = (await service.RegisterAsync(member.UserId, creditedEvent.Id, "Onsite")).Value!;
-        await MarkPaymentVerifiedAsync(db, creditedRegistration.Id);
-        await service.RecordAttendanceAsync(
-            creditedEvent.Id, [new RegistrantAttendanceRequest(creditedRegistration.Id, [creditedEvent.Sessions.Single().Id])], Guid.NewGuid());
-        await service.SubmitEvaluationAsync(member.UserId, creditedRegistration.Id, rating: 5, comments: null);
-
-        var tbdEvent = (await service.CreateAsync(ValidCreateRequest("TBD Units Event"))).Value!;
-        var tbdRegistration = (await service.RegisterAsync(member.UserId, tbdEvent.Id, "Onsite")).Value!;
-        await MarkPaymentVerifiedAsync(db, tbdRegistration.Id);
-        await service.RecordAttendanceAsync(
-            tbdEvent.Id, [new RegistrantAttendanceRequest(tbdRegistration.Id, [tbdEvent.Sessions.Single().Id])], Guid.NewGuid());
-        await service.SubmitEvaluationAsync(member.UserId, tbdRegistration.Id, rating: 5, comments: null);
-
-        var notYetEvaluatedEvent = (await service.CreateAsync(ValidCreateRequest("Not Yet Evaluated Event"))).Value!;
-        await service.UpdateAsync(notYetEvaluatedEvent.Id, ToUpdateRequest(notYetEvaluatedEvent) with { CpdUnitsOnsite = 6m });
-        await service.RegisterAsync(member.UserId, notYetEvaluatedEvent.Id, "Onsite");
-
-        var summary = await service.GetMyCpdAsync(member.UserId);
-
-        Assert.Equal(8m, summary.TotalCreditUnits);
-        Assert.Equal(3, summary.Registrations.Count);
-    }
-
-    [Fact]
-    public async Task GetMyCpdAsync_NoMemberProfile_ReturnsEmptySummary()
-    {
-        using var db = TestDbContext.CreateInMemory();
-        var service = new EventService(db);
-
-        var summary = await service.GetMyCpdAsync(Guid.NewGuid());
-
-        Assert.Equal(0m, summary.TotalCreditUnits);
-        Assert.Empty(summary.Registrations);
-    }
-```
-
-- [ ] **Step 8: Run the tests to verify they fail**
-
-Run: `dotnet test tests/PSMPE.Portal.Application.UnitTests --filter EventServiceTests`
-Expected: FAIL to compile — `GetMyCpdAsync` doesn't exist yet.
-
-- [ ] **Step 9: Implement `GetMyCpdAsync`**
-
-```csharp
-using Microsoft.EntityFrameworkCore;
-using PSMPE.Portal.Application.Events.Dtos;
-using PSMPE.Portal.Domain.Enums;
-
-namespace PSMPE.Portal.Application.Events;
-
-public partial class EventService
-{
-    public async Task<MyCpdSummaryDto> GetMyCpdAsync(Guid userId, CancellationToken cancellationToken = default)
-    {
-        var member = await db.Members.FirstOrDefaultAsync(m => m.UserId == userId, cancellationToken);
-        if (member is null)
-        {
-            return new MyCpdSummaryDto(0m, []);
-        }
-
-        var registrations = await db.EventRegistrations
-            .Include(r => r.Event).ThenInclude(e => e.Sessions)
-            .Where(r => r.MemberId == member.Id && r.Status != EventRegistrationStatus.Cancelled)
-            .ToListAsync(cancellationToken);
-        var registrationIds = registrations.Select(r => r.Id).ToList();
-
-        var attendanceCounts = await db.EventAttendances
-            .Where(a => registrationIds.Contains(a.EventRegistrationId))
-            .GroupBy(a => a.EventRegistrationId)
-            .Select(g => new { RegistrationId = g.Key, Count = g.Count() })
-            .ToDictionaryAsync(g => g.RegistrationId, g => g.Count, cancellationToken);
-
-        var items = registrations.Select(r =>
-        {
-            var sessionsAttended = attendanceCounts.GetValueOrDefault(r.Id);
-            var totalSessions = r.Event.Sessions.Count;
-            var credit = CpdCredit.For(r, r.Event, sessionsAttended, totalSessions);
-            return new MyCpdRegistrationDto(
-                r.Id, r.EventId, r.Event.Title, r.Event.StartsAt, r.Mode.ToString(), r.Status.ToString(),
-                sessionsAttended, totalSessions, credit);
-        }).ToList();
-
-        var total = items.Sum(i => i.CreditUnits ?? 0m);
-        return new MyCpdSummaryDto(total, items);
-    }
-}
-```
-
-- [ ] **Step 10: Run the tests to verify they pass**
-
-Run: `dotnet test tests/PSMPE.Portal.Application.UnitTests --filter EventServiceTests`
-Expected: PASS (all tests from Step 7 and prior tasks).
-
-- [ ] **Step 11: Commit**
-
-```bash
-git add src/PSMPE.Portal.Application/Events/ tests/PSMPE.Portal.Application.UnitTests/Events/CpdCreditTests.cs \
-  tests/PSMPE.Portal.Application.UnitTests/Events/EventServiceTests.cs
-git commit -m "feat: implement prorated CPD credit computation and My CPD summary"
-```
-
----
-
-## 9. Payment integration
-
-**Files:**
-- Create: `src/PSMPE.Portal.Application/Payments/EventPaymentVerification.cs`
-- Modify: `src/PSMPE.Portal.Application/Payments/IPaymentService.cs`
-- Modify: `src/PSMPE.Portal.Application/Payments/PaymentService.cs`
-- Test: `tests/PSMPE.Portal.Application.UnitTests/Payments/PaymentServiceTests.cs`
-
-`PaymentsController` itself needs **no changes** — `POST /api/payments/{id}/verify`,
-`POST /api/payments/{id}/reject`, and `POST /api/payments/{id}/proof` already work off a bare
-`Payment.Id` with no assumption about `Kind`, so an event registration's payment rides the exact
-same endpoints a membership payment uses. Only `PaymentService`'s bodies grow a branch. The two
-genuinely new payment actions (member submits proof for an event registration; admin records a cash
-payment) are new `PaymentService` methods, called from the new `EventsController` in Task 12.
-
-- [ ] **Step 1: Write the failing tests for `VerifyAsync`/`RejectAsync` on an event-registration payment**
-
-Append to `PaymentServiceTests.cs`:
-
-```csharp
-    private static async Task<(Member Member, EventRegistration Registration)> SeedEventRegistrationAsync(
-        TestDbContext db, EventRegistrationStatus status = EventRegistrationStatus.Registered)
-    {
-        var user = new ApplicationUser { UserName = $"{Guid.NewGuid()}@example.com", Email = $"{Guid.NewGuid()}@example.com" };
-        db.Add(user);
-        var member = new Member { UserId = user.Id, User = user, FirstName = "Ana", LastName = "Reyes", Chapter = Chapters.Ncr, MemberType = MemberTypes.Regular };
-        db.Members.Add(member);
-
-        var @event = new Event { Title = "Seminar", StartsAt = DateTimeOffset.UtcNow.AddDays(5), EndsAt = DateTimeOffset.UtcNow.AddDays(5).AddHours(4), Fee = 500m };
-        db.Events.Add(@event);
-
-        var registration = new EventRegistration { EventId = @event.Id, Event = @event, MemberId = member.Id, Member = member, Mode = EventMode.Onsite, Status = status };
-        db.EventRegistrations.Add(registration);
-        await db.SaveChangesAsync();
-        return (member, registration);
-    }
-
-    [Fact]
-    public async Task SubmitForEventRegistrationAsync_Valid_CreatesPaymentAndMovesToPaymentSubmitted()
-    {
-        using var db = TestDbContext.CreateInMemory();
-        var service = new PaymentService(db);
-        var (member, registration) = await SeedEventRegistrationAsync(db);
-
-        var result = await service.SubmitForEventRegistrationAsync(
-            member.UserId, registration.Id, new SubmitPaymentRequest(500m, "REF-1", DateOnly.FromDateTime(DateTime.UtcNow)));
-
-        Assert.True(result.Succeeded);
-        Assert.Equal(PaymentKind.EventRegistration, result.Value!.Kind);
-        var updated = await db.EventRegistrations.FindAsync(registration.Id);
-        Assert.Equal(EventRegistrationStatus.PaymentSubmitted, updated!.Status);
-    }
-
-    [Fact]
-    public async Task SubmitForEventRegistrationAsync_SecondSubmissionWhilePending_Fails()
-    {
-        using var db = TestDbContext.CreateInMemory();
-        var service = new PaymentService(db);
-        var (member, registration) = await SeedEventRegistrationAsync(db);
-        var request = new SubmitPaymentRequest(500m, "REF-1", DateOnly.FromDateTime(DateTime.UtcNow));
-        await service.SubmitForEventRegistrationAsync(member.UserId, registration.Id, request);
-
-        var result = await service.SubmitForEventRegistrationAsync(member.UserId, registration.Id, request);
-
-        Assert.False(result.Succeeded);
-        Assert.Equal(ResultErrorType.Conflict, result.ErrorType);
-    }
-
-    /// <summary>Matches spec.md's "Verifying an event payment advances the registration".</summary>
-    [Fact]
-    public async Task VerifyAsync_EventRegistrationPayment_MovesRegistrationToPaymentVerified()
-    {
-        using var db = TestDbContext.CreateInMemory();
-        var service = new PaymentService(db);
-        var (member, registration) = await SeedEventRegistrationAsync(db, EventRegistrationStatus.PaymentSubmitted);
-        var payment = new Payment
-        {
-            MemberId = member.Id, Kind = PaymentKind.EventRegistration, EventRegistrationId = registration.Id,
-            Amount = 500m, PaidOn = DateOnly.FromDateTime(DateTime.UtcNow), ProofStorageKey = "proof/key.jpg",
-            Status = PaymentStatus.Submitted,
-        };
-        db.Payments.Add(payment);
-        await db.SaveChangesAsync();
-
-        var result = await service.VerifyAsync(payment.Id, Guid.NewGuid());
-
-        Assert.True(result.Succeeded);
-        Assert.Equal(PaymentStatus.Verified, payment.Status);
-        var updated = await db.EventRegistrations.FindAsync(registration.Id);
-        Assert.Equal(EventRegistrationStatus.PaymentVerified, updated!.Status);
-    }
-
-    /// <summary>Matches spec.md's "A rejected event payment can be resubmitted".</summary>
-    [Fact]
-    public async Task RejectAsync_EventRegistrationPayment_SetsRegistrationRejectedAndAllowsResubmission()
-    {
-        using var db = TestDbContext.CreateInMemory();
-        var service = new PaymentService(db);
-        var (member, registration) = await SeedEventRegistrationAsync(db, EventRegistrationStatus.PaymentSubmitted);
-        var payment = new Payment
-        {
-            MemberId = member.Id, Kind = PaymentKind.EventRegistration, EventRegistrationId = registration.Id,
-            Amount = 500m, PaidOn = DateOnly.FromDateTime(DateTime.UtcNow), ProofStorageKey = "proof/key.jpg",
-            Status = PaymentStatus.Submitted,
-        };
-        db.Payments.Add(payment);
-        await db.SaveChangesAsync();
-
-        var rejectResult = await service.RejectAsync(payment.Id, "Amount doesn't match the fee.", Guid.NewGuid());
-
-        Assert.True(rejectResult.Succeeded);
-        var updated = await db.EventRegistrations.FindAsync(registration.Id);
-        Assert.Equal(EventRegistrationStatus.Rejected, updated!.Status);
-
-        var resubmit = await service.SubmitForEventRegistrationAsync(
-            member.UserId, registration.Id, new SubmitPaymentRequest(500m, "REF-2", DateOnly.FromDateTime(DateTime.UtcNow)));
-        Assert.True(resubmit.Succeeded);
-    }
-
-    /// <summary>Matches spec.md's "An admin records a cash payment".</summary>
-    [Fact]
-    public async Task RecordEventCashPaymentAsync_Valid_CreatesVerifiedPaymentAndMovesRegistration()
-    {
-        using var db = TestDbContext.CreateInMemory();
-        var service = new PaymentService(db);
-        var (_, registration) = await SeedEventRegistrationAsync(db);
-        var adminUserId = Guid.NewGuid();
-
-        var result = await service.RecordEventCashPaymentAsync(registration.Id, 500m, adminUserId);
-
-        Assert.True(result.Succeeded);
-        Assert.Equal(PaymentStatus.Verified, result.Value!.Status);
-        Assert.False(result.Value.HasProof);
-        var updated = await db.EventRegistrations.FindAsync(registration.Id);
-        Assert.Equal(EventRegistrationStatus.PaymentVerified, updated!.Status);
-    }
-
-    /// <summary>Matches spec.md's "A cash payment cannot be recorded over an existing payment".</summary>
-    [Fact]
-    public async Task RecordEventCashPaymentAsync_RegistrationAlreadyHasSubmittedPayment_Fails()
-    {
-        using var db = TestDbContext.CreateInMemory();
-        var service = new PaymentService(db);
-        var (member, registration) = await SeedEventRegistrationAsync(db);
-        await service.SubmitForEventRegistrationAsync(
-            member.UserId, registration.Id, new SubmitPaymentRequest(500m, "REF-1", DateOnly.FromDateTime(DateTime.UtcNow)));
-
-        var result = await service.RecordEventCashPaymentAsync(registration.Id, 500m, Guid.NewGuid());
-
-        Assert.False(result.Succeeded);
-        Assert.Equal(ResultErrorType.Conflict, result.ErrorType);
-    }
-
-    [Fact]
-    public async Task RecordEventCashPaymentAsync_AfterEarlierRejection_Succeeds()
-    {
-        using var db = TestDbContext.CreateInMemory();
-        var service = new PaymentService(db);
-        var (member, registration) = await SeedEventRegistrationAsync(db);
-        var submitted = await service.SubmitForEventRegistrationAsync(
-            member.UserId, registration.Id, new SubmitPaymentRequest(500m, "REF-1", DateOnly.FromDateTime(DateTime.UtcNow)));
-        await service.RejectAsync(submitted.Value!.Id, "Wrong amount.", Guid.NewGuid());
-
-        var result = await service.RecordEventCashPaymentAsync(registration.Id, 500m, Guid.NewGuid());
-
-        Assert.True(result.Succeeded);
-    }
-```
-
-Add `using PSMPE.Portal.Domain.Entities;` (for `EventRegistration`, `Event`) and
-`using PSMPE.Portal.Application.Events.Dtos;` (for `SubmitPaymentRequest` — no, that one is already
-`PSMPE.Portal.Application.Payments.Dtos`, already imported) to `PaymentServiceTests.cs` if not
-already present; `EventMode`/`EventRegistrationStatus` come from the existing
-`PSMPE.Portal.Domain.Enums` import.
-
-- [ ] **Step 2: Run the tests to verify they fail**
-
-Run: `dotnet test tests/PSMPE.Portal.Application.UnitTests --filter PaymentServiceTests`
-Expected: FAIL to compile — `SubmitForEventRegistrationAsync`/`RecordEventCashPaymentAsync` don't
-exist yet, and `VerifyAsync`/`RejectAsync` don't yet touch `EventRegistration.Status`.
-
-- [ ] **Step 3: Create `EventPaymentVerification`**
-
-```csharp
-using PSMPE.Portal.Domain.Entities;
-using PSMPE.Portal.Domain.Enums;
-
-namespace PSMPE.Portal.Application.Payments;
-
-/// <summary>
-/// The effect of accepting an event-registration payment, in one place - the EventRegistration
-/// counterpart to PaymentVerification.Apply (which is membership-specific: it dereferences
-/// Member.ApprovedAt and computes RenewalDueDate, neither of which applies here). Two callers apply
-/// it: PaymentService.VerifyAsync (a member's proof was accepted) and
-/// PaymentService.RecordEventCashPaymentAsync (an admin recorded cash on the spot) - see
-/// add-events-cpd-tracker/proposal.md.
-/// </summary>
-internal static class EventPaymentVerification
-{
-    public static void Apply(Payment payment, EventRegistration registration, Guid decidedByUserId)
-    {
-        registration.Status = EventRegistrationStatus.PaymentVerified;
-        registration.UpdatedAt = DateTimeOffset.UtcNow;
-
-        payment.Status = PaymentStatus.Verified;
-        payment.RejectedReason = null;
-        payment.DecidedByUserId = decidedByUserId;
-        payment.DecidedAt = DateTimeOffset.UtcNow;
-        payment.UpdatedAt = DateTimeOffset.UtcNow;
-    }
-}
-```
-
-- [ ] **Step 4: Add the two new members to `IPaymentService`**
-
-In `src/PSMPE.Portal.Application/Payments/IPaymentService.cs`, add:
-
-```csharp
-    /// <summary>Self-service submission of a proof-of-payment for an event registration - the
-    /// EventRegistration counterpart to SubmitAsync. Kind is always EventRegistration, decided by
-    /// the caller passing a registrationId rather than trusted from the request body.</summary>
-    Task<Result<PaymentDto>> SubmitForEventRegistrationAsync(
-        Guid userId, Guid registrationId, SubmitPaymentRequest request, CancellationToken cancellationToken = default);
-
-    /// <summary>Creates and immediately verifies a Payment with no proof file, for an on-site cash
-    /// payer - reaches the same PaymentVerified state as the proof-upload path in one call. Refused
-    /// if the registration already has a Submitted or Verified Payment.</summary>
-    Task<Result<PaymentDto>> RecordEventCashPaymentAsync(
-        Guid registrationId, decimal amount, Guid decidedByUserId, CancellationToken cancellationToken = default);
-```
-
-- [ ] **Step 5: Extend `VerifyAsync` and `RejectAsync`, and add the two new methods**
-
-In `src/PSMPE.Portal.Application/Payments/PaymentService.cs`, replace the body of `VerifyAsync`:
-
-```csharp
-    public async Task<Result> VerifyAsync(Guid paymentId, Guid decidedByUserId, CancellationToken cancellationToken = default)
-    {
-        var payment = await db.Payments.Include(p => p.Member)
-            .FirstOrDefaultAsync(p => p.Id == paymentId, cancellationToken);
-        if (payment is null)
-        {
-            return Result.NotFound($"Payment '{paymentId}' was not found.");
-        }
-
-        if (payment.Status == PaymentStatus.Verified)
-        {
-            // Idempotent, same as before - a repeat call must not re-run either side effect.
-            return Result.Success();
-        }
-
-        if (payment.Status == PaymentStatus.Rejected)
-        {
-            return Result.Failure("This payment was rejected. The member needs to submit a new one.");
-        }
-
-        if (payment.ProofStorageKey is null)
-        {
-            return Result.Failure("This payment has no proof attached - there's nothing to verify against.");
-        }
-
-        if (payment.Kind == PaymentKind.EventRegistration)
-        {
-            var registration = payment.EventRegistrationId is null
-                ? null
-                : await db.EventRegistrations.FirstOrDefaultAsync(r => r.Id == payment.EventRegistrationId, cancellationToken);
-            if (registration is null)
-            {
-                return Result.Failure("The event registration for this payment no longer exists.");
-            }
-            if (registration.Status != EventRegistrationStatus.PaymentSubmitted)
-            {
-                return Result.Failure("This registration isn't awaiting payment verification.");
-            }
-
-            EventPaymentVerification.Apply(payment, registration, decidedByUserId);
-            await db.SaveChangesAsync(cancellationToken);
-            return Result.Success();
-        }
-
-        var member = payment.Member;
-
-        // Payment can't admit someone. Approval is a separate decision that gates on RMP
-        // verification (see MemberService.ApproveAsync); paying doesn't bypass it.
-        if (member.ApprovedAt is null)
-        {
-            return Result.Failure("This member's application hasn't been approved yet, so their payment can't activate a membership.");
-        }
-
-        PaymentVerification.Apply(payment, member, decidedByUserId);
-
-        await db.SaveChangesAsync(cancellationToken);
-        return Result.Success();
-    }
-```
-
-Replace the body of `RejectAsync`:
-
-```csharp
-    public async Task<Result> RejectAsync(Guid paymentId, string reason, Guid decidedByUserId, CancellationToken cancellationToken = default)
-    {
-        if (string.IsNullOrWhiteSpace(reason))
-        {
-            return Result.Failure("A reason is required to reject a payment.");
-        }
-
-        var payment = await db.Payments.FirstOrDefaultAsync(p => p.Id == paymentId, cancellationToken);
-        if (payment is null)
-        {
-            return Result.NotFound($"Payment '{paymentId}' was not found.");
-        }
-
-        if (payment.Status == PaymentStatus.Verified)
-        {
-            // Reversing a verification would have to un-advance a due date (or un-attend a
-            // registration) - deliberately not a thing this endpoint does.
-            return Result.Failure("This payment was already verified and can't be rejected.");
-        }
-
-        if (payment.Kind == PaymentKind.EventRegistration && payment.EventRegistrationId is not null)
-        {
-            var registration = await db.EventRegistrations.FirstOrDefaultAsync(r => r.Id == payment.EventRegistrationId, cancellationToken);
-            if (registration is not null)
-            {
-                registration.Status = EventRegistrationStatus.Rejected;
-                registration.UpdatedAt = DateTimeOffset.UtcNow;
-            }
-        }
-
-        payment.Status = PaymentStatus.Rejected;
-        payment.RejectedReason = reason.Trim();
-        payment.DecidedByUserId = decidedByUserId;
-        payment.DecidedAt = DateTimeOffset.UtcNow;
-        payment.UpdatedAt = DateTimeOffset.UtcNow;
-
-        // Member Status and RenewalDueDate are deliberately untouched for a NewMembership/Renewal
-        // rejection - a rejected renewal leaves the member exactly where they were, still owing.
-        await db.SaveChangesAsync(cancellationToken);
-        return Result.Success();
-    }
-```
-
-Add the two new methods (anywhere in the class, e.g. after `RejectAsync`):
-
-```csharp
-    public async Task<Result<PaymentDto>> SubmitForEventRegistrationAsync(
-        Guid userId, Guid registrationId, SubmitPaymentRequest request, CancellationToken cancellationToken = default)
-    {
-        var registration = await db.EventRegistrations.Include(r => r.Member)
-            .FirstOrDefaultAsync(r => r.Id == registrationId, cancellationToken);
-        if (registration is null)
-        {
-            return Result<PaymentDto>.NotFound($"Registration '{registrationId}' was not found.");
-        }
-        if (registration.Member.UserId != userId)
-        {
-            return Result<PaymentDto>.Forbidden("This isn't your registration.");
-        }
-        if (registration.Status is not (EventRegistrationStatus.Registered or EventRegistrationStatus.Rejected))
-        {
-            return Result<PaymentDto>.Failure("This registration isn't awaiting payment.");
-        }
-
-        if (request.Amount <= 0)
-        {
-            return Result<PaymentDto>.Failure("Amount must be greater than zero.");
-        }
-        if (request.PaidOn > DateOnly.FromDateTime(DateTime.UtcNow))
-        {
-            return Result<PaymentDto>.Failure("Payment date can't be in the future.");
-        }
-        if (request.ReferenceNo?.Length > 64)
-        {
-            return Result<PaymentDto>.Failure("Reference number must be 64 characters or fewer.");
-        }
-
-        var hasPending = await db.Payments.AnyAsync(
-            p => p.EventRegistrationId == registrationId && p.Status == PaymentStatus.Submitted, cancellationToken);
-        if (hasPending)
-        {
-            return Result<PaymentDto>.Conflict("You already have a payment awaiting verification for this registration.");
-        }
-
-        var payment = new Payment
-        {
-            MemberId = registration.MemberId,
-            Member = registration.Member,
-            Kind = PaymentKind.EventRegistration,
-            EventRegistrationId = registration.Id,
-            Amount = request.Amount,
-            ReferenceNo = request.ReferenceNo?.Trim(),
-            PaidOn = request.PaidOn,
-            Status = PaymentStatus.Submitted,
-        };
-        db.Payments.Add(payment);
-
-        registration.Status = EventRegistrationStatus.PaymentSubmitted;
-        registration.UpdatedAt = DateTimeOffset.UtcNow;
-
-        await db.SaveChangesAsync(cancellationToken);
-        return Result<PaymentDto>.Success(ToDto(payment));
-    }
-
-    public async Task<Result<PaymentDto>> RecordEventCashPaymentAsync(
-        Guid registrationId, decimal amount, Guid decidedByUserId, CancellationToken cancellationToken = default)
-    {
-        var registration = await db.EventRegistrations.Include(r => r.Member)
-            .FirstOrDefaultAsync(r => r.Id == registrationId, cancellationToken);
-        if (registration is null)
-        {
-            return Result<PaymentDto>.NotFound($"Registration '{registrationId}' was not found.");
-        }
-
-        if (amount <= 0)
-        {
-            return Result<PaymentDto>.Failure("Amount must be greater than zero.");
-        }
-
-        // "Exactly one Payment, regardless of path" - a Rejected payment doesn't count, same as
-        // SubmitForEventRegistrationAsync's own pending check, so a cash payment can still cover a
-        // registration whose earlier proof submission was rejected.
-        var hasActivePayment = await db.Payments.AnyAsync(
-            p => p.EventRegistrationId == registrationId && p.Status != PaymentStatus.Rejected, cancellationToken);
-        if (hasActivePayment)
-        {
-            return Result<PaymentDto>.Conflict("This registration already has a submitted or verified payment.");
-        }
-
-        var payment = new Payment
-        {
-            MemberId = registration.MemberId,
-            Member = registration.Member,
-            Kind = PaymentKind.EventRegistration,
-            EventRegistrationId = registration.Id,
-            Amount = amount,
-            PaidOn = DateOnly.FromDateTime(DateTime.UtcNow),
-            Status = PaymentStatus.Submitted,
-        };
-        db.Payments.Add(payment);
-
-        EventPaymentVerification.Apply(payment, registration, decidedByUserId);
-
-        await db.SaveChangesAsync(cancellationToken);
-        return Result<PaymentDto>.Success(ToDto(payment));
-    }
-```
-
-- [ ] **Step 6: Run the tests to verify they pass**
-
-Run: `dotnet test tests/PSMPE.Portal.Application.UnitTests --filter PaymentServiceTests`
-Expected: PASS (all tests from Step 1 and the pre-existing membership-payment tests, which must
-still pass unmodified — `VerifyAsync`/`RejectAsync`'s `NewMembership`/`Renewal` behavior is
-untouched by the new `Kind == EventRegistration` branch).
-
-- [ ] **Step 7: Commit**
-
-```bash
-git add src/PSMPE.Portal.Application/Payments/ tests/PSMPE.Portal.Application.UnitTests/Payments/PaymentServiceTests.cs
-git commit -m "feat: integrate event registration payments into PaymentService"
-```
-
----
-
-## 10. Roster query
-
-**Files:**
-- Create: `src/PSMPE.Portal.Application/Events/Dtos/EventRosterDto.cs`
-- Modify: `src/PSMPE.Portal.Application/Events/IEventService.cs`
-- Create: `src/PSMPE.Portal.Application/Events/EventService.Roster.cs`
-- Test: `tests/PSMPE.Portal.Application.UnitTests/Events/EventServiceTests.cs`
-
-- [ ] **Step 1: Create `EventRosterDto`**
-
-```csharp
-namespace PSMPE.Portal.Application.Events.Dtos;
-
-public record EventRosterEntryDto(
-    Guid RegistrationId,
-    Guid MemberId,
-    string MemberName,
-    string? MembershipNo,
-    string Mode,
-    string Status,
-    IReadOnlyList<Guid> AttendedSessionIds,
-    int TotalSessions,
-    Guid? PaymentId,
-    string? PaymentStatus,
-    /// <summary>True for a cash payment (no proof file ever attached), false for a proof-upload
-    /// payment, null if there's no Payment on this registration yet. Derived from
-    /// Payment.ProofStorageKey being null - a proof payment always has one attached before it can
-    /// reach Verified (see PaymentService.VerifyAsync), so there's no need for a separate stored
-    /// flag.</summary>
-    bool? PaymentIsCash,
-    string? PaymentRejectedReason,
-    int? EvaluationRating,
-    DateTimeOffset? EvaluationSubmittedAt,
-    decimal? CreditUnits);
-
-public record EventRosterDto(
-    Guid EventId,
-    string EventTitle,
-    IReadOnlyList<EventSessionDto> Sessions,
-    IReadOnlyList<EventRosterEntryDto> Registrants);
-```
-
-- [ ] **Step 2: Add the new member to `IEventService`**
-
-```csharp
-    Task<Result<EventRosterDto>> GetRosterAsync(Guid eventId, CancellationToken cancellationToken = default);
-```
-
-- [ ] **Step 3: Write the failing tests**
-
-Append to `EventServiceTests.cs`:
-
-```csharp
-    [Fact]
-    public async Task GetRosterAsync_UnknownEvent_NotFound()
-    {
-        using var db = TestDbContext.CreateInMemory();
-        var service = new EventService(db);
-
-        var result = await service.GetRosterAsync(Guid.NewGuid());
-
-        Assert.False(result.Succeeded);
-        Assert.Equal(ResultErrorType.NotFound, result.ErrorType);
-    }
-
-    [Fact]
-    public async Task GetRosterAsync_ReturnsPerSessionAttendancePaymentAndEvaluationState()
-    {
-        using var db = TestDbContext.CreateInMemory();
-        var service = new EventService(db);
-        var @event = (await service.CreateAsync(ValidCreateRequest())).Value!;
-        var member = await SeedMemberForEventTestsAsync(db);
-        var registration = (await service.RegisterAsync(member.UserId, @event.Id, "Onsite")).Value!;
-        var paymentService = new PaymentService(db);
-        var submitted = await paymentService.SubmitForEventRegistrationAsync(
-            member.UserId, registration.Id, new SubmitPaymentRequest(500m, "REF-1", DateOnly.FromDateTime(DateTime.UtcNow)));
-        db.Payments.First(p => p.Id == submitted.Value!.Id).ProofStorageKey = "proof/key.jpg";
-        await db.SaveChangesAsync();
-        await paymentService.VerifyAsync(submitted.Value!.Id, Guid.NewGuid());
-        var sessionId = @event.Sessions.Single().Id;
-        await service.RecordAttendanceAsync(@event.Id, [new RegistrantAttendanceRequest(registration.Id, [sessionId])], Guid.NewGuid());
-        await service.SubmitEvaluationAsync(member.UserId, registration.Id, rating: 5, comments: "Excellent");
-
-        var result = await service.GetRosterAsync(@event.Id);
-
-        Assert.True(result.Succeeded);
-        var entry = Assert.Single(result.Value!.Registrants);
-        Assert.Equal("EvaluationSubmitted", entry.Status);
-        Assert.Equal([sessionId], entry.AttendedSessionIds);
-        Assert.Equal(1, entry.TotalSessions);
-        Assert.Equal("Verified", entry.PaymentStatus);
-        Assert.False(entry.PaymentIsCash);
-        Assert.Equal(5, entry.EvaluationRating);
-    }
-
-    [Fact]
-    public async Task GetRosterAsync_CashPayment_ReportsPaymentIsCashTrue()
-    {
-        using var db = TestDbContext.CreateInMemory();
-        var service = new EventService(db);
-        var @event = (await service.CreateAsync(ValidCreateRequest())).Value!;
-        var member = await SeedMemberForEventTestsAsync(db);
-        var registration = (await service.RegisterAsync(member.UserId, @event.Id, "Onsite")).Value!;
-        var paymentService = new PaymentService(db);
-        await paymentService.RecordEventCashPaymentAsync(registration.Id, 500m, Guid.NewGuid());
-
-        var result = await service.GetRosterAsync(@event.Id);
-
-        var entry = Assert.Single(result.Value!.Registrants);
-        Assert.True(entry.PaymentIsCash);
-    }
-
-    [Fact]
-    public async Task GetRosterAsync_ExcludesCancelledRegistrations()
-    {
-        using var db = TestDbContext.CreateInMemory();
-        var service = new EventService(db);
-        var @event = (await service.CreateAsync(ValidCreateRequest())).Value!;
-        var member = await SeedMemberForEventTestsAsync(db);
-        var registration = (await service.RegisterAsync(member.UserId, @event.Id, "Onsite")).Value!;
-        await service.CancelRegistrationAsync(member.UserId, registration.Id);
-
-        var result = await service.GetRosterAsync(@event.Id);
-
-        Assert.Empty(result.Value!.Registrants);
-    }
-```
-
-Add `using PSMPE.Portal.Application.Payments;` and `using PSMPE.Portal.Application.Payments.Dtos;`
-to `EventServiceTests.cs` for `PaymentService`/`SubmitPaymentRequest`.
-
-- [ ] **Step 4: Run the tests to verify they fail**
-
-Run: `dotnet test tests/PSMPE.Portal.Application.UnitTests --filter EventServiceTests`
-Expected: FAIL to compile — `GetRosterAsync` doesn't exist yet.
-
-- [ ] **Step 5: Implement `GetRosterAsync`**
-
-```csharp
-using Microsoft.EntityFrameworkCore;
-using PSMPE.Portal.Application.Common.Models;
-using PSMPE.Portal.Application.Events.Dtos;
-using PSMPE.Portal.Domain.Enums;
-
-namespace PSMPE.Portal.Application.Events;
-
-public partial class EventService
-{
-    public async Task<Result<EventRosterDto>> GetRosterAsync(Guid eventId, CancellationToken cancellationToken = default)
-    {
-        var @event = await db.Events.Include(e => e.Sessions).FirstOrDefaultAsync(e => e.Id == eventId, cancellationToken);
-        if (@event is null)
-        {
-            return Result<EventRosterDto>.NotFound($"Event '{eventId}' was not found.");
-        }
-
-        var registrations = await db.EventRegistrations.Include(r => r.Member)
-            .Where(r => r.EventId == eventId && r.Status != EventRegistrationStatus.Cancelled)
-            .ToListAsync(cancellationToken);
-        var registrationIds = registrations.Select(r => r.Id).ToList();
-
-        var attendanceByRegistration = (await db.EventAttendances
-            .Where(a => registrationIds.Contains(a.EventRegistrationId))
-            .ToListAsync(cancellationToken))
-            .GroupBy(a => a.EventRegistrationId)
-            .ToDictionary(g => g.Key, g => (IReadOnlyList<Guid>)g.Select(a => a.EventSessionId).ToList());
-
-        var paymentByRegistration = (await db.Payments
-            .Where(p => p.EventRegistrationId != null && registrationIds.Contains(p.EventRegistrationId!.Value))
-            .OrderByDescending(p => p.CreatedAt)
-            .ToListAsync(cancellationToken))
-            .GroupBy(p => p.EventRegistrationId!.Value)
-            .ToDictionary(g => g.Key, g => g.First());
-
-        var totalSessions = @event.Sessions.Count;
-        var entries = registrations.Select(r =>
-        {
-            var attendedSessionIds = attendanceByRegistration.GetValueOrDefault(r.Id, []);
-            paymentByRegistration.TryGetValue(r.Id, out var payment);
-            return new EventRosterEntryDto(
-                r.Id, r.MemberId, $"{r.Member.FirstName} {r.Member.LastName}", r.Member.MembershipNo,
-                r.Mode.ToString(), r.Status.ToString(), attendedSessionIds, totalSessions,
-                payment?.Id, payment?.Status.ToString(), payment is null ? null : payment.ProofStorageKey is null,
-                payment?.RejectedReason, r.EvaluationRating, r.EvaluationSubmittedAt,
-                CpdCredit.For(r, @event, attendedSessionIds.Count, totalSessions));
-        }).ToList();
-
-        var sessions = @event.Sessions.OrderBy(s => s.Order)
-            .Select(s => new EventSessionDto(s.Id, s.Title, s.StartsAt, s.EndsAt, s.Order))
-            .ToList();
-
-        return Result<EventRosterDto>.Success(new EventRosterDto(@event.Id, @event.Title, sessions, entries));
-    }
-}
-```
-
-- [ ] **Step 6: Run the tests to verify they pass**
-
-Run: `dotnet test tests/PSMPE.Portal.Application.UnitTests --filter EventServiceTests`
-Expected: PASS (all tests from Step 3 and prior tasks).
-
-- [ ] **Step 7: Commit**
-
-```bash
-git add src/PSMPE.Portal.Application/Events/ tests/PSMPE.Portal.Application.UnitTests/Events/EventServiceTests.cs
-git commit -m "feat: add per-session roster query to EventService"
-```
-
----
-
-## 11. Certificate PDF generation
-
-**Files:**
-- Modify: `src/PSMPE.Portal.Application/PSMPE.Portal.Application.csproj`
-- Modify: `src/PSMPE.Portal.WebAPI/Program.cs`
-- Create: `src/PSMPE.Portal.Application/Events/Dtos/CertificateDataDto.cs`
-- Modify: `src/PSMPE.Portal.Application/Events/IEventService.cs`
-- Create: `src/PSMPE.Portal.Application/Events/EventService.Certificate.cs`
-- Create: `src/PSMPE.Portal.Application/Events/CertificatePdfGenerator.cs`
-- Test: `tests/PSMPE.Portal.Application.UnitTests/Events/EventServiceTests.cs`
-- Test: `tests/PSMPE.Portal.Application.UnitTests/Events/CertificatePdfGeneratorTests.cs`
-
-`GetCertificateDataAsync` (this task) is the Application-layer query that decides *whether* a
-certificate is available and assembles what goes on it — pure data, fully unit-testable against the
-InMemory provider. `CertificatePdfGenerator.Generate` (also this task) is the QuestPDF rendering
-step; it has no branching logic worth a full TDD cycle, so it gets one smoke test confirming it
-produces non-empty PDF bytes rather than a red/green cycle per visual detail.
-
-- [ ] **Step 1: Add the QuestPDF package reference**
-
-```bash
-dotnet add src/PSMPE.Portal.Application/PSMPE.Portal.Application.csproj package QuestPDF --version 2024.12.3
-```
-
-Expected: `PSMPE.Portal.Application.csproj` gains a `<PackageReference Include="QuestPDF" Version="2024.12.3" />`
-entry. (If that exact patch version is unavailable from NuGet by the time this task runs, install
-the latest `2024.x` release instead — QuestPDF's public API used below has been stable across that
-whole line.) QuestPDF's rendering pipeline depends on SkiaSharp, which this project already
-references for other image handling, so no further native-asset packages are needed.
-
-- [ ] **Step 2: Set the QuestPDF license at startup**
-
-In `src/PSMPE.Portal.WebAPI/Program.cs`, add near the top, right after `var builder = WebApplication.CreateBuilder(args);`:
-
-```csharp
-// Required by QuestPDF as of its Community-license versions - without this, every PDF generation
-// call throws at runtime. Community is free for PSMPE's use (a single small organization, not a
-// >$1M-revenue company reselling the software) - see QuestPDF's license terms if that ever changes.
-QuestPDF.Settings.License = QuestPDF.Infrastructure.LicenseType.Community;
-```
-
-Add `using QuestPDF.Infrastructure;` is not required since the type is fully qualified above; either
-form compiles.
-
-- [ ] **Step 3: Create `CertificateDataDto`**
-
-```csharp
-namespace PSMPE.Portal.Application.Events.Dtos;
-
-public record CertificateDataDto(
-    string MemberName,
-    string EventTitle,
-    DateTimeOffset EventStartsAt,
-    DateTimeOffset EventEndsAt,
-    string Mode,
-    IReadOnlyList<string> AttendedSessionTitles,
-    decimal CreditUnits);
-```
-
-- [ ] **Step 4: Add the new member to `IEventService`**
-
-```csharp
-    /// <summary>isAdmin bypasses the ownership check - an Admin can pull any registration's
-    /// certificate data, a member only their own.</summary>
-    Task<Result<CertificateDataDto>> GetCertificateDataAsync(
-        Guid userId, Guid registrationId, bool isAdmin, CancellationToken cancellationToken = default);
-```
-
-- [ ] **Step 5: Write the failing tests for `GetCertificateDataAsync`**
-
-Append to `EventServiceTests.cs`:
-
-```csharp
-    private async Task<(EventDto Event, EventRegistrationDto Registration, Member Member)> SeedCreditedRegistrationAsync(
-        TestDbContext db, EventService service, decimal onsiteUnits = 8m)
-    {
-        var created = (await service.CreateAsync(ValidCreateRequest())).Value!;
-        var @event = (await service.UpdateAsync(created.Id, ToUpdateRequest(created) with { CpdUnitsOnsite = onsiteUnits })).Value!;
-        var member = await SeedMemberForEventTestsAsync(db);
-        var registration = (await service.RegisterAsync(member.UserId, @event.Id, "Onsite")).Value!;
-        await MarkPaymentVerifiedAsync(db, registration.Id);
-        await service.RecordAttendanceAsync(@event.Id, [new RegistrantAttendanceRequest(registration.Id, [@event.Sessions.Single().Id])], Guid.NewGuid());
-        await service.SubmitEvaluationAsync(member.UserId, registration.Id, rating: 5, comments: null);
-        return (@event, registration, member);
-    }
-
-    /// <summary>Matches spec.md's "Certificate request before credit is earned is refused" - not
-    /// yet EvaluationSubmitted.</summary>
-    [Fact]
-    public async Task GetCertificateDataAsync_BeforeEvaluationSubmitted_Fails()
-    {
-        using var db = TestDbContext.CreateInMemory();
-        var service = new EventService(db);
-        var @event = (await service.CreateAsync(ValidCreateRequest())).Value!;
-        await service.UpdateAsync(@event.Id, ToUpdateRequest(@event) with { CpdUnitsOnsite = 8m });
-        var member = await SeedMemberForEventTestsAsync(db);
-        var registration = (await service.RegisterAsync(member.UserId, @event.Id, "Onsite")).Value!;
-
-        var result = await service.GetCertificateDataAsync(member.UserId, registration.Id, isAdmin: false);
-
-        Assert.False(result.Succeeded);
-    }
-
-    /// <summary>Matches spec.md's other "not yet available" case - unit value still null.</summary>
-    [Fact]
-    public async Task GetCertificateDataAsync_ApplicableUnitsStillNull_Fails()
-    {
-        using var db = TestDbContext.CreateInMemory();
-        var service = new EventService(db);
-        var (@event, registration, member) = await SeedCreditedRegistrationAsync(db, service, onsiteUnits: 8m);
-        // Correct the units back to null to simulate "never set for this modality".
-        await service.UpdateAsync(@event.Id, ToUpdateRequest(@event) with { CpdUnitsOnsite = null });
-
-        var result = await service.GetCertificateDataAsync(member.UserId, registration.Id, isAdmin: false);
-
-        Assert.False(result.Succeeded);
-    }
-
-    /// <summary>Matches spec.md's "Certificate lists only attended sessions".</summary>
-    [Fact]
-    public async Task GetCertificateDataAsync_ListsOnlyAttendedSessions()
-    {
-        using var db = TestDbContext.CreateInMemory();
-        var service = new EventService(db);
-        var created = (await service.CreateAsync(ValidCreateRequest())).Value!;
-        var sixSessions = Enumerable.Range(1, 6)
-            .Select(i => new EventSessionRequest(i == 1 ? created.Sessions[0].Id : null, $"Lecture {i}", created.StartsAt.AddHours(i), created.StartsAt.AddHours(i + 1), i))
-            .ToList();
-        var @event = (await service.UpdateAsync(created.Id, ToUpdateRequest(created) with { Sessions = sixSessions, CpdUnitsOnsite = 8m })).Value!;
-        var member = await SeedMemberForEventTestsAsync(db);
-        var registration = (await service.RegisterAsync(member.UserId, @event.Id, "Onsite")).Value!;
-        await MarkPaymentVerifiedAsync(db, registration.Id);
-        var attendedIds = @event.Sessions.Take(3).Select(s => s.Id).ToList();
-        await service.RecordAttendanceAsync(@event.Id, [new RegistrantAttendanceRequest(registration.Id, attendedIds)], Guid.NewGuid());
-        await service.SubmitEvaluationAsync(member.UserId, registration.Id, rating: 5, comments: null);
-
-        var result = await service.GetCertificateDataAsync(member.UserId, registration.Id, isAdmin: false);
-
-        Assert.True(result.Succeeded);
-        Assert.Equal(3, result.Value!.AttendedSessionTitles.Count);
-        Assert.Equal(4m, result.Value.CreditUnits); // 8 x 3/6
-    }
-
-    /// <summary>Matches spec.md's "Certificate reflects a corrected unit count" - computed at read
-    /// time, so a later correction is visible on the very next call with no other action taken.</summary>
-    [Fact]
-    public async Task GetCertificateDataAsync_AfterUnitCorrection_ReflectsNewValue()
-    {
-        using var db = TestDbContext.CreateInMemory();
-        var service = new EventService(db);
-        var (@event, registration, member) = await SeedCreditedRegistrationAsync(db, service, onsiteUnits: 8m);
-        var before = await service.GetCertificateDataAsync(member.UserId, registration.Id, isAdmin: false);
-        Assert.Equal(8m, before.Value!.CreditUnits);
-
-        await service.UpdateAsync(@event.Id, ToUpdateRequest(@event) with { CpdUnitsOnsite = 6m });
-        var after = await service.GetCertificateDataAsync(member.UserId, registration.Id, isAdmin: false);
-
-        Assert.Equal(6m, after.Value!.CreditUnits);
-    }
-
-    [Fact]
-    public async Task GetCertificateDataAsync_NotOwnerAndNotAdmin_Forbidden()
-    {
-        using var db = TestDbContext.CreateInMemory();
-        var service = new EventService(db);
-        var (_, registration, _) = await SeedCreditedRegistrationAsync(db, service);
-
-        var result = await service.GetCertificateDataAsync(Guid.NewGuid(), registration.Id, isAdmin: false);
-
-        Assert.False(result.Succeeded);
-        Assert.Equal(ResultErrorType.Forbidden, result.ErrorType);
-    }
-
-    [Fact]
-    public async Task GetCertificateDataAsync_Admin_BypassesOwnershipCheck()
-    {
-        using var db = TestDbContext.CreateInMemory();
-        var service = new EventService(db);
-        var (_, registration, _) = await SeedCreditedRegistrationAsync(db, service);
-
-        var result = await service.GetCertificateDataAsync(Guid.NewGuid(), registration.Id, isAdmin: true);
-
-        Assert.True(result.Succeeded);
-    }
-```
-
-- [ ] **Step 6: Run the tests to verify they fail**
-
-Run: `dotnet test tests/PSMPE.Portal.Application.UnitTests --filter EventServiceTests`
-Expected: FAIL to compile — `GetCertificateDataAsync` doesn't exist yet.
-
-- [ ] **Step 7: Implement `GetCertificateDataAsync`**
-
-```csharp
-using Microsoft.EntityFrameworkCore;
-using PSMPE.Portal.Application.Common.Models;
-using PSMPE.Portal.Application.Events.Dtos;
-
-namespace PSMPE.Portal.Application.Events;
-
-public partial class EventService
-{
-    public async Task<Result<CertificateDataDto>> GetCertificateDataAsync(
-        Guid userId, Guid registrationId, bool isAdmin, CancellationToken cancellationToken = default)
-    {
-        var registration = await db.EventRegistrations
-            .Include(r => r.Member)
-            .Include(r => r.Event).ThenInclude(e => e.Sessions)
-            .FirstOrDefaultAsync(r => r.Id == registrationId, cancellationToken);
-        if (registration is null)
-        {
-            return Result<CertificateDataDto>.NotFound($"Registration '{registrationId}' was not found.");
-        }
-        if (!isAdmin && registration.Member.UserId != userId)
-        {
-            return Result<CertificateDataDto>.Forbidden("This isn't your registration.");
-        }
-
-        var attendedSessionIds = await db.EventAttendances
-            .Where(a => a.EventRegistrationId == registrationId)
-            .Select(a => a.EventSessionId)
-            .ToListAsync(cancellationToken);
-        var totalSessions = registration.Event.Sessions.Count;
-        var credit = CpdCredit.For(registration, registration.Event, attendedSessionIds.Count, totalSessions);
-        if (credit is null)
-        {
-            return Result<CertificateDataDto>.Failure(
-                "This registration hasn't earned CPD credit yet - the certificate isn't available.");
-        }
-
-        var attendedTitles = registration.Event.Sessions
-            .Where(s => attendedSessionIds.Contains(s.Id))
-            .OrderBy(s => s.Order)
-            .Select(s => s.Title)
-            .ToList();
-
-        return Result<CertificateDataDto>.Success(new CertificateDataDto(
-            $"{registration.Member.FirstName} {registration.Member.LastName}", registration.Event.Title,
-            registration.Event.StartsAt, registration.Event.EndsAt, registration.Mode.ToString(),
-            attendedTitles, credit.Value));
-    }
-}
-```
-
-- [ ] **Step 8: Run the tests to verify they pass**
-
-Run: `dotnet test tests/PSMPE.Portal.Application.UnitTests --filter EventServiceTests`
-Expected: PASS (all tests from Step 5 and prior tasks).
-
-- [ ] **Step 9: Write the failing smoke test for `CertificatePdfGenerator`**
-
-```csharp
-using PSMPE.Portal.Application.Events;
-using PSMPE.Portal.Application.Events.Dtos;
-using Xunit;
-
-namespace PSMPE.Portal.Application.UnitTests.Events;
-
-public class CertificatePdfGeneratorTests
-{
-    [Fact]
-    public void Generate_ProducesNonEmptyPdfBytes()
-    {
-        var data = new CertificateDataDto(
-            "Juan Dela Cruz", "Water Sanitation Workshop",
-            DateTimeOffset.UtcNow.AddDays(-1), DateTimeOffset.UtcNow,
-            "Onsite", ["Day 1: Opening", "Day 1: Cross-Connection Control"], 4m);
-
-        var bytes = CertificatePdfGenerator.Generate(data);
-
-        Assert.NotEmpty(bytes);
-        // %PDF is the standard PDF magic number - a cheap sanity check that QuestPDF actually
-        // produced a PDF and not, say, an exception swallowed somewhere.
-        Assert.Equal("%PDF", System.Text.Encoding.ASCII.GetString(bytes, 0, 4));
-    }
-}
-```
-
-- [ ] **Step 10: Run the test to verify it fails**
-
-Run: `dotnet test tests/PSMPE.Portal.Application.UnitTests --filter CertificatePdfGeneratorTests`
-Expected: FAIL to compile — `CertificatePdfGenerator` doesn't exist yet.
-
-- [ ] **Step 11: Implement `CertificatePdfGenerator`**
-
-```csharp
-using PSMPE.Portal.Application.Events.Dtos;
-using QuestPDF.Fluent;
-using QuestPDF.Helpers;
-using QuestPDF.Infrastructure;
-
-namespace PSMPE.Portal.Application.Events;
-
-/// <summary>
-/// Renders a certificate on demand - never cached, never pre-generated (see
-/// add-events-cpd-tracker/proposal.md). Called once per download request from
-/// EventsController.GetCertificate, so a unit value corrected after the fact is reflected the very
-/// next time someone downloads.
-/// </summary>
-public static class CertificatePdfGenerator
-{
-    public static byte[] Generate(CertificateDataDto data)
-    {
-        var document = Document.Create(container =>
-        {
-            container.Page(page =>
-            {
-                page.Size(PageSizes.A4.Landscape());
-                page.Margin(40);
-                page.DefaultTextStyle(x => x.FontSize(14));
-
-                page.Content().Column(column =>
-                {
-                    column.Item().AlignCenter().Text("Certificate of Completion").FontSize(28).Bold();
-                    column.Item().PaddingTop(20).AlignCenter().Text($"This certifies that {data.MemberName}").FontSize(16);
-                    column.Item().AlignCenter().Text($"attended {data.EventTitle}").FontSize(16);
-                    column.Item().AlignCenter().Text(
-                        $"{data.EventStartsAt:MMMM d, yyyy} - {data.EventEndsAt:MMMM d, yyyy} ({data.Mode})").FontSize(12);
-
-                    column.Item().PaddingTop(20).Text("Sessions attended:").Bold();
-                    foreach (var title in data.AttendedSessionTitles)
-                    {
-                        column.Item().Text($"- {title}");
-                    }
-
-                    column.Item().PaddingTop(20).AlignCenter().Text($"CPD Units Earned: {data.CreditUnits}").FontSize(16).Bold();
-                });
-            });
-        });
-
-        return document.GeneratePdf();
-    }
-}
-```
-
-- [ ] **Step 12: Run the test to verify it passes**
-
-Run: `dotnet test tests/PSMPE.Portal.Application.UnitTests --filter CertificatePdfGeneratorTests`
-Expected: PASS.
-
-- [ ] **Step 13: Commit**
-
-```bash
-git add src/PSMPE.Portal.Application/PSMPE.Portal.Application.csproj src/PSMPE.Portal.WebAPI/Program.cs \
-  src/PSMPE.Portal.Application/Events/ \
-  tests/PSMPE.Portal.Application.UnitTests/Events/EventServiceTests.cs \
-  tests/PSMPE.Portal.Application.UnitTests/Events/CertificatePdfGeneratorTests.cs
-git commit -m "feat: generate CPD certificates on demand with QuestPDF"
-```
-
----
-
-## 12. `EventsController` and the `MembersController` CPD endpoint
-
-**Files:**
-- Modify: `src/PSMPE.Portal.Application/Payments/Dtos/PaymentDto.cs`
-- Create: `src/PSMPE.Portal.WebAPI/Controllers/EventsController.cs`
-- Modify: `src/PSMPE.Portal.WebAPI/Controllers/MembersController.cs`
-- Test: `tests/PSMPE.Portal.WebAPI.IntegrationTests/Events/EventsControllerTests.cs`
-
-- [ ] **Step 1: Add `RecordCashPaymentRequest`**
-
-In `src/PSMPE.Portal.Application/Payments/Dtos/PaymentDto.cs`, add:
-
-```csharp
-/// <summary>POST /api/events/registrations/{id}/payment/cash's request body - just the amount, no
-/// proof file, no reference number. See PaymentService.RecordEventCashPaymentAsync.</summary>
-public record RecordCashPaymentRequest(decimal Amount);
-```
-
-- [ ] **Step 2: Create `EventsController`**
-
-```csharp
-using System.Security.Claims;
-using Microsoft.AspNetCore.Authorization;
-using Microsoft.AspNetCore.Mvc;
-using PSMPE.Portal.Application.Common.Models;
-using PSMPE.Portal.Application.Events;
-using PSMPE.Portal.Application.Events.Dtos;
-using PSMPE.Portal.Application.Payments;
-using PSMPE.Portal.Application.Payments.Dtos;
-using PSMPE.Portal.Domain.Enums;
-using PSMPE.Portal.Infrastructure.Authorization;
-
-namespace PSMPE.Portal.WebAPI.Controllers;
-
-/// <summary>
-/// Event Management and CPD Credit Tracking - see openspecs/events.md (Task 18) and
-/// add-events-cpd-tracker/proposal.md for the full design. Payment verification/rejection for an
-/// event registration's Payment happens through the existing PaymentsController endpoints
-/// unchanged - only PaymentService's internals branch on Kind (see Task 9). This controller only
-/// owns the two payment actions that are genuinely new: member proof submission and admin cash
-/// recording, both scoped to a registration id rather than a bare payment id.
-/// </summary>
-[ApiController]
-[Authorize]
-[Route("api/events")]
-public class EventsController(IEventService eventService, IPaymentService paymentService) : ControllerBase
-{
-    [HttpGet]
-    public async Task<ActionResult<PagedResult<EventDto>>> GetAll(
-        int page = 1, int pageSize = 20, string? search = null, string? chapter = null, bool upcomingOnly = false,
-        CancellationToken cancellationToken = default) =>
-        Ok(await eventService.GetAllAsync(page, pageSize, search, chapter, upcomingOnly, cancellationToken));
-
-    [HttpGet("{id:guid}")]
-    public async Task<ActionResult<EventDto>> GetById(Guid id, CancellationToken cancellationToken)
-    {
-        var @event = await eventService.GetByIdAsync(id, cancellationToken);
-        return @event is null ? NotFound() : Ok(@event);
-    }
-
-    [HttpPost]
-    [RequirePermission(Permissions.Events.Manage)]
-    public async Task<ActionResult<EventDto>> Create(CreateEventRequest request, CancellationToken cancellationToken)
-    {
-        var result = await eventService.CreateAsync(request, cancellationToken);
-        return result.Succeeded ? Ok(result.Value) : BadRequest(new { message = result.Error });
-    }
-
-    [HttpPut("{id:guid}")]
-    [RequirePermission(Permissions.Events.Manage)]
-    public async Task<ActionResult<EventDto>> Update(Guid id, UpdateEventRequest request, CancellationToken cancellationToken)
-    {
-        var result = await eventService.UpdateAsync(id, request, cancellationToken);
-        return result.Succeeded ? Ok(result.Value) : ToErrorActionResult(result);
-    }
-
-    [HttpPost("{id:guid}/register")]
-    public async Task<ActionResult<EventRegistrationDto>> Register(Guid id, RegisterForEventRequest request, CancellationToken cancellationToken)
-    {
-        var userId = CurrentUserId;
-        if (userId is null)
-        {
-            return Unauthorized();
-        }
-
-        var result = await eventService.RegisterAsync(userId.Value, id, request.Mode, cancellationToken);
-        return result.Succeeded ? Ok(result.Value) : ToErrorActionResult(result);
-    }
-
-    [HttpPost("registrations/{id:guid}/cancel")]
-    public async Task<IActionResult> CancelRegistration(Guid id, CancellationToken cancellationToken)
-    {
-        var userId = CurrentUserId;
-        if (userId is null)
-        {
-            return Unauthorized();
-        }
-
-        return ToActionResult(await eventService.CancelRegistrationAsync(userId.Value, id, cancellationToken));
-    }
-
-    [HttpPost("registrations/{id:guid}/payment")]
-    public async Task<ActionResult<PaymentDto>> SubmitPayment(Guid id, SubmitPaymentRequest request, CancellationToken cancellationToken)
-    {
-        var userId = CurrentUserId;
-        if (userId is null)
-        {
-            return Unauthorized();
-        }
-
-        var result = await paymentService.SubmitForEventRegistrationAsync(userId.Value, id, request, cancellationToken);
-        return result.Succeeded ? Ok(result.Value) : ToErrorActionResult(result);
-    }
-
-    /// <summary>Admin-only. Reaches PaymentVerified in one call, with no proof file - see
-    /// PaymentService.RecordEventCashPaymentAsync.</summary>
-    [HttpPost("registrations/{id:guid}/payment/cash")]
-    [RequirePermission(Permissions.Events.Manage)]
-    public async Task<ActionResult<PaymentDto>> RecordCashPayment(Guid id, RecordCashPaymentRequest request, CancellationToken cancellationToken)
-    {
-        var decidedBy = CurrentUserId;
-        if (decidedBy is null)
-        {
-            return Unauthorized();
-        }
-
-        var result = await paymentService.RecordEventCashPaymentAsync(id, request.Amount, decidedBy.Value, cancellationToken);
-        return result.Succeeded ? Ok(result.Value) : ToErrorActionResult(result);
-    }
-
-    /// <summary>Bulk roster reconciliation - one call covers every registrant an admin has worked
-    /// through on the printed sign-in sheet, not just one. See EventService.RecordAttendanceAsync.</summary>
-    [HttpPost("{id:guid}/roster/attendance")]
-    [RequirePermission(Permissions.Events.Manage)]
-    public async Task<IActionResult> RecordAttendance(Guid id, RecordAttendanceRequest request, CancellationToken cancellationToken)
-    {
-        var adminUserId = CurrentUserId;
-        if (adminUserId is null)
-        {
-            return Unauthorized();
-        }
-
-        return ToActionResult(await eventService.RecordAttendanceAsync(id, request.Registrants, adminUserId.Value, cancellationToken));
-    }
-
-    [HttpPost("registrations/{id:guid}/evaluation")]
-    public async Task<IActionResult> SubmitEvaluation(Guid id, SubmitEvaluationRequest request, CancellationToken cancellationToken)
-    {
-        var userId = CurrentUserId;
-        if (userId is null)
-        {
-            return Unauthorized();
-        }
-
-        return ToActionResult(await eventService.SubmitEvaluationAsync(userId.Value, id, request.Rating, request.Comments, cancellationToken));
-    }
-
-    [HttpGet("{id:guid}/roster")]
-    [RequirePermission(Permissions.Events.View, Permissions.Events.Manage)]
-    public async Task<ActionResult<EventRosterDto>> GetRoster(Guid id, CancellationToken cancellationToken)
-    {
-        var result = await eventService.GetRosterAsync(id, cancellationToken);
-        return result.Succeeded ? Ok(result.Value) : ToErrorActionResult(result);
-    }
-
-    /// <summary>Streams the PDF directly - never stored, generated fresh on every request (see
-    /// CertificatePdfGenerator). Members may only fetch their own; staff need events:view or
-    /// events:manage.</summary>
-    [HttpGet("registrations/{id:guid}/certificate")]
-    public async Task<IActionResult> GetCertificate(Guid id, CancellationToken cancellationToken)
-    {
-        var userId = CurrentUserId;
-        if (userId is null)
-        {
-            return Unauthorized();
-        }
-
-        var isAdmin = User.HasClaim(Permissions.ClaimType, Permissions.Events.View) ||
-                      User.HasClaim(Permissions.ClaimType, Permissions.Events.Manage);
-        var result = await eventService.GetCertificateDataAsync(userId.Value, id, isAdmin, cancellationToken);
-        if (!result.Succeeded)
-        {
-            return ToErrorActionResult(result);
-        }
-
-        var pdfBytes = CertificatePdfGenerator.Generate(result.Value!);
-        return File(pdfBytes, "application/pdf", $"{result.Value!.EventTitle}-certificate.pdf");
-    }
-
-    private Guid? CurrentUserId =>
-        Guid.TryParse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value, out var id) ? id : null;
-
-    private IActionResult ToActionResult(Result result)
-    {
-        if (result.Succeeded)
-        {
-            return NoContent();
-        }
-
-        return ToErrorActionResult(result);
-    }
-
-    private IActionResult ToErrorActionResult(Result result) => result.ErrorType switch
-    {
-        ResultErrorType.NotFound => NotFound(new { message = result.Error }),
-        ResultErrorType.Forbidden => Forbid(),
-        ResultErrorType.Conflict => Conflict(new { message = result.Error }),
-        _ => BadRequest(new { message = result.Error }),
-    };
-}
-```
-
-- [ ] **Step 3: Add `GET /api/members/me/cpd` to `MembersController`**
-
-In `src/PSMPE.Portal.WebAPI/Controllers/MembersController.cs`, add `IEventService eventService` as a
-new primary-constructor parameter:
-
-```csharp
-public class MembersController(
-    IMemberService memberService, IMemberUploadService memberUploadService,
-    IMemberCertificateService memberCertificateService, UserManager<ApplicationUser> userManager,
-    IEmailSender emailSender, IPaymentService paymentService, IEventService eventService) : ControllerBase
-```
-
-Add `using PSMPE.Portal.Application.Events;` and `using PSMPE.Portal.Application.Events.Dtos;` to its
-usings, and add the endpoint itself (e.g. near `GetMyProfile`):
-
-```csharp
-    /// <summary>Own registrations plus computed, prorated credit total - see
-    /// EventService.GetMyCpdAsync. Reachable even while Expired, same as the other me/* reads.</summary>
-    [HttpGet("me/cpd")]
-    [AllowExpiredMember]
-    public async Task<ActionResult<MyCpdSummaryDto>> GetMyCpd(CancellationToken cancellationToken)
-    {
-        var userId = CurrentUserId;
-        if (userId is null)
-        {
-            return Unauthorized();
-        }
-
-        return Ok(await eventService.GetMyCpdAsync(userId.Value, cancellationToken));
-    }
-```
-
-- [ ] **Step 4: Build to confirm everything compiles**
-
-Run: `dotnet build src/PSMPE.Portal.sln`
-Expected: build succeeds (0 errors).
-
-- [ ] **Step 5: Write the failing integration tests**
-
-```csharp
-using System.Net;
-using System.Net.Http.Headers;
-using System.Net.Http.Json;
-using System.Text.Json;
-using Microsoft.AspNetCore.Identity;
 using Microsoft.Extensions.DependencyInjection;
-using PSMPE.Portal.Domain.Entities;
-using PSMPE.Portal.Domain.Enums;
-using PSMPE.Portal.WebAPI.IntegrationTests.TestSupport;
-using Xunit;
+using PSMPE.Portal.Application.Content;
+using PSMPE.Portal.Application.Events;
+using PSMPE.Portal.Application.Layouts;
+using PSMPE.Portal.Application.Members;
+using PSMPE.Portal.Application.Payments;
 
-namespace PSMPE.Portal.WebAPI.IntegrationTests.Events;
+namespace PSMPE.Portal.Application;
 
-/// <summary>
-/// Exercises the Event Management / CPD Tracker endpoints via real HTTP - authorization gating on
-/// the admin-only actions, and one full member-side round trip (register, pay, get verified, get
-/// attendance recorded, evaluate, read CPD, download a certificate) exercising the whole state
-/// machine end to end. See add-events-cpd-tracker/specs/events/spec.md.
-/// </summary>
-public class EventsControllerTests : IClassFixture<CustomWebApplicationFactory>, IAsyncLifetime
+public static class DependencyInjection
 {
-    private readonly CustomWebApplicationFactory _factory;
-    private readonly IServiceScope _scope;
-    private readonly UserManager<ApplicationUser> _userManager;
-    private readonly HttpClient _client;
-
-    public EventsControllerTests(CustomWebApplicationFactory factory)
+    public static IServiceCollection AddApplication(this IServiceCollection services)
     {
-        _factory = factory;
-        _scope = factory.Services.CreateScope();
-        _userManager = _scope.ServiceProvider.GetRequiredService<UserManager<ApplicationUser>>();
-        _client = factory.CreateClient();
-    }
-
-    public Task InitializeAsync() => _factory.InitializeAsync();
-
-    public Task DisposeAsync()
-    {
-        _scope.Dispose();
-        return Task.CompletedTask;
-    }
-
-    private Task<(Guid UserId, string Token)> CreateAdminAsync() =>
-        _client.CreatePrivilegedUserAsync(_userManager, RoleNames.Admin);
-
-    private HttpRequestMessage PostJson(string url, object body, string token) =>
-        new(HttpMethod.Post, url) { Content = JsonContent.Create(body) }.WithBearer(token);
-
-    private static object ValidEventPayload(string title = "Water Sanitation Workshop") => new
-    {
-        title,
-        description = "Cross-connection control",
-        chapter = Chapters.Ncr,
-        venue = "PICC",
-        startsAt = DateTimeOffset.UtcNow.AddDays(10),
-        endsAt = DateTimeOffset.UtcNow.AddDays(10).AddHours(4),
-        capacity = 100,
-        fee = 500m,
-    };
-
-    [Fact]
-    public async Task CreateEvent_WithoutEventsManage_ReturnsForbidden()
-    {
-        var memberToken = await _client.RegisterAndLoginAsync();
-
-        var response = await _client.SendAsync(PostJson("/api/events", ValidEventPayload(), memberToken));
-
-        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
-    }
-
-    [Fact]
-    public async Task CreateEvent_AsAdmin_Succeeds()
-    {
-        var (_, adminToken) = await CreateAdminAsync();
-
-        var response = await _client.SendAsync(PostJson("/api/events", ValidEventPayload(), adminToken));
-        var body = await response.Content.ReadFromJsonAsync<JsonElement>();
-
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        Assert.True(body.GetProperty("cpdUnitsOnsite").ValueKind == JsonValueKind.Null);
-        Assert.Equal(1, body.GetProperty("sessions").GetArrayLength());
-    }
-
-    [Fact]
-    public async Task RecordCashPayment_WithoutEventsManage_ReturnsForbidden()
-    {
-        var (_, adminToken) = await CreateAdminAsync();
-        var createResponse = await _client.SendAsync(PostJson("/api/events", ValidEventPayload(), adminToken));
-        var eventId = (await createResponse.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("id").GetGuid();
-        var memberToken = await _client.RegisterAndLoginAsync();
-        var registerResponse = await _client.SendAsync(PostJson($"/api/events/{eventId}/register", new { mode = "Onsite" }, memberToken));
-        var registrationId = (await registerResponse.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("id").GetGuid();
-
-        var response = await _client.SendAsync(
-            PostJson($"/api/events/registrations/{registrationId}/payment/cash", new { amount = 500m }, memberToken));
-
-        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
-    }
-
-    [Fact]
-    public async Task FullRoundTrip_RegisterThroughCertificate_Succeeds()
-    {
-        var (adminUserId, adminToken) = await CreateAdminAsync();
-        var createResponse = await _client.SendAsync(PostJson("/api/events", ValidEventPayload(), adminToken));
-        var created = await createResponse.Content.ReadFromJsonAsync<JsonElement>();
-        var eventId = created.GetProperty("id").GetGuid();
-        var sessionId = created.GetProperty("sessions")[0].GetProperty("id").GetGuid();
-
-        var setUnits = await _client.SendAsync(new HttpRequestMessage(HttpMethod.Put, $"/api/events/{eventId}")
-        {
-            Content = JsonContent.Create(new
-            {
-                title = created.GetProperty("title").GetString(),
-                description = (string?)null,
-                chapter = Chapters.Ncr,
-                venue = "PICC",
-                startsAt = created.GetProperty("startsAt").GetDateTimeOffset(),
-                endsAt = created.GetProperty("endsAt").GetDateTimeOffset(),
-                capacity = 100,
-                fee = 500m,
-                cpdUnitsOnsite = 8m,
-                cpdUnitsOnline = (decimal?)null,
-                sessions = new[] { new { id = sessionId, title = "Full Event", startsAt = created.GetProperty("startsAt").GetDateTimeOffset(), endsAt = created.GetProperty("endsAt").GetDateTimeOffset(), order = 1 } },
-            }),
-        }.WithBearer(adminToken));
-        Assert.Equal(HttpStatusCode.OK, setUnits.StatusCode);
-
-        var memberToken = await _client.RegisterAndLoginAsync();
-        var registerResponse = await _client.SendAsync(PostJson($"/api/events/{eventId}/register", new { mode = "Onsite" }, memberToken));
-        var registrationId = (await registerResponse.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("id").GetGuid();
-
-        var cashResponse = await _client.SendAsync(
-            PostJson($"/api/events/registrations/{registrationId}/payment/cash", new { amount = 500m }, adminToken));
-        Assert.Equal(HttpStatusCode.OK, cashResponse.StatusCode);
-
-        var attendanceResponse = await _client.SendAsync(PostJson(
-            $"/api/events/{eventId}/roster/attendance",
-            new { registrants = new[] { new { registrationId, sessionIds = new[] { sessionId } } } },
-            adminToken));
-        Assert.Equal(HttpStatusCode.NoContent, attendanceResponse.StatusCode);
-
-        var evaluationResponse = await _client.SendAsync(PostJson(
-            $"/api/events/registrations/{registrationId}/evaluation", new { rating = 5, comments = "Great" }, memberToken));
-        Assert.Equal(HttpStatusCode.NoContent, evaluationResponse.StatusCode);
-
-        var cpdResponse = await _client.SendAsync(new HttpRequestMessage(HttpMethod.Get, "/api/members/me/cpd").WithBearer(memberToken));
-        var cpdBody = await cpdResponse.Content.ReadFromJsonAsync<JsonElement>();
-        Assert.Equal(8m, cpdBody.GetProperty("totalCreditUnits").GetDecimal());
-
-        var certificateResponse = await _client.SendAsync(
-            new HttpRequestMessage(HttpMethod.Get, $"/api/events/registrations/{registrationId}/certificate").WithBearer(memberToken));
-        Assert.Equal(HttpStatusCode.OK, certificateResponse.StatusCode);
-        Assert.Equal("application/pdf", certificateResponse.Content.Headers.ContentType?.MediaType);
-    }
-
-    [Fact]
-    public async Task GetCertificate_BeforeEvaluationSubmitted_ReturnsBadRequest()
-    {
-        var (_, adminToken) = await CreateAdminAsync();
-        var createResponse = await _client.SendAsync(PostJson("/api/events", ValidEventPayload(), adminToken));
-        var eventId = (await createResponse.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("id").GetGuid();
-        var memberToken = await _client.RegisterAndLoginAsync();
-        var registerResponse = await _client.SendAsync(PostJson($"/api/events/{eventId}/register", new { mode = "Onsite" }, memberToken));
-        var registrationId = (await registerResponse.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("id").GetGuid();
-
-        var response = await _client.SendAsync(
-            new HttpRequestMessage(HttpMethod.Get, $"/api/events/registrations/{registrationId}/certificate").WithBearer(memberToken));
-
-        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        services.AddScoped<IContentService, ContentService>();
+        services.AddScoped<ILayoutService, LayoutService>();
+        services.AddScoped<IMemberService, MemberService>();
+        services.AddScoped<IMemberUploadService, MemberUploadService>();
+        services.AddScoped<IMemberCertificateService, MemberCertificateService>();
+        services.AddScoped<IPaymentService, PaymentService>();
+        services.AddScoped<IEventService, EventService>();
+        services.AddScoped<IEventPosterService, EventPosterService>();
+        return services;
     }
 }
 ```
 
-- [ ] **Step 6: Run the tests to verify they fail**
+- [ ] **Step 4: Modify `EventsController.cs`** — inject `IEventPosterService` and add the two poster
+      endpoints. Change the class declaration line and add two new action methods (placed after
+      `Update`, before `Register`):
 
-Run: `dotnet test tests/PSMPE.Portal.WebAPI.IntegrationTests --filter EventsControllerTests`
-Expected: FAIL — either a compile error (before Steps 2–3 land) or 404s (`EventsController` route
-not yet registered). Run this after Steps 2–4 above, once the project builds, to see genuine
-assertion failures instead.
+```csharp
+public class EventsController(IEventService eventService, IPaymentService paymentService, IEventPosterService eventPosterService) : ControllerBase
+{
+```
 
-- [ ] **Step 7: Run the tests to verify they pass**
+```csharp
+    /// <summary>Admin-only. Downscales/re-encodes via EventPosterService and overwrites any
+    /// previous poster - an event has exactly one.</summary>
+    [HttpPost("{id:guid}/poster")]
+    [RequirePermission(Permissions.Events.Manage)]
+    public async Task<IActionResult> UploadPoster(Guid id, IFormFile file, CancellationToken cancellationToken)
+    {
+        await using var stream = file.OpenReadStream();
+        var result = await eventPosterService.UploadAsync(id, stream, file.FileName, file.Length, cancellationToken);
+        return ToActionResult(result);
+    }
 
-Run: `dotnet test tests/PSMPE.Portal.WebAPI.IntegrationTests --filter EventsControllerTests`
-Expected: PASS (6 tests).
+    /// <summary>Any authenticated caller - same auth level as GetById, since the poster is shown on
+    /// the member-facing events list/register views, not just to staff.</summary>
+    [HttpGet("{id:guid}/poster")]
+    public async Task<IActionResult> GetPoster(Guid id, CancellationToken cancellationToken)
+    {
+        var file = await eventPosterService.GetAsync(id, cancellationToken);
+        return file is null ? NotFound() : File(file.Value.Content, file.Value.ContentType);
+    }
+```
 
-- [ ] **Step 8: Run the full backend test suite**
+Add `using PSMPE.Portal.Application.Events;` if not already imported (it already is, for
+`IEventService`/`EventDto`).
 
-Run: `dotnet test src/PSMPE.Portal.sln`
-Expected: PASS — every prior Application unit test and every pre-existing integration test still
-passes (in particular `PaymentServiceTests`'s `NewMembership`/`Renewal` tests, confirming Task 9's
-`VerifyAsync`/`RejectAsync` changes didn't regress the membership-payment path).
+- [ ] **Step 5: Verify the solution builds**
 
-- [ ] **Step 9: Commit**
+Run: `dotnet build`
+Expected: Build succeeds with zero errors.
+
+- [ ] **Step 6: Commit**
 
 ```bash
-git add src/PSMPE.Portal.Application/Payments/Dtos/PaymentDto.cs \
-  src/PSMPE.Portal.WebAPI/Controllers/EventsController.cs src/PSMPE.Portal.WebAPI/Controllers/MembersController.cs \
-  tests/PSMPE.Portal.WebAPI.IntegrationTests/Events/EventsControllerTests.cs
-git commit -m "feat: add EventsController and the My CPD endpoint"
+git add src/PSMPE.Portal.Application/Events/IEventPosterService.cs src/PSMPE.Portal.Application/Events/EventPosterService.cs src/PSMPE.Portal.Application/DependencyInjection.cs src/PSMPE.Portal.WebAPI/Controllers/EventsController.cs
+git commit -m "feat: add EventPosterService and POST/GET /api/events/{id}/poster endpoints"
 ```
 
 ---
 
-## 13. Frontend — `eventApi.ts`
+## 4. Fix remaining broken tests and add poster/fee integration coverage
 
 **Files:**
-- Create: `apps/web/src/core/api/endpoints/eventApi.ts`
+- Modify: `tests/PSMPE.Portal.Application.UnitTests/Payments/PaymentServiceTests.cs`
+- Modify: `tests/PSMPE.Portal.WebAPI.IntegrationTests/Events/EventsControllerTests.cs`
 
-No test runner for the frontend in this codebase — verification for every frontend task is
-`tsc -b` / `eslint` plus a manual browser pass (see Task 18). This task is typed API-client plumbing
-only, mirroring `paymentApi.ts`'s shape and conventions exactly (plain axios via the shared
-`apiClient`, no react-query, `.then((res) => res.data)`).
+- [ ] **Step 1: Fix `SeedEventRegistrationAsync` in `PaymentServiceTests.cs`** (around line 291) —
+      the entity literal still sets the old `Fee` property:
 
-- [ ] **Step 1: Create `eventApi.ts`**
+```csharp
+        var @event = new Event { Title = "Seminar", StartsAt = DateTimeOffset.UtcNow.AddDays(5), EndsAt = DateTimeOffset.UtcNow.AddDays(5).AddHours(4), FeeOnsite = 500m, FeeOnline = 500m };
+```
+
+- [ ] **Step 2: Run the Payments unit tests to confirm the fix compiles and passes**
+
+Run: `dotnet test tests/PSMPE.Portal.Application.UnitTests --filter FullyQualifiedName~PaymentServiceTests`
+Expected: PASS — all tests in the file, unchanged behavior.
+
+- [ ] **Step 3: Fix the three `fee = 500m,` JSON payload literals in `EventsControllerTests.cs`** —
+      `ValidEventPayload` (~line 102) and the two inline update payloads (~line 164, ~line 227). In
+      each of the three spots, replace the single line:
+
+```csharp
+        fee = 500m,
+```
+
+with:
+
+```csharp
+        feeOnsite = 500m,
+        feeOnline = 200m,
+```
+
+(Match the existing indentation at each of the three call sites — `ValidEventPayload`'s body is
+indented one level less than the two inline `Content = JsonContent.Create(new { ... })` payloads.)
+
+- [ ] **Step 4: Run the full Events integration test suite to confirm nothing else broke**
+
+Run: `dotnet test tests/PSMPE.Portal.WebAPI.IntegrationTests --filter FullyQualifiedName~EventsControllerTests`
+Expected: PASS — every pre-existing test in the file still green.
+
+- [ ] **Step 5: Write a new failing integration test for the poster upload/download round trip**,
+      appended to `EventsControllerTests.cs`:
+
+```csharp
+    private static byte[] BuildPng(int width, int height)
+    {
+        using var bitmap = new SKBitmap(width, height);
+        using var canvas = new SKCanvas(bitmap);
+        canvas.Clear(SKColors.CornflowerBlue);
+        using var image = SKImage.FromBitmap(bitmap);
+        using var data = image.Encode(SKEncodedImageFormat.Png, 100);
+        return data.ToArray();
+    }
+
+    private static HttpRequestMessage BuildUploadRequest(string url, string token, byte[] bytes, string fileName, string contentType)
+    {
+        var request = new HttpRequestMessage(HttpMethod.Post, url);
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        var content = new MultipartFormDataContent();
+        var fileContent = new ByteArrayContent(bytes);
+        fileContent.Headers.ContentType = new MediaTypeHeaderValue(contentType);
+        content.Add(fileContent, "file", fileName);
+        request.Content = content;
+        return request;
+    }
+
+    [Fact]
+    public async Task UploadThenGetPoster_RoundTrips()
+    {
+        var (_, adminToken) = await CreateAdminAsync();
+        var createResponse = await _client.SendAsync(PostJson("/api/events", ValidEventPayload(), adminToken));
+        var eventId = (await createResponse.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("id").GetGuid();
+
+        var uploadResponse = await _client.SendAsync(
+            BuildUploadRequest($"/api/events/{eventId}/poster", adminToken, BuildPng(200, 100), "poster.png", "image/png"));
+        Assert.Equal(HttpStatusCode.NoContent, uploadResponse.StatusCode);
+
+        var memberToken = await RegisterMemberAsync();
+        var getResponse = await _client.SendAsync(
+            new HttpRequestMessage(HttpMethod.Get, $"/api/events/{eventId}/poster").WithBearer(memberToken));
+
+        Assert.Equal(HttpStatusCode.OK, getResponse.StatusCode);
+        Assert.Equal("image/jpeg", getResponse.Content.Headers.ContentType?.MediaType);
+    }
+
+    [Fact]
+    public async Task UploadPoster_NonAdmin_Forbidden()
+    {
+        var (_, adminToken) = await CreateAdminAsync();
+        var createResponse = await _client.SendAsync(PostJson("/api/events", ValidEventPayload(), adminToken));
+        var eventId = (await createResponse.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("id").GetGuid();
+        var memberToken = await RegisterMemberAsync();
+
+        var response = await _client.SendAsync(
+            BuildUploadRequest($"/api/events/{eventId}/poster", memberToken, BuildPng(10, 10), "poster.png", "image/png"));
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task GetPoster_BeforeAnyUpload_ReturnsNotFound()
+    {
+        var (_, adminToken) = await CreateAdminAsync();
+        var createResponse = await _client.SendAsync(PostJson("/api/events", ValidEventPayload(), adminToken));
+        var eventId = (await createResponse.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("id").GetGuid();
+        var memberToken = await RegisterMemberAsync();
+
+        var response = await _client.SendAsync(
+            new HttpRequestMessage(HttpMethod.Get, $"/api/events/{eventId}/poster").WithBearer(memberToken));
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+```
+
+Add `using SkiaSharp;` to the top of `EventsControllerTests.cs` if not already present (it is not —
+this file currently has no SkiaSharp reference).
+
+- [ ] **Step 6: Run the tests to verify they fail first (route doesn't exist without Task 3, and Task
+      3 is already done at this point in the plan — so verify they pass directly)**
+
+Run: `dotnet test tests/PSMPE.Portal.WebAPI.IntegrationTests --filter FullyQualifiedName~EventsControllerTests`
+Expected: PASS — `UploadThenGetPoster_RoundTrips`, `UploadPoster_NonAdmin_Forbidden`, and
+`GetPoster_BeforeAnyUpload_ReturnsNotFound` all green, alongside every pre-existing test in the file.
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add tests/PSMPE.Portal.Application.UnitTests/Payments/PaymentServiceTests.cs tests/PSMPE.Portal.WebAPI.IntegrationTests/Events/EventsControllerTests.cs
+git commit -m "test: fix Fee->FeeOnsite/FeeOnline references, add poster upload integration coverage"
+```
+
+---
+
+## 5. EF Core migration
+
+**Files:**
+- Create: `src/PSMPE.Portal.Infrastructure/Persistence/Migrations/<timestamp>_AlterEventsAddDetailFieldsAndPoster.cs` (scaffolded, not hand-written)
+- Create (auto-generated alongside it): `..._AlterEventsAddDetailFieldsAndPoster.Designer.cs`
+- Modify (auto-updated): `src/PSMPE.Portal.Infrastructure/Persistence/Migrations/ApplicationDbContextModelSnapshot.cs`
+
+This is an **ALTER migration on the existing `Events`/`EventSessions` tables** — the tables themselves
+already exist from `20260824054348_AddEventsAndCpdTracker`. Do not write the migration file by hand;
+scaffold it with the EF CLI (which reads the entity/config changes from Tasks 1–3) and then hand-correct
+one part of the generated `Up()`/`Down()` methods so the rename doesn't silently drop existing `Fee`
+data.
+
+- [ ] **Step 1: Scaffold the migration**
+
+Run:
+```bash
+dotnet ef migrations add AlterEventsAddDetailFieldsAndPoster \
+  --project src/PSMPE.Portal.Infrastructure/PSMPE.Portal.Infrastructure.csproj \
+  --startup-project src/PSMPE.Portal.WebAPI/PSMPE.Portal.WebAPI.csproj \
+  --output-dir Persistence/Migrations
+```
+Expected: A new migration file is created containing, among other operations, something equivalent to
+`DropColumn(name: "Fee", table: "Events")` followed by two `AddColumn<decimal>` calls for
+`FeeOnsite`/`FeeOnline`, plus `AddColumn` calls for `Objectives`, `Type`, `Hours`, `CpdCodeOnsite`,
+`CpdCodeOnline`, `PosterImageStorageKey` on `Events`, and one `AddColumn` for `Venue` on
+`EventSessions`.
+
+- [ ] **Step 2: Hand-edit the generated migration's `Up()` method** to replace the auto-generated
+      drop-and-add pair for `Fee`/`FeeOnsite` with a `RenameColumn`, so any pre-existing `Fee` value
+      (e.g. from seeded dev data) survives as `FeeOnsite` instead of being silently reset to the
+      default. Find the two lines that look like:
+
+```csharp
+            migrationBuilder.DropColumn(
+                name: "Fee",
+                table: "Events");
+```
+```csharp
+            migrationBuilder.AddColumn<decimal>(
+                name: "FeeOnsite",
+                table: "Events",
+                type: "numeric(12,2)",
+                precision: 12,
+                scale: 2,
+                nullable: false,
+                defaultValue: 0m);
+```
+
+and replace both with a single rename (delete the `DropColumn` block entirely, and replace the
+`AddColumn` block for `FeeOnsite` with):
+
+```csharp
+            migrationBuilder.RenameColumn(
+                name: "Fee",
+                table: "Events",
+                newName: "FeeOnsite");
+```
+
+Leave the separate `AddColumn<decimal>` call for `FeeOnline` exactly as scaffolded (that's a genuinely
+new column with no prior data to preserve, so `defaultValue: 0m` for existing rows is correct as-is).
+
+- [ ] **Step 3: Mirror the same fix in `Down()`** — find the reverse pair (an `AddColumn` for `Fee`
+      alongside a `DropColumn` for `FeeOnsite`) and replace both with the reverse rename:
+
+```csharp
+            migrationBuilder.RenameColumn(
+                name: "FeeOnsite",
+                table: "Events",
+                newName: "Fee");
+```
+
+(Keep `Down()`'s `DropColumn` for `FeeOnline` as scaffolded — reverting should drop the column that
+never existed before this migration.)
+
+- [ ] **Step 4: Apply the migration to your local database and verify it runs cleanly**
+
+Run: `dotnet ef database update --project src/PSMPE.Portal.Infrastructure/PSMPE.Portal.Infrastructure.csproj --startup-project src/PSMPE.Portal.WebAPI/PSMPE.Portal.WebAPI.csproj`
+Expected: Migration applies with no errors. If you have any pre-existing `Events` rows from local
+testing, spot-check one: its old `Fee` value should now appear under `FeeOnsite`, and `FeeOnline`
+should read `0`.
+
+- [ ] **Step 5: Run the full backend test suite** (integration tests spin up their own database via
+      `WebApplicationFactory` and apply migrations fresh, so this also validates the migration from a
+      clean slate)
+
+Run: `dotnet test`
+Expected: All tests pass, including everything fixed/added in Tasks 2–4.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add src/PSMPE.Portal.Infrastructure/Persistence/Migrations/
+git commit -m "feat: add AlterEventsAddDetailFieldsAndPoster migration (FeeOnsite/FeeOnline rename, new detail fields, session Venue)"
+```
+
+---
+
+## 6. Frontend: `eventApi.ts` types and new endpoints
+
+**Files:**
+- Modify: `apps/web/src/core/api/endpoints/eventApi.ts`
+
+- [ ] **Step 1: Modify `eventApi.ts`** — full replacement content:
 
 ```typescript
 import { apiClient } from '../apiClient'
@@ -3651,12 +1241,27 @@ export const EventRegistrationStatus = {
 } as const
 export type EventRegistrationStatusValue = (typeof EventRegistrationStatus)[keyof typeof EventRegistrationStatus]
 
+/** Mirrors EventTypes.cs. Free text against this list, not a validated backend enum - see
+ *  Event.Type's backend doc comment. */
+export const EventTypes = {
+  Conference: 'Conference',
+  Seminar: 'Seminar',
+  Technoforum: 'Technoforum',
+  Convention: 'Convention',
+  Symposium: 'Symposium',
+  Expo: 'Expo',
+} as const
+export type EventTypeValue = (typeof EventTypes)[keyof typeof EventTypes]
+
 export interface EventSession {
   id: string
   title: string
   startsAt: string
   endsAt: string
   order: number
+  /** Raw override - null means "no override, falls back to the parent Event's venue." Compute the
+   *  effective venue as `session.venue ?? event.venue` at display time. */
+  venue: string | null
 }
 
 export interface EventSessionInput {
@@ -3665,22 +1270,30 @@ export interface EventSessionInput {
   startsAt: string
   endsAt: string
   order: number
+  venue: string | null
 }
 
 export interface Event {
   id: string
   title: string
   description: string | null
+  objectives: string | null
+  type: string | null
   chapter: string | null
   venue: string | null
   startsAt: string
   endsAt: string
+  hours: number | null
   capacity: number | null
   registeredCount: number
-  fee: number
+  feeOnsite: number
+  feeOnline: number
   /** Null means "TBD" - see Event.CpdUnitsOnsite's backend doc comment. */
   cpdUnitsOnsite: number | null
   cpdUnitsOnline: number | null
+  cpdCodeOnsite: string | null
+  cpdCodeOnline: string | null
+  hasPoster: boolean
   sessions: EventSession[]
 }
 
@@ -3692,12 +1305,18 @@ export interface CreateEventRequest {
   startsAt: string
   endsAt: string
   capacity: number | null
-  fee: number
+  feeOnsite: number
+  feeOnline: number
+  type: string | null
+  hours: number | null
+  objectives: string | null
 }
 
 export interface UpdateEventRequest extends CreateEventRequest {
   cpdUnitsOnsite: number | null
   cpdUnitsOnline: number | null
+  cpdCodeOnsite: string | null
+  cpdCodeOnline: string | null
   sessions: EventSessionInput[]
 }
 
@@ -3772,6 +1391,24 @@ export const eventApi = {
   updateEvent: (id: string, request: UpdateEventRequest) =>
     apiClient.put<Event>(`/api/events/${id}`, request).then((res) => res.data),
 
+  /** Admin-only. Overwrites any previous poster - an event has exactly one. */
+  uploadPoster: (eventId: string, file: File) => {
+    const form = new FormData()
+    form.append('file', file)
+    return apiClient.post(`/api/events/${eventId}/poster`, form).then((res) => res.data)
+  },
+
+  /** Fetched as a blob, same reasoning as downloadCertificate below - an authenticated image can't
+   *  be a plain <img src>. Returns null if the event has no poster yet or the request fails. */
+  getPosterUrl: async (eventId: string): Promise<string | null> => {
+    try {
+      const response = await apiClient.get(`/api/events/${eventId}/poster`, { responseType: 'blob' })
+      return URL.createObjectURL(response.data)
+    } catch {
+      return null
+    }
+  },
+
   register: (eventId: string, mode: EventModeValue) =>
     apiClient.post<EventRegistration>(`/api/events/${eventId}/register`, { mode }).then((res) => res.data),
 
@@ -3815,167 +1452,33 @@ export const eventApi = {
 }
 ```
 
-- [ ] **Step 2: Type-check**
+- [ ] **Step 2: Verify TypeScript compiles** (it will not yet — the three page components still use
+      the old shape; Tasks 7–9 fix them)
 
 Run: `cd apps/web && npx tsc -b`
-Expected: no new errors from `eventApi.ts`.
+Expected: Errors only in `EventFormModal.tsx`, `EventRegisterModal.tsx`, and `EventsTable.tsx` (all
+fixed in Tasks 7–9).
 
 - [ ] **Step 3: Commit**
 
 ```bash
 git add apps/web/src/core/api/endpoints/eventApi.ts
-git commit -m "feat: add eventApi client module"
+git commit -m "feat: add FeeOnsite/FeeOnline, Type, Hours, Objectives, CpdCode, poster, and session Venue to the events API client"
 ```
 
 ---
 
-## 14. Frontend — Events list, detail, and registration
+## 7. Frontend: `EventFormModal.tsx` — new admin fields and poster upload
 
 **Files:**
-- Create: `apps/web/src/integrations/template/pages/EventsTable.tsx`
-- Create: `apps/web/src/integrations/template/pages/EventFormModal.tsx`
-- Create: `apps/web/src/integrations/template/pages/EventRegisterModal.tsx`
-- Create: `apps/web/src/core/pages/EventsPage.tsx`
-- Modify: `apps/web/src/integrations/template/index.ts`
+- Modify: `apps/web/src/integrations/template/pages/EventFormModal.tsx`
 
-Per this project's standing convention (every list/table needs search + filter, not just sorting),
-`EventsTable` gets a title search box and a chapter filter dropdown, mirroring `MembersTable`'s
-`searchInput`/`statusFilter` props exactly.
+- [ ] **Step 1: Modify `EventFormModal.tsx`** — full replacement content:
 
-- [ ] **Step 1: Create `EventsTable`**
-
-```typescript
-import { Link } from 'react-router-dom'
-import { LuCalendar, LuMapPin, LuPlus, LuSearch } from 'react-icons/lu'
-import type { Event } from '../../../core/api/endpoints/eventApi'
-import { Chapters, type ChapterValue } from '../../../core/types/member'
-import { StandardButton } from '../components/shared/StandardButton'
-
-interface EventsTableProps {
-  events: Event[]
-  canManageEvents: boolean
-  searchInput: string
-  onSearchInputChange: (value: string) => void
-  chapterFilter: ChapterValue | null
-  onChapterFilterChange: (chapter: ChapterValue | null) => void
-  upcomingOnly: boolean
-  onUpcomingOnlyChange: (value: boolean) => void
-  page: number
-  pageSize: number
-  totalCount: number
-  onPageChange: (page: number) => void
-  onNewEvent: () => void
-  onSelectEvent: (event: Event) => void
-}
-
-function formatCpdUnits(onsite: number | null, online: number | null) {
-  if (onsite === null && online === null) return 'CPD units: TBD'
-  return `CPD units: Onsite ${onsite ?? 'TBD'} / Online ${online ?? 'TBD'}`
-}
-
-export function EventsTable({
-  events, canManageEvents, searchInput, onSearchInputChange, chapterFilter, onChapterFilterChange,
-  upcomingOnly, onUpcomingOnlyChange, page, pageSize, totalCount, onPageChange, onNewEvent, onSelectEvent,
-}: EventsTableProps) {
-  const totalPages = Math.max(1, Math.ceil(totalCount / pageSize))
-
-  return (
-    <div className="card">
-      <div className="card-header flex flex-wrap items-center justify-between gap-3">
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="relative">
-            <LuSearch className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-default-400" />
-            <input
-              type="text"
-              className="input pl-9"
-              placeholder="Search events..."
-              value={searchInput}
-              onChange={(e) => onSearchInputChange(e.target.value)}
-            />
-          </div>
-          <select
-            className="input"
-            value={chapterFilter ?? ''}
-            onChange={(e) => onChapterFilterChange((e.target.value || null) as ChapterValue | null)}
-          >
-            <option value="">All chapters</option>
-            {Object.values(Chapters).map((c) => (
-              <option key={c} value={c}>{c}</option>
-            ))}
-          </select>
-          <label className="flex items-center gap-2 text-sm text-default-600">
-            <input type="checkbox" checked={upcomingOnly} onChange={(e) => onUpcomingOnlyChange(e.target.checked)} />
-            Upcoming only
-          </label>
-        </div>
-        {canManageEvents && (
-          <StandardButton onClick={onNewEvent} className="btn btn-primary btn-sm inline-flex items-center gap-1">
-            <LuPlus className="size-4" /> New Event
-          </StandardButton>
-        )}
-      </div>
-
-      <div className="card-body p-0">
-        {events.length === 0 ? (
-          <p className="text-sm text-default-500 p-4">No events found.</p>
-        ) : (
-          <ul className="divide-y divide-default-200">
-            {events.map((event) => (
-              <li key={event.id} className="p-4 hover:bg-default-50 cursor-pointer" onClick={() => onSelectEvent(event)}>
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <p className="font-medium text-default-800">{event.title}</p>
-                    <p className="flex items-center gap-1 text-xs text-default-500 mt-1">
-                      <LuCalendar className="size-3.5" />
-                      {new Date(event.startsAt).toLocaleDateString()} - {new Date(event.endsAt).toLocaleDateString()}
-                    </p>
-                    {event.venue && (
-                      <p className="flex items-center gap-1 text-xs text-default-500">
-                        <LuMapPin className="size-3.5" /> {event.venue}
-                      </p>
-                    )}
-                    <p className="text-xs text-default-500 mt-1">{formatCpdUnits(event.cpdUnitsOnsite, event.cpdUnitsOnline)}</p>
-                  </div>
-                  <div className="text-right shrink-0">
-                    <p className="text-sm font-semibold">{event.fee > 0 ? `PHP ${event.fee.toFixed(2)}` : 'Free'}</p>
-                    <p className="text-xs text-default-500">
-                      {event.registeredCount}{event.capacity ? ` / ${event.capacity}` : ''} registered
-                    </p>
-                    {canManageEvents && (
-                      <Link
-                        to={`/events/${event.id}/roster`}
-                        onClick={(e) => e.stopPropagation()}
-                        className="text-xs text-primary hover:underline"
-                      >
-                        View roster
-                      </Link>
-                    )}
-                  </div>
-                </div>
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
-
-      <div className="card-footer flex items-center justify-between">
-        <span className="text-xs text-default-500">Page {page} of {totalPages} ({totalCount} total)</span>
-        <div className="flex gap-2">
-          <button type="button" className="btn btn-sm" disabled={page <= 1} onClick={() => onPageChange(page - 1)}>Previous</button>
-          <button type="button" className="btn btn-sm" disabled={page >= totalPages} onClick={() => onPageChange(page + 1)}>Next</button>
-        </div>
-      </div>
-    </div>
-  )
-}
-```
-
-- [ ] **Step 2: Create `EventFormModal`**
-
-```typescript
+```tsx
 import { useEffect, useState } from 'react'
 import type { Event, EventSessionInput } from '../../../core/api/endpoints/eventApi'
-import { eventApi } from '../../../core/api/endpoints/eventApi'
+import { EventTypes, eventApi } from '../../../core/api/endpoints/eventApi'
 import { Chapters } from '../../../core/types/member'
 import { describeError } from '../../../core/utils/apiError'
 import { StandardButton } from '../components/shared/StandardButton'
@@ -3988,23 +1491,32 @@ interface EventFormModalProps {
 }
 
 function toSessionInputs(event: Event | null): EventSessionInput[] {
-  return event?.sessions.map((s) => ({ id: s.id, title: s.title, startsAt: s.startsAt, endsAt: s.endsAt, order: s.order })) ?? []
+  return event?.sessions.map((s) => ({ id: s.id, title: s.title, startsAt: s.startsAt, endsAt: s.endsAt, order: s.order, venue: s.venue })) ?? []
 }
 
-/** Admin-only event create/edit, including session (lecture) management and setting each
- *  modality's CPD units - see EventService.UpdateAsync's session reconciliation on the backend. */
+/** Admin-only event create/edit, including session (lecture) management, each modality's fee/CPD
+ *  units/accreditation code, the poster image, and the descriptive fields (Type, Hours, Objectives) -
+ *  see EventService.UpdateAsync's session reconciliation on the backend. */
 export function EventFormModal({ event, mode, onClose, onSaved }: EventFormModalProps) {
   const [title, setTitle] = useState(event?.title ?? '')
   const [description, setDescription] = useState(event?.description ?? '')
+  const [objectives, setObjectives] = useState(event?.objectives ?? '')
+  const [type, setType] = useState(event?.type ?? '')
   const [chapter, setChapter] = useState(event?.chapter ?? '')
   const [venue, setVenue] = useState(event?.venue ?? '')
   const [startsAt, setStartsAt] = useState(event?.startsAt.slice(0, 16) ?? '')
   const [endsAt, setEndsAt] = useState(event?.endsAt.slice(0, 16) ?? '')
+  const [hours, setHours] = useState(event?.hours?.toString() ?? '')
   const [capacity, setCapacity] = useState(event?.capacity?.toString() ?? '')
-  const [fee, setFee] = useState(event?.fee.toString() ?? '0')
+  const [feeOnsite, setFeeOnsite] = useState(event?.feeOnsite.toString() ?? '0')
+  const [feeOnline, setFeeOnline] = useState(event?.feeOnline.toString() ?? '0')
   const [cpdUnitsOnsite, setCpdUnitsOnsite] = useState(event?.cpdUnitsOnsite?.toString() ?? '')
   const [cpdUnitsOnline, setCpdUnitsOnline] = useState(event?.cpdUnitsOnline?.toString() ?? '')
+  const [cpdCodeOnsite, setCpdCodeOnsite] = useState(event?.cpdCodeOnsite ?? '')
+  const [cpdCodeOnline, setCpdCodeOnline] = useState(event?.cpdCodeOnline ?? '')
   const [sessions, setSessions] = useState<EventSessionInput[]>(toSessionInputs(event))
+  const [posterFile, setPosterFile] = useState<File | null>(null)
+  const [posterPreviewUrl, setPosterPreviewUrl] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -4012,12 +1524,39 @@ export function EventFormModal({ event, mode, onClose, onSaved }: EventFormModal
     setSessions(toSessionInputs(event))
   }, [event])
 
+  // Loads the existing poster (if any) for preview when editing - a freshly-chosen posterFile
+  // (handled by handlePosterFileChange below) takes priority over this fetched preview.
+  useEffect(() => {
+    if (!event?.hasPoster) return
+    let cancelled = false
+    eventApi.getPosterUrl(event.id).then((url) => {
+      if (!cancelled) setPosterPreviewUrl(url)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [event])
+
+  // Same Escape-to-close/backdrop-click shell as ConfirmationModal, LogDetailsModal, etc.
+  useEffect(() => {
+    const handleKeyDown = (keyEvent: KeyboardEvent) => {
+      if (keyEvent.key === 'Escape') onClose()
+    }
+    document.addEventListener('keydown', handleKeyDown)
+    return () => document.removeEventListener('keydown', handleKeyDown)
+  }, [onClose])
+
+  const handlePosterFileChange = (file: File | null) => {
+    setPosterFile(file)
+    if (file) setPosterPreviewUrl(URL.createObjectURL(file))
+  }
+
   const updateSession = (index: number, patch: Partial<EventSessionInput>) => {
     setSessions((prev) => prev.map((s, i) => (i === index ? { ...s, ...patch } : s)))
   }
 
   const addSession = () => {
-    setSessions((prev) => [...prev, { id: null, title: '', startsAt, endsAt, order: prev.length + 1 }])
+    setSessions((prev) => [...prev, { id: null, title: '', startsAt, endsAt, order: prev.length + 1, venue: null }])
   }
 
   const removeSession = (index: number) => {
@@ -4036,19 +1575,32 @@ export function EventFormModal({ event, mode, onClose, onSaved }: EventFormModal
         startsAt: new Date(startsAt).toISOString(),
         endsAt: new Date(endsAt).toISOString(),
         capacity: capacity ? Number(capacity) : null,
-        fee: Number(fee),
+        feeOnsite: Number(feeOnsite),
+        feeOnline: Number(feeOnline),
+        type: type || null,
+        hours: hours ? Number(hours) : null,
+        objectives: objectives || null,
       }
 
+      let savedEventId = event?.id ?? null
       if (mode === 'create') {
-        await eventApi.createEvent(basePayload)
+        const created = await eventApi.createEvent(basePayload)
+        savedEventId = created.id
       } else if (event) {
         await eventApi.updateEvent(event.id, {
           ...basePayload,
           cpdUnitsOnsite: cpdUnitsOnsite ? Number(cpdUnitsOnsite) : null,
           cpdUnitsOnline: cpdUnitsOnline ? Number(cpdUnitsOnline) : null,
+          cpdCodeOnsite: cpdCodeOnsite || null,
+          cpdCodeOnline: cpdCodeOnline || null,
           sessions,
         })
       }
+
+      if (posterFile && savedEventId) {
+        await eventApi.uploadPoster(savedEventId, posterFile)
+      }
+
       onSaved()
     } catch (err) {
       setError(describeError(err, 'Could not save this event.'))
@@ -4058,54 +1610,168 @@ export function EventFormModal({ event, mode, onClose, onSaved }: EventFormModal
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="card w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+    <div className="fixed inset-0 z-100 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/50" onClick={onClose} />
+      <div className="relative card w-full max-w-2xl max-h-[90vh] overflow-y-auto">
         <div className="card-header">
           <h6 className="card-title">{mode === 'create' ? 'New Event' : 'Edit Event'}</h6>
         </div>
         <div className="card-body flex flex-col gap-3">
           {error && <p className="text-sm text-danger">{error}</p>}
-          <input className="input" placeholder="Title" value={title} onChange={(e) => setTitle(e.target.value)} />
-          <textarea className="input" placeholder="Description" value={description} onChange={(e) => setDescription(e.target.value)} />
+          <input className="form-input" placeholder="Title" value={title} onChange={(e) => setTitle(e.target.value)} />
+          <textarea
+            className="form-input"
+            placeholder="Description"
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+          />
+          <textarea
+            className="form-input"
+            placeholder="Objectives"
+            value={objectives}
+            onChange={(e) => setObjectives(e.target.value)}
+          />
           <div className="grid grid-cols-2 gap-3">
-            <select className="input" value={chapter} onChange={(e) => setChapter(e.target.value)}>
-              <option value="">National (all chapters)</option>
-              {Object.values(Chapters).map((c) => <option key={c} value={c}>{c}</option>)}
+            <select className="form-input" value={type} onChange={(e) => setType(e.target.value)}>
+              <option value="">No type set</option>
+              {Object.values(EventTypes).map((t) => (
+                <option key={t} value={t}>
+                  {t}
+                </option>
+              ))}
             </select>
-            <input className="input" placeholder="Venue" value={venue} onChange={(e) => setVenue(e.target.value)} />
+            <input
+              type="number"
+              step="0.01"
+              className="form-input"
+              placeholder="Hours (PRC-declared)"
+              value={hours}
+              onChange={(e) => setHours(e.target.value)}
+            />
           </div>
           <div className="grid grid-cols-2 gap-3">
-            <input type="datetime-local" className="input" value={startsAt} onChange={(e) => setStartsAt(e.target.value)} />
-            <input type="datetime-local" className="input" value={endsAt} onChange={(e) => setEndsAt(e.target.value)} />
+            <select className="form-input" value={chapter} onChange={(e) => setChapter(e.target.value)}>
+              <option value="">National (all chapters)</option>
+              {Object.values(Chapters).map((c) => (
+                <option key={c} value={c}>
+                  {c}
+                </option>
+              ))}
+            </select>
+            <input className="form-input" placeholder="Venue" value={venue} onChange={(e) => setVenue(e.target.value)} />
           </div>
           <div className="grid grid-cols-2 gap-3">
-            <input type="number" className="input" placeholder="Capacity" value={capacity} onChange={(e) => setCapacity(e.target.value)} />
-            <input type="number" className="input" placeholder="Fee" value={fee} onChange={(e) => setFee(e.target.value)} />
+            <input type="datetime-local" className="form-input" value={startsAt} onChange={(e) => setStartsAt(e.target.value)} />
+            <input type="datetime-local" className="form-input" value={endsAt} onChange={(e) => setEndsAt(e.target.value)} />
+          </div>
+          <div className="grid grid-cols-3 gap-3">
+            <input
+              type="number"
+              className="form-input"
+              placeholder="Capacity"
+              value={capacity}
+              onChange={(e) => setCapacity(e.target.value)}
+            />
+            <input
+              type="number"
+              className="form-input"
+              placeholder="Fee (Onsite)"
+              value={feeOnsite}
+              onChange={(e) => setFeeOnsite(e.target.value)}
+            />
+            <input
+              type="number"
+              className="form-input"
+              placeholder="Fee (Online)"
+              value={feeOnline}
+              onChange={(e) => setFeeOnline(e.target.value)}
+            />
+          </div>
+
+          <div>
+            <label className="text-sm text-default-600 block mb-1">Poster / banner image</label>
+            {posterPreviewUrl && (
+              <img src={posterPreviewUrl} alt="Poster preview" className="w-full h-32 object-cover rounded-md mb-2" />
+            )}
+            <input
+              type="file"
+              accept="image/jpeg,image/png"
+              className="text-sm"
+              onChange={(e) => handlePosterFileChange(e.target.files?.[0] ?? null)}
+            />
           </div>
 
           {mode === 'edit' && (
             <>
               <div className="grid grid-cols-2 gap-3">
-                <input type="number" step="0.01" className="input" placeholder="CPD Units (Onsite) - blank for TBD"
-                  value={cpdUnitsOnsite} onChange={(e) => setCpdUnitsOnsite(e.target.value)} />
-                <input type="number" step="0.01" className="input" placeholder="CPD Units (Online) - blank for TBD"
-                  value={cpdUnitsOnline} onChange={(e) => setCpdUnitsOnline(e.target.value)} />
+                <input
+                  type="number"
+                  step="0.01"
+                  className="form-input"
+                  placeholder="CPD Units (Onsite) - blank for TBD"
+                  value={cpdUnitsOnsite}
+                  onChange={(e) => setCpdUnitsOnsite(e.target.value)}
+                />
+                <input
+                  type="number"
+                  step="0.01"
+                  className="form-input"
+                  placeholder="CPD Units (Online) - blank for TBD"
+                  value={cpdUnitsOnline}
+                  onChange={(e) => setCpdUnitsOnline(e.target.value)}
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <input
+                  className="form-input"
+                  placeholder="PRC Accreditation Code (Onsite)"
+                  value={cpdCodeOnsite}
+                  onChange={(e) => setCpdCodeOnsite(e.target.value)}
+                />
+                <input
+                  className="form-input"
+                  placeholder="PRC Accreditation Code (Online)"
+                  value={cpdCodeOnline}
+                  onChange={(e) => setCpdCodeOnline(e.target.value)}
+                />
               </div>
 
               <div className="border-t border-default-200 pt-3">
                 <div className="flex items-center justify-between mb-2">
                   <h6 className="text-sm font-semibold">Sessions / Lectures</h6>
-                  <button type="button" className="btn btn-sm" onClick={addSession}>Add session</button>
+                  <StandardButton variant="secondary" size="sm" onClick={addSession}>
+                    Add session
+                  </StandardButton>
                 </div>
                 {sessions.map((session, index) => (
-                  <div key={session.id ?? `new-${index}`} className="grid grid-cols-[1fr_auto_auto_auto] gap-2 mb-2 items-center">
-                    <input className="input" placeholder="Session title" value={session.title}
-                      onChange={(e) => updateSession(index, { title: e.target.value })} />
-                    <input type="datetime-local" className="input" value={session.startsAt.slice(0, 16)}
-                      onChange={(e) => updateSession(index, { startsAt: new Date(e.target.value).toISOString() })} />
-                    <input type="datetime-local" className="input" value={session.endsAt.slice(0, 16)}
-                      onChange={(e) => updateSession(index, { endsAt: new Date(e.target.value).toISOString() })} />
-                    <button type="button" className="btn btn-sm btn-danger" onClick={() => removeSession(index)}>Remove</button>
+                  <div key={session.id ?? `new-${index}`} className="grid grid-cols-[1fr_auto_auto_1fr_auto] gap-2 mb-2 items-center">
+                    <input
+                      className="form-input"
+                      placeholder="Session title"
+                      value={session.title}
+                      onChange={(e) => updateSession(index, { title: e.target.value })}
+                    />
+                    <input
+                      type="datetime-local"
+                      className="form-input"
+                      value={session.startsAt.slice(0, 16)}
+                      onChange={(e) => updateSession(index, { startsAt: new Date(e.target.value).toISOString() })}
+                    />
+                    <input
+                      type="datetime-local"
+                      className="form-input"
+                      value={session.endsAt.slice(0, 16)}
+                      onChange={(e) => updateSession(index, { endsAt: new Date(e.target.value).toISOString() })}
+                    />
+                    <input
+                      className="form-input"
+                      placeholder="Venue override (blank = event's venue)"
+                      value={session.venue ?? ''}
+                      onChange={(e) => updateSession(index, { venue: e.target.value || null })}
+                    />
+                    <StandardButton variant="danger" size="sm" onClick={() => removeSession(index)}>
+                      Remove
+                    </StandardButton>
                   </div>
                 ))}
               </div>
@@ -4113,8 +1779,12 @@ export function EventFormModal({ event, mode, onClose, onSaved }: EventFormModal
           )}
         </div>
         <div className="card-footer flex justify-end gap-2">
-          <button type="button" className="btn" onClick={onClose}>Cancel</button>
-          <StandardButton onClick={handleSubmit} loading={saving} className="btn btn-primary">Save</StandardButton>
+          <StandardButton variant="secondary" onClick={onClose} disabled={saving}>
+            Cancel
+          </StandardButton>
+          <StandardButton onClick={handleSubmit} loading={saving} loadingLabel="Saving…">
+            Save
+          </StandardButton>
         </div>
       </div>
     </div>
@@ -4122,10 +1792,30 @@ export function EventFormModal({ event, mode, onClose, onSaved }: EventFormModal
 }
 ```
 
-- [ ] **Step 3: Create `EventRegisterModal`**
+- [ ] **Step 2: Verify this file's slice of the TypeScript build is clean** (other files still break
+      until Tasks 8–9)
 
-```typescript
-import { useState } from 'react'
+Run: `cd apps/web && npx tsc -b --noEmit 2>&1 | grep EventFormModal || echo "no errors in EventFormModal.tsx"`
+Expected: `no errors in EventFormModal.tsx`
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add apps/web/src/integrations/template/pages/EventFormModal.tsx
+git commit -m "feat: add Type, Hours, Objectives, per-modality fee/CPD code fields, poster upload, and session Venue to the admin event form"
+```
+
+---
+
+## 8. Frontend: `EventRegisterModal.tsx` — live per-modality fee/CPD display and event detail
+
+**Files:**
+- Modify: `apps/web/src/integrations/template/pages/EventRegisterModal.tsx`
+
+- [ ] **Step 1: Modify `EventRegisterModal.tsx`** — full replacement content:
+
+```tsx
+import { useEffect, useState } from 'react'
 import type { Event } from '../../../core/api/endpoints/eventApi'
 import { EventMode, type EventModeValue, eventApi } from '../../../core/api/endpoints/eventApi'
 import { describeError } from '../../../core/utils/apiError'
@@ -4137,18 +1827,53 @@ interface EventRegisterModalProps {
   onRegistered: () => void
 }
 
-/** Member-facing: pick a modality, register, then optionally submit payment proof right away
- *  (the member can also come back to it later from My CPD - registering alone is enough to hold
- *  the Registered row). */
+function feeForMode(event: Event, mode: EventModeValue): number {
+  return mode === EventMode.Onsite ? event.feeOnsite : event.feeOnline
+}
+
+/** Member-facing: shows the event's detail (poster, type, hours, objectives, sessions with their
+ *  effective venue), lets the member pick a modality (fee and CPD units update live for whichever
+ *  is selected), registers, then optionally submits payment proof right away (the member can also
+ *  come back to it later from My CPD - registering alone is enough to hold the Registered row). */
 export function EventRegisterModal({ event, onClose, onRegistered }: EventRegisterModalProps) {
   const [mode, setMode] = useState<EventModeValue>(EventMode.Onsite)
-  const [amount, setAmount] = useState(event.fee.toString())
+  const [amount, setAmount] = useState(feeForMode(event, EventMode.Onsite).toString())
   const [referenceNo, setReferenceNo] = useState('')
   const [paidOn, setPaidOn] = useState(new Date().toISOString().slice(0, 10))
   const [proofFile, setProofFile] = useState<File | null>(null)
   const [registrationId, setRegistrationId] = useState<string | null>(null)
+  const [posterUrl, setPosterUrl] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!event.hasPoster) return
+    let cancelled = false
+    eventApi.getPosterUrl(event.id).then((url) => {
+      if (!cancelled) setPosterUrl(url)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [event.id, event.hasPoster])
+
+  // Keeps the amount field in sync with whichever modality is currently selected, but only before
+  // the member has registered - once registrationId is set, the amount field becomes the member's
+  // own editable payment declaration and should stop tracking the radio selection.
+  useEffect(() => {
+    if (!registrationId) {
+      setAmount(feeForMode(event, mode).toString())
+    }
+  }, [event, mode, registrationId])
+
+  // Same Escape-to-close/backdrop-click shell as ConfirmationModal, LogDetailsModal, etc.
+  useEffect(() => {
+    const handleKeyDown = (keyEvent: KeyboardEvent) => {
+      if (keyEvent.key === 'Escape') onClose()
+    }
+    document.addEventListener('keydown', handleKeyDown)
+    return () => document.removeEventListener('keydown', handleKeyDown)
+  }, [onClose])
 
   const handleRegister = async () => {
     setSaving(true)
@@ -4156,7 +1881,7 @@ export function EventRegisterModal({ event, onClose, onRegistered }: EventRegist
     try {
       const registration = await eventApi.register(event.id, mode)
       setRegistrationId(registration.id)
-      if (event.fee <= 0) {
+      if (feeForMode(event, mode) <= 0) {
         onRegistered()
       }
     } catch (err) {
@@ -4173,7 +1898,7 @@ export function EventRegisterModal({ event, onClose, onRegistered }: EventRegist
     try {
       const payment = await eventApi.submitPayment(registrationId, { amount: Number(amount), referenceNo: referenceNo || null, paidOn })
       if (proofFile) {
-        await eventApi.uploadPaymentProof((payment as { id: string }).id, proofFile)
+        await eventApi.uploadPaymentProof(payment.id, proofFile)
       }
       onRegistered()
     } catch (err) {
@@ -4184,42 +1909,79 @@ export function EventRegisterModal({ event, onClose, onRegistered }: EventRegist
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="card w-full max-w-md">
+    <div className="fixed inset-0 z-100 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/50" onClick={onClose} />
+      <div className="relative card w-full max-w-md max-h-[90vh] overflow-y-auto">
         <div className="card-header">
           <h6 className="card-title">Register for {event.title}</h6>
         </div>
         <div className="card-body flex flex-col gap-3">
           {error && <p className="text-sm text-danger">{error}</p>}
 
+          {posterUrl && <img src={posterUrl} alt={event.title} className="w-full h-32 object-cover rounded-md" />}
+          {event.type && <p className="text-xs text-default-500">{event.type}</p>}
+          {event.hours !== null && <p className="text-xs text-default-500">{event.hours} PRC hour(s)</p>}
+          {event.objectives && <p className="text-sm text-default-600">{event.objectives}</p>}
+          {event.sessions.length > 0 && (
+            <div className="text-xs text-default-500 flex flex-col gap-0.5">
+              {event.sessions.map((s) => (
+                <div key={s.id}>
+                  {s.title} — {s.venue ?? event.venue ?? 'Venue TBA'}
+                </div>
+              ))}
+            </div>
+          )}
+
           {!registrationId ? (
             <>
-              <label className="flex items-center gap-2">
-                <input type="radio" checked={mode === EventMode.Onsite} onChange={() => setMode(EventMode.Onsite)} />
-                Onsite {event.cpdUnitsOnsite !== null ? `(${event.cpdUnitsOnsite} CPD units)` : '(CPD units: TBD)'}
+              <label className="flex items-center gap-2 text-sm">
+                <input type="radio" name="eventMode" className="form-radio" checked={mode === EventMode.Onsite} onChange={() => setMode(EventMode.Onsite)} />
+                Onsite {event.cpdUnitsOnsite !== null ? `(${event.cpdUnitsOnsite} CPD units${event.cpdCodeOnsite ? `, ${event.cpdCodeOnsite}` : ''})` : '(CPD units: TBD)'}
               </label>
-              <label className="flex items-center gap-2">
-                <input type="radio" checked={mode === EventMode.Online} onChange={() => setMode(EventMode.Online)} />
-                Online {event.cpdUnitsOnline !== null ? `(${event.cpdUnitsOnline} CPD units)` : '(CPD units: TBD)'}
+              <label className="flex items-center gap-2 text-sm">
+                <input type="radio" name="eventMode" className="form-radio" checked={mode === EventMode.Online} onChange={() => setMode(EventMode.Online)} />
+                Online {event.cpdUnitsOnline !== null ? `(${event.cpdUnitsOnline} CPD units${event.cpdCodeOnline ? `, ${event.cpdCodeOnline}` : ''})` : '(CPD units: TBD)'}
               </label>
-              <p className="text-sm text-default-600">Fee: {event.fee > 0 ? `PHP ${event.fee.toFixed(2)}` : 'Free'}</p>
+              <p className="text-sm text-default-600">
+                Fee: {feeForMode(event, mode) > 0 ? `PHP ${feeForMode(event, mode).toFixed(2)}` : 'Free'}
+              </p>
             </>
           ) : (
             <>
               <p className="text-sm text-default-600">You're registered. Submit your payment proof to move to verification:</p>
-              <input type="number" className="input" placeholder="Amount" value={amount} onChange={(e) => setAmount(e.target.value)} />
-              <input className="input" placeholder="Reference No." value={referenceNo} onChange={(e) => setReferenceNo(e.target.value)} />
-              <input type="date" className="input" value={paidOn} onChange={(e) => setPaidOn(e.target.value)} />
-              <input type="file" accept="image/*,.pdf" onChange={(e) => setProofFile(e.target.files?.[0] ?? null)} />
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                className="form-input"
+                placeholder="Amount"
+                value={amount}
+                onChange={(e) => setAmount(e.target.value)}
+              />
+              <input className="form-input" placeholder="Reference No." value={referenceNo} onChange={(e) => setReferenceNo(e.target.value)} />
+              <input
+                type="date"
+                className="form-input"
+                max={new Date().toISOString().slice(0, 10)}
+                value={paidOn}
+                onChange={(e) => setPaidOn(e.target.value)}
+              />
+              <input type="file" accept="image/*,.pdf" className="text-sm" onChange={(e) => setProofFile(e.target.files?.[0] ?? null)} />
             </>
           )}
         </div>
         <div className="card-footer flex justify-end gap-2">
-          <button type="button" className="btn" onClick={onClose}>Cancel</button>
+          <StandardButton variant="secondary" onClick={onClose} disabled={saving}>
+            Cancel
+          </StandardButton>
           {!registrationId ? (
-            <StandardButton onClick={handleRegister} loading={saving} className="btn btn-primary">Register</StandardButton>
+            <StandardButton onClick={handleRegister} loading={saving} loadingLabel="Registering…">
+              Register
+            </StandardButton>
           ) : (
-            <StandardButton onClick={handleSubmitPayment} loading={saving} className="btn btn-primary">Submit Payment</StandardButton>
+            <StandardButton onClick={handleSubmitPayment} loading={saving} loadingLabel="Submitting…">
+              Submit Payment
+            </StandardButton>
           )}
         </div>
       </div>
@@ -4228,793 +1990,143 @@ export function EventRegisterModal({ event, onClose, onRegistered }: EventRegist
 }
 ```
 
-- [ ] **Step 4: Create `EventsPage`**
+- [ ] **Step 2: Verify this file's slice of the TypeScript build is clean**
 
-```typescript
-import { useCallback, useEffect, useState } from 'react'
-import type { Event } from '../api/endpoints/eventApi'
-import { eventApi } from '../api/endpoints/eventApi'
-import type { ChapterValue } from '../types/member'
-import { describeError } from '../utils/apiError'
-import { useAuth } from '../auth/useAuth'
-import { Roles } from '../types/auth'
-import { EventFormModal, EventRegisterModal, EventsTable, PageBreadcrumb, PageMeta } from '../../integrations/template'
+Run: `cd apps/web && npx tsc -b --noEmit 2>&1 | grep EventRegisterModal || echo "no errors in EventRegisterModal.tsx"`
+Expected: `no errors in EventRegisterModal.tsx`
 
-const PAGE_SIZE = 20
+- [ ] **Step 3: Commit**
 
-export function EventsPage() {
-  const { user } = useAuth()
-  const canManageEvents = user?.roles.includes(Roles.Admin) || user?.roles.includes(Roles.SuperAdmin) || false
-  const isMember = user?.roles.includes(Roles.Member) || false
-
-  const [events, setEvents] = useState<Event[]>([])
-  const [totalCount, setTotalCount] = useState(0)
-  const [page, setPage] = useState(1)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
-
-  const [searchInput, setSearchInput] = useState('')
-  const [search, setSearch] = useState('')
-  const [chapterFilter, setChapterFilter] = useState<ChapterValue | null>(null)
-  const [upcomingOnly, setUpcomingOnly] = useState(true)
-
-  const [formEvent, setFormEvent] = useState<{ event: Event | null; mode: 'create' | 'edit' } | null>(null)
-  const [registeringEvent, setRegisteringEvent] = useState<Event | null>(null)
-
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      setSearch(searchInput)
-      setPage(1)
-    }, 350)
-    return () => clearTimeout(timer)
-  }, [searchInput])
-
-  const fetchEvents = useCallback(
-    async (isStale: () => boolean = () => false) => {
-      const result = await eventApi.getEvents({ page, pageSize: PAGE_SIZE, search: search || undefined, chapter: chapterFilter ?? undefined, upcomingOnly })
-      if (isStale()) return
-      setEvents(result.items)
-      setTotalCount(result.totalCount)
-    },
-    [page, search, chapterFilter, upcomingOnly],
-  )
-
-  useEffect(() => {
-    let cancelled = false
-    setLoading(true)
-    setError(null)
-    fetchEvents(() => cancelled)
-      .catch((err) => {
-        if (!cancelled) setError(describeError(err, 'Could not load events. Please try again.'))
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false)
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [fetchEvents])
-
-  const handleSelectEvent = (event: Event) => {
-    if (canManageEvents) {
-      setFormEvent({ event, mode: 'edit' })
-    } else if (isMember) {
-      setRegisteringEvent(event)
-    }
-  }
-
-  return (
-    <>
-      <PageMeta title="Events" />
-      <main>
-        <PageBreadcrumb title="Events" />
-
-        {error && <p className="text-sm text-danger mb-4">{error}</p>}
-
-        {loading ? (
-          <p className="text-sm text-default-500">Loading…</p>
-        ) : (
-          <EventsTable
-            events={events}
-            canManageEvents={canManageEvents}
-            searchInput={searchInput}
-            onSearchInputChange={setSearchInput}
-            chapterFilter={chapterFilter}
-            onChapterFilterChange={(c) => { setChapterFilter(c); setPage(1) }}
-            upcomingOnly={upcomingOnly}
-            onUpcomingOnlyChange={(v) => { setUpcomingOnly(v); setPage(1) }}
-            page={page}
-            pageSize={PAGE_SIZE}
-            totalCount={totalCount}
-            onPageChange={setPage}
-            onNewEvent={() => setFormEvent({ event: null, mode: 'create' })}
-            onSelectEvent={handleSelectEvent}
-          />
-        )}
-
-        {formEvent && (
-          <EventFormModal
-            event={formEvent.event}
-            mode={formEvent.mode}
-            onClose={() => setFormEvent(null)}
-            onSaved={() => { setFormEvent(null); fetchEvents() }}
-          />
-        )}
-
-        {registeringEvent && (
-          <EventRegisterModal
-            event={registeringEvent}
-            onClose={() => setRegisteringEvent(null)}
-            onRegistered={() => { setRegisteringEvent(null); fetchEvents() }}
-          />
-        )}
-      </main>
-    </>
-  )
-}
+```bash
+git add apps/web/src/integrations/template/pages/EventRegisterModal.tsx
+git commit -m "feat: show poster/type/hours/objectives/session venues and live per-modality fee/CPD units in the register modal"
 ```
 
-- [ ] **Step 5: Export the new template components**
+---
 
-In `apps/web/src/integrations/template/index.ts`, add after the `PaymentsQueueTable` export:
+## 9. Frontend: `EventsTable.tsx` — split fee display
 
-```typescript
-export { EventsTable } from './pages/EventsTable'
-export { EventFormModal } from './pages/EventFormModal'
-export { EventRegisterModal } from './pages/EventRegisterModal'
+**Files:**
+- Modify: `apps/web/src/integrations/template/pages/EventsTable.tsx`
+
+- [ ] **Step 1: Modify `EventsTable.tsx`** — replace the single `event.fee` display (around the
+      existing `<p className="text-sm font-semibold">` line) with the two-modality version. Find:
+
+```tsx
+                  <div className="text-right shrink-0">
+                    <p className="text-sm font-semibold">{event.fee > 0 ? `PHP ${event.fee.toFixed(2)}` : 'Free'}</p>
+                    <p className="text-xs text-default-500">
 ```
 
-- [ ] **Step 6: Type-check**
+Replace with:
+
+```tsx
+                  <div className="text-right shrink-0">
+                    <p className="text-sm font-semibold">
+                      {event.feeOnsite > 0 || event.feeOnline > 0
+                        ? `Onsite PHP ${event.feeOnsite.toFixed(2)} / Online PHP ${event.feeOnline.toFixed(2)}`
+                        : 'Free'}
+                    </p>
+                    <p className="text-xs text-default-500">
+```
+
+- [ ] **Step 2: Verify this file's slice of the TypeScript build is clean, and the whole frontend
+      build now compiles end to end**
 
 Run: `cd apps/web && npx tsc -b`
-Expected: no new errors.
+Expected: Build succeeds with zero errors (this is the last of the three page components with a
+stale `Event.fee` reference).
 
-- [ ] **Step 7: Commit**
+- [ ] **Step 3: Commit**
 
 ```bash
-git add apps/web/src/integrations/template/pages/EventsTable.tsx apps/web/src/integrations/template/pages/EventFormModal.tsx \
-  apps/web/src/integrations/template/pages/EventRegisterModal.tsx apps/web/src/core/pages/EventsPage.tsx \
-  apps/web/src/integrations/template/index.ts
-git commit -m "feat: add Events list, admin form, and member registration pages"
+git add apps/web/src/integrations/template/pages/EventsTable.tsx
+git commit -m "feat: show FeeOnsite/FeeOnline separately in the events list"
 ```
 
 ---
 
-## 15. Frontend — admin event roster
+## 10. Documentation and final verification
 
 **Files:**
-- Create: `apps/web/src/integrations/template/pages/EventRosterTable.tsx`
-- Create: `apps/web/src/core/pages/EventRosterPage.tsx`
-- Modify: `apps/web/src/integrations/template/index.ts`
+- Modify: `openspecs/events.md`
 
-- [ ] **Step 1: Create `EventRosterTable`**
+- [ ] **Step 1: Modify `openspecs/events.md`** — update "The `Event` → `EventSession` →
+      `EventAttendance` shape" section's `Event`/`EventSession` bullet points to reflect the new
+      fields. Find:
 
-```typescript
-import { useState } from 'react'
-import type { EventRosterEntry, EventSession } from '../../../core/api/endpoints/eventApi'
-import { StandardButton } from '../components/shared/StandardButton'
-
-interface EventRosterTableProps {
-  sessions: EventSession[]
-  registrants: EventRosterEntry[]
-  pendingAttendance: Record<string, Set<string>>
-  onToggleSession: (registrationId: string, sessionId: string) => void
-  onSaveAttendance: () => void
-  savingAttendance: boolean
-  onRecordCashPayment: (registrationId: string) => void
-}
-
-function paymentBadge(entry: EventRosterEntry) {
-  if (!entry.paymentStatus) return <span className="text-xs text-default-400">No payment</span>
-  const label = entry.paymentIsCash ? `${entry.paymentStatus} (cash)` : entry.paymentStatus
-  const cls = entry.paymentStatus === 'Verified' ? 'bg-success/10 text-success'
-    : entry.paymentStatus === 'Rejected' ? 'bg-danger/10 text-danger' : 'bg-warning/10 text-warning'
-  return <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs ${cls}`}>{label}</span>
-}
-
-/** Per-session checkboxes reflect `pendingAttendance` (the in-progress edit), not
- *  `entry.attendedSessionIds` directly - EventRosterPage seeds pendingAttendance from the fetched
- *  roster and only writes it back to the server when the admin clicks Save, so partially-checked
- *  work isn't lost mid-reconciliation across a slow page. */
-export function EventRosterTable({
-  sessions, registrants, pendingAttendance, onToggleSession, onSaveAttendance, savingAttendance, onRecordCashPayment,
-}: EventRosterTableProps) {
-  const [cashAmount, setCashAmount] = useState<Record<string, string>>({})
-
-  return (
-    <div className="card">
-      <div className="card-header flex items-center justify-between">
-        <h6 className="card-title">Roster</h6>
-        <StandardButton onClick={onSaveAttendance} loading={savingAttendance} className="btn btn-primary btn-sm">
-          Save Attendance
-        </StandardButton>
-      </div>
-      <div className="card-body overflow-x-auto">
-        <table className="table">
-          <thead>
-            <tr>
-              <th>Member</th>
-              <th>Mode</th>
-              <th>Payment</th>
-              {sessions.map((s) => <th key={s.id} className="text-center whitespace-nowrap">{s.title}</th>)}
-              <th>Status</th>
-              <th>Evaluation</th>
-              <th>Credit</th>
-            </tr>
-          </thead>
-          <tbody>
-            {registrants.map((entry) => (
-              <tr key={entry.registrationId}>
-                <td>
-                  <div>{entry.memberName}</div>
-                  <div className="text-xs text-default-400">{entry.membershipNo ?? '-'}</div>
-                </td>
-                <td>{entry.mode}</td>
-                <td>
-                  <div className="flex flex-col gap-1">
-                    {paymentBadge(entry)}
-                    {!entry.paymentId || entry.paymentStatus === 'Rejected' ? (
-                      <div className="flex gap-1">
-                        <input
-                          type="number"
-                          className="input input-sm w-20"
-                          placeholder="Amount"
-                          value={cashAmount[entry.registrationId] ?? ''}
-                          onChange={(e) => setCashAmount((prev) => ({ ...prev, [entry.registrationId]: e.target.value }))}
-                        />
-                        <button type="button" className="btn btn-sm" onClick={() => onRecordCashPayment(entry.registrationId)}>
-                          Record Cash
-                        </button>
-                      </div>
-                    ) : null}
-                  </div>
-                </td>
-                {sessions.map((s) => (
-                  <td key={s.id} className="text-center">
-                    <input
-                      type="checkbox"
-                      disabled={entry.paymentStatus !== 'Verified'}
-                      checked={pendingAttendance[entry.registrationId]?.has(s.id) ?? false}
-                      onChange={() => onToggleSession(entry.registrationId, s.id)}
-                    />
-                  </td>
-                ))}
-                <td>{entry.status}</td>
-                <td>{entry.evaluationRating ?? '-'}</td>
-                <td>{entry.creditUnits ?? '-'}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  )
-}
+```markdown
+- **`Event`** — `Title`, `Description`, `Chapter` (null for a national/all-chapters event), `Venue`,
+  `StartsAt`/`EndsAt`, `Capacity`, `Fee`, and the two independently-nullable `CpdUnitsOnsite`/
+  `CpdUnitsOnline`.
+- **`EventSession`** — one lecture/segment of a (possibly multi-day) event: `Title`, `StartsAt`/
+  `EndsAt`, `Order` (display sequence only, not a uniqueness constraint). `EventService.CreateAsync`
+  always creates at least one session — an event with no separate lectures still gets exactly one
+  session spanning the whole event — so nothing downstream needs a special case for a
+  single-session event.
 ```
 
-- [ ] **Step 2: Create `EventRosterPage`**
+Replace with:
 
-```typescript
-import { useCallback, useEffect, useState } from 'react'
-import { useParams } from 'react-router-dom'
-import type { EventRoster } from '../api/endpoints/eventApi'
-import { eventApi } from '../api/endpoints/eventApi'
-import { describeError } from '../utils/apiError'
-import { EventRosterTable, PageBreadcrumb, PageMeta } from '../../integrations/template'
+```markdown
+- **`Event`** — `Title`, `Description`, `Objectives` (same shape as `Description`), `Type` (free text
+  against `EventTypes.All` — Conference, Seminar, Technoforum, Convention, Symposium, Expo, mirroring
+  `Member.MemberType`/`MemberTypes`), `Chapter` (null for a national/all-chapters event), `Venue`,
+  `StartsAt`/`EndsAt`, `Hours` (a single PRC-declared hour count shared across both modalities),
+  `Capacity` (informational planning target only — never enforced, never blocks registration), the
+  independently-settable `FeeOnsite`/`FeeOnline`, the two independently-nullable `CpdUnitsOnsite`/
+  `CpdUnitsOnline`, their PRC accreditation references `CpdCodeOnsite`/`CpdCodeOnline` (also
+  independently nullable, informational only, never validated against PRC), and
+  `PosterImageStorageKey` (an admin-uploaded banner image, set only via `EventPosterService` — see
+  "The poster image" below).
+- **`EventSession`** — one lecture/segment of a (possibly multi-day) event: `Title`, `StartsAt`/
+  `EndsAt`, `Order` (display sequence only, not a uniqueness constraint), and `Venue` — an optional
+  override for this session's display venue; falls back to `Event.Venue` when null (e.g. for a
+  multi-city or multi-room event where one lecture happens somewhere different from the rest).
+  `EventService.CreateAsync` always creates at least one session — an event with no separate lectures
+  still gets exactly one session spanning the whole event — so nothing downstream needs a special
+  case for a single-session event.
 
-export function EventRosterPage() {
-  const { id } = useParams<{ id: string }>()
-  const [roster, setRoster] = useState<EventRoster | null>(null)
-  const [pendingAttendance, setPendingAttendance] = useState<Record<string, Set<string>>>({})
-  const [loading, setLoading] = useState(true)
-  const [savingAttendance, setSavingAttendance] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+## The poster image
 
-  const fetchRoster = useCallback(async () => {
-    if (!id) return
-    const result = await eventApi.getRoster(id)
-    setRoster(result)
-    setPendingAttendance(
-      Object.fromEntries(result.registrants.map((r) => [r.registrationId, new Set(r.attendedSessionIds)])),
-    )
-  }, [id])
-
-  useEffect(() => {
-    setLoading(true)
-    setError(null)
-    fetchRoster()
-      .catch((err) => setError(describeError(err, 'Could not load the roster.')))
-      .finally(() => setLoading(false))
-  }, [fetchRoster])
-
-  const handleToggleSession = (registrationId: string, sessionId: string) => {
-    setPendingAttendance((prev) => {
-      const next = new Set(prev[registrationId] ?? [])
-      if (next.has(sessionId)) next.delete(sessionId)
-      else next.add(sessionId)
-      return { ...prev, [registrationId]: next }
-    })
-  }
-
-  const handleSaveAttendance = async () => {
-    if (!id) return
-    setSavingAttendance(true)
-    setError(null)
-    try {
-      const registrants = Object.entries(pendingAttendance).map(([registrationId, sessionIds]) => ({
-        registrationId,
-        sessionIds: [...sessionIds],
-      }))
-      await eventApi.recordAttendance(id, registrants)
-      await fetchRoster()
-    } catch (err) {
-      setError(describeError(err, 'Could not save attendance.'))
-    } finally {
-      setSavingAttendance(false)
-    }
-  }
-
-  const handleRecordCashPayment = async (registrationId: string, amount: number) => {
-    setError(null)
-    try {
-      await eventApi.recordCashPayment(registrationId, amount)
-      await fetchRoster()
-    } catch (err) {
-      setError(describeError(err, 'Could not record this cash payment.'))
-    }
-  }
-
-  return (
-    <>
-      <PageMeta title="Event Roster" />
-      <main>
-        <PageBreadcrumb title={roster ? `Roster: ${roster.eventTitle}` : 'Roster'} />
-
-        {error && <p className="text-sm text-danger mb-4">{error}</p>}
-
-        {loading || !roster ? (
-          <p className="text-sm text-default-500">Loading…</p>
-        ) : (
-          <EventRosterTable
-            sessions={roster.sessions}
-            registrants={roster.registrants}
-            pendingAttendance={pendingAttendance}
-            onToggleSession={handleToggleSession}
-            onSaveAttendance={handleSaveAttendance}
-            savingAttendance={savingAttendance}
-            onRecordCashPayment={(registrationId) => handleRecordCashPayment(registrationId, 0)}
-          />
-        )}
-      </main>
-    </>
-  )
-}
+An Admin can attach a JPG/PNG banner image via `POST /api/events/{id}/poster` (multipart form,
+`events:manage`), which `EventPosterService` validates (JPG/PNG only, 8 MB raw upload cap),
+downscales to at most 1600px on the longest side, re-encodes as JPEG, and writes to
+`Event.PosterImageStorageKey` — the same validate-downscale-reencode pipeline
+`MemberUploadService` uses for Member Photo, but simpler: exactly one poster per event, stored
+directly on the `Event` row rather than a separate join table. `GET /api/events/{id}/poster` streams
+it back (any authenticated caller — the poster is shown on the member-facing events list and register
+view, not just to staff). `EventDto.HasPoster` (derived from `PosterImageStorageKey is not null`, the
+same pattern as `PaymentDto.HasProof`) tells the frontend whether to fetch it. Uploading again
+overwrites the previous poster; there is no history.
 ```
 
-Note: `onRecordCashPayment` in `EventRosterTable` reads its amount from the row's own local input
-state, so `EventRosterPage` doesn't need to know the amount itself — Step 3 below wires that
-through properly rather than the placeholder `0` shown here.
+- [ ] **Step 2: Update the endpoint table** to add the two new poster rows immediately after the
+      existing `PUT /api/events/{id}` row. Find:
 
-- [ ] **Step 3: Thread the cash amount from the table's local input up to the page**
-
-Change `EventRosterTable`'s `onRecordCashPayment` prop type to
-`(registrationId: string, amount: number) => void`, and in its "Record Cash" button's `onClick`,
-change it to:
-
-```typescript
-                        <button
-                          type="button"
-                          className="btn btn-sm"
-                          onClick={() => onRecordCashPayment(entry.registrationId, Number(cashAmount[entry.registrationId] ?? '0'))}
-                        >
-                          Record Cash
-                        </button>
+```markdown
+| `PUT /api/events/{id}` | `events:manage` | Edit event details, set/correct either CPD unit value, add/remove/reorder sessions | `404` unknown event; `400` invalid (no sessions left, `EndsAt` before `StartsAt`, a session id not belonging to this event); `409` removing a session that already has recorded attendance |
 ```
 
-And in `EventRosterPage`, change the prop wiring to pass the handler through directly:
+Replace with (adds two new table rows immediately below the unchanged original row):
 
-```typescript
-            onRecordCashPayment={handleRecordCashPayment}
+```markdown
+| `PUT /api/events/{id}` | `events:manage` | Edit event details, set/correct either CPD unit value, add/remove/reorder sessions | `404` unknown event; `400` invalid (no sessions left, `EndsAt` before `StartsAt`, a session id not belonging to this event); `409` removing a session that already has recorded attendance |
+| `POST /api/events/{id}/poster` | `events:manage` | Upload/replace the event's poster/banner image (multipart) | `404` unknown event; `400` not a JPG/PNG, over 8 MB, or unreadable; `403` without the permission |
+| `GET /api/events/{id}/poster` | Any authenticated | Stream the poster image | `404` unknown event or no poster uploaded yet |
 ```
 
-- [ ] **Step 4: Export `EventRosterTable` and add the route**
+- [ ] **Step 3: Run the full backend and frontend verification suites one more time**
 
-In `apps/web/src/integrations/template/index.ts`, add:
+Run: `dotnet test`
+Expected: All tests pass.
 
-```typescript
-export { EventRosterTable } from './pages/EventRosterTable'
-```
+Run: `cd apps/web && npx tsc -b && npx eslint src`
+Expected: Both succeed with zero errors.
 
-(The route itself, `/events/:id/roster`, is added in Task 17 alongside the rest of this feature's
-routing.)
-
-- [ ] **Step 5: Type-check**
-
-Run: `cd apps/web && npx tsc -b`
-Expected: no new errors.
-
-- [ ] **Step 6: Commit**
+- [ ] **Step 4: Commit**
 
 ```bash
-git add apps/web/src/integrations/template/pages/EventRosterTable.tsx apps/web/src/core/pages/EventRosterPage.tsx \
-  apps/web/src/integrations/template/index.ts
-git commit -m "feat: add admin event roster page"
+git add openspecs/events.md
+git commit -m "docs: update events.md for FeeOnsite/FeeOnline, Type/Hours/Objectives, poster image, and session Venue"
 ```
-
----
-
-## 16. Frontend — "My CPD" page
-
-**Files:**
-- Create: `apps/web/src/integrations/template/pages/MyCpdTable.tsx`
-- Create: `apps/web/src/core/pages/MyCpdPage.tsx`
-- Modify: `apps/web/src/integrations/template/index.ts`
-
-- [ ] **Step 1: Create `MyCpdTable`**
-
-```typescript
-import { LuDownload } from 'react-icons/lu'
-import type { MyCpdRegistration } from '../../../core/api/endpoints/eventApi'
-import { eventApi } from '../../../core/api/endpoints/eventApi'
-
-interface MyCpdTableProps {
-  registrations: MyCpdRegistration[]
-}
-
-async function handleDownload(registrationId: string) {
-  const result = await eventApi.downloadCertificate(registrationId)
-  if (!result) return
-  window.open(result.url, '_blank')
-}
-
-export function MyCpdTable({ registrations }: MyCpdTableProps) {
-  if (registrations.length === 0) {
-    return <p className="text-sm text-default-500">You haven't registered for any events yet.</p>
-  }
-
-  return (
-    <div className="card">
-      <div className="card-body overflow-x-auto">
-        <table className="table">
-          <thead>
-            <tr>
-              <th>Event</th>
-              <th>Mode</th>
-              <th>Status</th>
-              <th>Sessions Attended</th>
-              <th>Credit Earned</th>
-              <th>Certificate</th>
-            </tr>
-          </thead>
-          <tbody>
-            {registrations.map((r) => (
-              <tr key={r.registrationId}>
-                <td>
-                  <div>{r.eventTitle}</div>
-                  <div className="text-xs text-default-400">{new Date(r.eventStartsAt).toLocaleDateString()}</div>
-                </td>
-                <td>{r.mode}</td>
-                <td>{r.status}</td>
-                <td>{r.sessionsAttended} / {r.totalSessions}</td>
-                <td>{r.creditUnits ?? '-'}</td>
-                <td>
-                  {r.creditUnits !== null ? (
-                    <button type="button" className="btn btn-sm inline-flex items-center gap-1" onClick={() => handleDownload(r.registrationId)}>
-                      <LuDownload className="size-3.5" /> Download
-                    </button>
-                  ) : (
-                    <span className="text-xs text-default-400">Not yet available</span>
-                  )}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  )
-}
-```
-
-- [ ] **Step 2: Create `MyCpdPage`**
-
-```typescript
-import { useEffect, useState } from 'react'
-import type { MyCpdSummary } from '../api/endpoints/eventApi'
-import { eventApi } from '../api/endpoints/eventApi'
-import { describeError } from '../utils/apiError'
-import { StatTile } from '../../integrations/template/components/shared/StatTile'
-import { MyCpdTable, PageBreadcrumb, PageMeta } from '../../integrations/template'
-import { LuAward } from 'react-icons/lu'
-
-export function MyCpdPage() {
-  const [summary, setSummary] = useState<MyCpdSummary | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
-
-  useEffect(() => {
-    let cancelled = false
-    eventApi.getMyCpd()
-      .then((result) => {
-        if (!cancelled) setSummary(result)
-      })
-      .catch((err) => {
-        if (!cancelled) setError(describeError(err, 'Could not load your CPD history.'))
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false)
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [])
-
-  return (
-    <>
-      <PageMeta title="My CPD" />
-      <main>
-        <PageBreadcrumb title="My CPD" />
-
-        {error && <p className="text-sm text-danger mb-4">{error}</p>}
-
-        {loading || !summary ? (
-          <p className="text-sm text-default-500">Loading…</p>
-        ) : (
-          <div className="flex flex-col gap-4">
-            <StatTile icon={LuAward} label="Total CPD units earned" value={summary.totalCreditUnits} accent="bg-primary/15 text-primary" />
-            <MyCpdTable registrations={summary.registrations} />
-          </div>
-        )}
-      </main>
-    </>
-  )
-}
-```
-
-- [ ] **Step 3: Export `MyCpdTable`**
-
-In `apps/web/src/integrations/template/index.ts`, add:
-
-```typescript
-export { MyCpdTable } from './pages/MyCpdTable'
-```
-
-- [ ] **Step 4: Type-check**
-
-Run: `cd apps/web && npx tsc -b`
-Expected: no new errors.
-
-- [ ] **Step 5: Commit**
-
-```bash
-git add apps/web/src/integrations/template/pages/MyCpdTable.tsx apps/web/src/core/pages/MyCpdPage.tsx \
-  apps/web/src/integrations/template/index.ts
-git commit -m "feat: add My CPD page"
-```
-
----
-
-## 17. Routing, nav, and removing the mock widget
-
-**Files:**
-- Modify: `apps/web/src/core/routes/router.tsx`
-- Modify: `apps/web/src/integrations/template/components/layout/SideNav/menu.ts`
-- Modify: `apps/web/src/integrations/template/pages/DashboardPage.tsx`
-- Delete: `apps/web/src/integrations/template/components/dashboard-previews/EventsPreviewWidget.tsx`
-
-- [ ] **Step 1: Add the new routes**
-
-In `apps/web/src/core/routes/router.tsx`, add imports:
-
-```typescript
-import { EventsPage } from '../pages/EventsPage'
-import { EventRosterPage } from '../pages/EventRosterPage'
-import { MyCpdPage } from '../pages/MyCpdPage'
-```
-
-Add `{ path: '/events', element: <EventsPage /> }` and `{ path: '/my-cpd', element: <MyCpdPage /> }`
-inside the main `<AppShell />` children array (next to `{ path: '/content', element: <ContentListPage /> }`),
-reachable by any authenticated user - the events list itself has no admin-only gate (Admins manage
-inline via the same page; Members register from it), and My CPD is entirely self-service.
-
-Add `{ path: '/events/:id/roster', element: <EventRosterPage /> }` inside the existing
-`Roles.Admin, Roles.SuperAdmin, Roles.Approval`-gated `<ProtectedRoute>` block (the same one wrapping
-`/members`, `/admin/users`, etc.) — the roster reveals payment and personal attendance data, so it
-needs the same admin-tier gate as the rest of that block, even though the finer-grained
-`events:manage`/`events:view` split (Task 3) is what the API itself actually enforces.
-
-- [ ] **Step 2: Add the nav entries**
-
-In `apps/web/src/integrations/template/components/layout/SideNav/menu.ts`, add a new `LuCalendarClock`
-icon import, and two entries — one in the "Membership" section for the member-facing "My CPD" link,
-one for the "Events" admin link:
-
-```typescript
-import {
-  LuBanknote,
-  LuBellRing,
-  LuCalendarClock,
-  LuFileClock,
-  LuFileText,
-  LuMonitorDot,
-  LuShieldCheck,
-  LuSquareUserRound,
-  LuUserRound,
-  LuUsers,
-} from 'react-icons/lu'
-```
-
-Add after the `MyProfile` entry:
-
-```typescript
-  {
-    key: 'MyCpd',
-    label: 'My CPD',
-    icon: LuCalendarClock,
-    href: '/my-cpd',
-    requiredRoles: ['Member'],
-  },
-```
-
-Add after the `Members` entry:
-
-```typescript
-  {
-    key: 'Events',
-    label: 'Events',
-    icon: LuCalendarClock,
-    href: '/events',
-  },
-```
-
-(No `requiredRoles` on `Events` — every authenticated user, staff or member, lands on the same list;
-the page itself decides whether to show admin actions via `canManageEvents`, same pattern as
-`Content`.)
-
-- [ ] **Step 3: Remove the mock widget from the Dashboard**
-
-In `apps/web/src/integrations/template/pages/DashboardPage.tsx`, remove the import
-`import { EventsPreviewWidget } from '../components/dashboard-previews/EventsPreviewWidget'` and
-the `<EventsPreviewWidget />` usage (the "Replace/delete this whole component once the real module
-ships" comment on the widget itself is exactly this step). If the surrounding layout used
-`EventsPreviewWidget` as one half of a two-column row alongside `NewsPreviewWidget` (see the recent
-"rearrange Dashboard into a 2-column layout" commit), replace it with a small real widget instead of
-leaving an empty column — a compact "Upcoming Events" card reusing `eventApi.getEvents` with
-`upcomingOnly: true, pageSize: 4` is enough; do not leave the column blank or reintroduce mock data.
-
-- [ ] **Step 4: Delete the mock widget file**
-
-```bash
-git rm apps/web/src/integrations/template/components/dashboard-previews/EventsPreviewWidget.tsx
-```
-
-- [ ] **Step 5: Type-check and lint**
-
-Run: `cd apps/web && npx tsc -b && npx eslint .`
-Expected: no errors (in particular, no lingering import of the deleted `EventsPreviewWidget`).
-
-- [ ] **Step 6: Manual browser pass**
-
-Run the app locally (`docker compose up` or the project's usual dev script) and, logged in as the
-seeded Admin account, confirm: `/events` lists events and lets you create one; editing an event lets
-you set CPD units and add/remove sessions; `/events/:id/roster` shows registrants once someone has
-registered. Logged in as the seeded Member account, confirm: `/events` lets you register and submit
-payment proof; `/my-cpd` shows your registrations and a certificate download once credit is earned;
-the Dashboard no longer shows the "Preview · Coming Soon" Events card.
-
-- [ ] **Step 7: Commit**
-
-```bash
-git add apps/web/src/core/routes/router.tsx apps/web/src/integrations/template/components/layout/SideNav/menu.ts \
-  apps/web/src/integrations/template/pages/DashboardPage.tsx
-git commit -m "feat: wire up Events routes/nav and remove the dashboard mock widget"
-```
-
----
-
-## 18. Final verification and docs
-
-**Files:**
-- Create: `openspecs/events.md`
-- Modify: `openspecs/payments.md`
-
-Per this project's own standing convention (new/changed endpoints must update the matching
-`openspecs/<feature>.md`, not just code), this feature needs a new `openspecs/events.md` and an
-update to `openspecs/payments.md` for the `Kind` extension — read `openspecs/README.md` first for
-the expected shape of a living doc in this repo, and `openspecs/members.md`/`openspecs/payments.md`
-for tone/structure to match (Purpose, Endpoints, then prose sections on the non-obvious decisions).
-
-- [ ] **Step 1: Run the full backend test suite**
-
-Run: `dotnet test src/PSMPE.Portal.sln`
-Expected: PASS — every Application unit test (`EventServiceTests`, `CpdCreditTests`,
-`CertificatePdfGeneratorTests`, `PaymentServiceTests`) and every WebAPI integration test
-(`EventsControllerTests` plus every pre-existing suite) passes.
-
-- [ ] **Step 2: Run the full frontend build**
-
-Run: `cd apps/web && npx tsc -b && npx eslint . && npm run build`
-Expected: no type errors, no lint errors, build succeeds.
-
-- [ ] **Step 3: Re-read `specs/events/spec.md` scenario by scenario and confirm each is covered**
-
-Go through every `#### Scenario:` heading in
-`openspec/changes/add-events-cpd-tracker/specs/events/spec.md` and confirm a test from Tasks 4–12
-exercises it. As of this plan, the mapping is:
-
-| Scenario | Test |
-|---|---|
-| A member registers for an event with units not yet set | `CreateAsync_ValidRequest_StartsWithBothCpdUnitsNull` (Task 4) |
-| One modality's units are set while the other remains TBD | `UpdateAsync_SetsOneModalitysUnitsWhileTheOtherStaysTbd` (Task 4) |
-| CPD units are set after the event has already happened | `UpdateAsync_EventAlreadyEnded_CanStillSetCpdUnits` (Task 4) |
-| A member cannot register twice for the same event | `RegisterAsync_Twice_SecondCallFailsEvenUnderADifferentMode` (Task 5) |
-| Attendance cannot be recorded before payment is verified | `RecordAttendanceAsync_BeforePaymentVerified_Fails` (Task 6) |
-| Verifying an event payment advances the registration | `VerifyAsync_EventRegistrationPayment_MovesRegistrationToPaymentVerified` (Task 9) |
-| A rejected event payment can be resubmitted | `RejectAsync_EventRegistrationPayment_SetsRegistrationRejectedAndAllowsResubmission` (Task 9) |
-| An admin records a cash payment | `RecordEventCashPaymentAsync_Valid_CreatesVerifiedPaymentAndMovesRegistration` (Task 9) |
-| A cash payment cannot be recorded over an existing payment | `RecordEventCashPaymentAsync_RegistrationAlreadyHasSubmittedPayment_Fails` (Task 9) |
-| An admin reconciles roster attendance after the event | `RecordAttendanceAsync_RecordsSessions_MovesRegistrationToAttended` (Task 6) |
-| A member attends only part of a multi-session event | `RecordAttendanceAsync_PartialAttendance_RecordsExactlyThatManySessions` (Task 6) |
-| Attendance cannot be recorded against a session from a different event | `RecordAttendanceAsync_SessionFromDifferentEvent_Fails` (Task 6) |
-| Evaluation is blocked before attendance | `SubmitEvaluationAsync_BeforeAttended_Fails` (Task 7) |
-| A member completes an event | `SubmitEvaluationAsync_AfterAttended_MovesToEvaluationSubmitted` (Task 7) |
-| A member's CPD total reflects only completed, credited registrations | `GetMyCpdAsync_SumsOnlyEvaluationSubmittedRegistrationsWithNonNullUnits` (Task 8) |
-| Partial attendance earns prorated credit | `For_PartialAttendance_ReturnsProratedValue` (Task 8) |
-| Onsite and Online registrations on the same event earn different credit | `For_FullAttendance_UsesUnitsForTheRegistrationsOwnMode` (Task 8) |
-| Certificate request before credit is earned is refused | `GetCertificateDataAsync_BeforeEvaluationSubmitted_Fails` / `GetCertificateDataAsync_ApplicableUnitsStillNull_Fails` (Task 11) |
-| Certificate reflects a corrected unit count | `GetCertificateDataAsync_AfterUnitCorrection_ReflectsNewValue` (Task 11) |
-| Certificate lists only attended sessions | `GetCertificateDataAsync_ListsOnlyAttendedSessions` (Task 11) |
-
-If any row's test is missing or was skipped during implementation, add it now before continuing —
-do not close this task with a gap in that table.
-
-- [ ] **Step 4: Write `openspecs/events.md`**
-
-Create `openspecs/events.md` following `openspecs/payments.md`'s structure (Purpose, then an
-Endpoints table, then prose sections on the decisions that aren't obvious from the code alone).
-Cover, at minimum:
-- Purpose: event management + CPD credit tracking, and that credit is computed, never stored.
-- The full endpoint table from `proposal.md`'s "API endpoints" section, with role/permission per row.
-- The `Event` → `EventSession` → `EventAttendance` shape and why attendance is per-session, not
-  per-event (prorating).
-- Why attendance is admin roster reconciliation, not member self-check-in.
-- The `Mode` (Onsite/Online) split and how it selects which of `CpdUnitsOnsite`/`CpdUnitsOnline`
-  applies.
-- The CPD credit formula, computed at read time, with a worked example (matching the 8-unit,
-  3-of-6-sessions example already used throughout `spec.md` and this plan).
-- The two payment paths (member proof upload vs. admin cash) and that a registration has exactly
-  one active `Payment` regardless of which path was used.
-- A cross-reference to `openspecs/payments.md` for the shared `Payment`/`PaymentService` mechanics,
-  and to `openspecs/members.md` for how `Member` relates to `EventRegistration`.
-- A "Not Built" section mirroring `proposal.md`'s, so a future reader doesn't wonder whether CPD
-  target tracking, event cancellation, or CPDAS integration were simply forgotten.
-
-- [ ] **Step 5: Update `openspecs/payments.md`**
-
-Add a short section (or extend the existing endpoint table) noting:
-- `Payment.Kind` gained a third case, `EventRegistration`, with a nullable `EventRegistrationId` FK.
-- `POST /{id}/verify` and `POST /{id}/reject` now branch on `Kind`: for an `EventRegistration`
-  payment, verifying/rejecting drives the linked `EventRegistration.Status` instead of
-  `MembershipStatus`/`RenewalDueDate` — see `EventPaymentVerification.Apply` vs.
-  `PaymentVerification.Apply`.
-- Two new endpoints exist under `/api/events/...` (not `/api/payments/...`) for the two genuinely
-  new payment actions specific to events — member proof submission and admin cash recording — with
-  a pointer to `openspecs/events.md` for their details, so this doesn't turn into a second full copy
-  of that documentation.
-
-- [ ] **Step 6: Final commit**
-
-```bash
-git add openspecs/events.md openspecs/payments.md
-git commit -m "docs: add openspecs/events.md and document the Payment.Kind extension"
-```
-
-- [ ] **Step 7: Confirm the branch is ready for review**
-
-Run: `git log --oneline main..HEAD` (or the equivalent against this branch's actual base) and
-confirm every commit from Tasks 1–18 is present, then hand off per this repo's normal review/PR
-process. This plan does not include a push or PR step — follow whatever the user's standing
-instructions for this repo say about that (this project pushes straight to `develop`, per prior
-project context; confirm with the user before pushing if that's ever in doubt).
-
----

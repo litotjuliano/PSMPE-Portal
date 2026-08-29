@@ -30,6 +30,18 @@ set or correct either `CpdUnitsOnsite` or `CpdUnitsOnline` at any time, before o
 - **AND** every existing `EventRegistration` for that modality that has reached
   `EvaluationSubmitted` immediately reflects the new credit value the next time it is read
 
+### Requirement: Registration Fee Is Resolved Per Modality
+
+The system SHALL resolve the fee owed for an `EventRegistration` from `Event.FeeOnsite` when the
+registration's `Mode` is `Onsite`, or `Event.FeeOnline` when `Mode` is `Online`. The two values SHALL
+be settable independently, and either MAY be 0 for a free modality.
+
+#### Scenario: Onsite and Online registrations on the same event owe different fees
+
+- **WHEN** one member registers Onsite and another registers Online for the same event, and the
+  event's `FeeOnsite` is 3000 while `FeeOnline` is 900
+- **THEN** the Onsite member's registration owes 3000 and the Online member's owes 900
+
 ### Requirement: One Registration Per Member Per Event
 
 The system SHALL allow at most one non-cancelled `EventRegistration` per member per event,
@@ -110,6 +122,21 @@ attended session for a registration SHALL move it to `Attended`.
 - **WHEN** an Admin attempts to record attendance against an `EventSession` that does not belong to
   the registration's `Event`
 - **THEN** the request is refused
+
+### Requirement: A Session's Venue Falls Back To The Event's Venue
+
+`EventSession.Venue` SHALL be optional. When set, it SHALL override `Event.Venue` for display
+purposes for that session alone. When null, the session SHALL display `Event.Venue`.
+
+#### Scenario: A session overrides the event's default venue
+
+- **WHEN** an `EventSession`'s `Venue` is set to a value different from its `Event.Venue`
+- **THEN** that session displays its own `Venue`, not the event's
+
+#### Scenario: A session with no venue override falls back to the event's venue
+
+- **WHEN** an `EventSession`'s `Venue` is null
+- **THEN** that session displays `Event.Venue`
 
 ### Requirement: Completion Requires an Attended Registration and a Submitted Evaluation
 

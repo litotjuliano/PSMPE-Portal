@@ -15,6 +15,12 @@ once with independently accredited CPD units, attendance is per-lecture and pror
 than being a single whole-event flag, and most face-to-face attendees pay cash on-site rather than
 through a proof-upload flow. See the updated Decisions, What Changes, and Not Built sections below.
 
+**Revised 2026-08-29** against PRC's public "List of Accredited Programs" data for PSMPE's own
+accredited events. That data showed the registration fee and the official PRC accreditation code
+both vary by modality (not just CPD units, as the 2026-08-24 revision had assumed), and surfaced
+several fields (`Type`, `Hours`, `Objectives`, a per-session `Venue`, a poster image) not previously
+captured. See the updated Decisions and What Changes sections below.
+
 ## Why
 
 PSMPE holds events and workshops (national conventions, chapter seminars, technical workshops) that
@@ -108,21 +114,59 @@ Each resolved by the user during brainstorming:
   ahead of time, so a corrected unit value never leaves a stale certificate in circulation. The PDF
   lists which sessions the member attended and the prorated CPD units earned, matching PSMPE's
   existing certificate practice of only listing the lectures a member actually attended.
+- **Registration fee and the official PRC accreditation code are also tracked per modality**,
+  mirroring `CpdUnitsOnsite`/`CpdUnitsOnline`. PRC's own accreditation data shows PSMPE routinely
+  submits a single physical event as two separate accredited programs — one Onsite, one Online —
+  each with its own approved fee and its own PRC-assigned code (e.g. one real event: ₱900/4.00 units
+  online vs ₱3,000/8.00 units onsite, two different codes). *Revised 2026-08-29 against PRC's public
+  data — flagged under Open Questions as not yet confirmed with PSMPE staff directly.*
+- **No `Category` field.** Every PRC listing for PSMPE shows the same category ("Master Plumbing")
+  because PSMPE is a single-profession organization — not a value PSMPE staff would ever set when
+  creating an event in this portal. Skipped entirely rather than built as a field nobody will change.
+- **Event eligibility is always open.** PRC's listings show "Open to All" for every PSMPE program;
+  there is no restriction logic to build — any authenticated member can register for any event.
+- **`Event.Capacity` is an informational target, not an enforced cap.** PRC's "target no. of
+  participants" reads as a planning figure PSMPE tracks for its own accreditation submission, not a
+  hard limit — reaching it never blocks a new registration. This supersedes any reading of the
+  original Capacity decision as an enforced counter.
+- **Three new informational fields on `Event`:** `Type` (free text against a constants list — e.g.
+  Conference, Seminar, Technoforum, Convention, Symposium, Expo — mirroring the existing
+  `MemberTypes` pattern), `Hours` (a single decimal, shared across both modalities — PRC's data shows
+  the same declared hour count regardless of modality), and `Objectives` (long text, same shape as
+  `Description`). None of these drive any behavior; they exist for display and for the certificate.
+- **`EventSession` gains an optional `Venue` override.** PRC's per-event schedule table shows a
+  Venue column per date/session row, implying a session's venue can differ from the event's default
+  (e.g. a multi-city or multi-room event) — falls back to `Event.Venue` when not set.
+- **Event poster/banner image upload.** An Admin can attach an image when creating or editing an
+  event, reusing the existing upload infrastructure rather than building new storage/validation.
+  Displayed on the event detail page and as the banner on member-facing Events list/register pages.
+- **The Events list, admin roster, and any review queue support search and filter**, not just
+  sorting — this project's standing convention for every list/table, reinforced by PRC's own listing
+  having a built-in search box.
 
 ## What Changes
 
 ### 1. New `Event` entity (Domain)
 
-`Title`, `Description`, `Chapter`, `Venue`, `StartsAt`, `EndsAt`, `Capacity` (int), `Fee` (decimal,
-settable to 0 for a free event), `CpdUnitsOnsite` (nullable decimal — null means "TBD"),
-`CpdUnitsOnline` (nullable decimal — null means "TBD", independent of `CpdUnitsOnsite`).
+`Title`, `Description`, `Objectives` (nullable text), `Type` (nullable string, free text against a
+constants list — Conference, Seminar, Technoforum, Convention, Symposium, Expo), `Chapter`, `Venue`,
+`StartsAt`, `EndsAt`, `Hours` (nullable decimal), `Capacity` (int — informational target, does not
+block registration), `FeeOnsite` (decimal, settable to 0 for a free event), `FeeOnline` (decimal,
+settable to 0, independent of `FeeOnsite`), `CpdUnitsOnsite` (nullable decimal — null means "TBD"),
+`CpdUnitsOnline` (nullable decimal — null means "TBD", independent of `CpdUnitsOnsite`),
+`CpdCodeOnsite` (nullable string — PRC's own accreditation reference for the onsite program,
+informational only, not validated against PRC), `CpdCodeOnline` (nullable string, same for the
+online program), `PosterImageStorageKey` (nullable string — same shape as `MemberUpload`'s
+`StorageKey`).
 
 ### 2. New `EventSession` entity (Domain)
 
-FK to `Event`. `Title`, `StartsAt`, `EndsAt`, `Order` (int, for display sequencing). Represents one
-lecture/segment of a (possibly multi-day) event — the unit attendance is actually tracked against.
-An event with no separate lectures still gets exactly one `EventSession` covering the whole event, so
-the attendance/credit model below doesn't need a special case for single-session events.
+FK to `Event`. `Title`, `StartsAt`, `EndsAt`, `Order` (int, for display sequencing), `Venue`
+(nullable string — overrides `Event.Venue` for this session when set, falls back to it otherwise).
+Represents one lecture/segment of a (possibly multi-day) event — the unit attendance is actually
+tracked against. An event with no separate lectures still gets exactly one `EventSession` covering
+the whole event, so the attendance/credit model below doesn't need a special case for
+single-session events.
 
 ### 3. New `EventRegistration` entity (Domain)
 
@@ -148,13 +192,15 @@ original design. `EventRegistration.Status` moves to `Attended` once an admin re
 advances the linked `EventRegistration.Status` from `PaymentSubmitted` to `PaymentVerified`, the
 same way verifying a membership payment today flips `Member.Status` to `Active`. A new admin-only
 action records a cash payment directly — creating and verifying a `Payment` in one step, with no
-proof file — for on-site registrants who paid in cash at the venue.
+proof file — for on-site registrants who paid in cash at the venue. The amount owed for a
+registration resolves from `Event.FeeOnsite` or `Event.FeeOnline` based on the registration's
+`Mode`, not a single shared `Event.Fee`.
 
 ### 6. API endpoints
 
 | Endpoint | Role | Purpose |
 |---|---|---|
-| `GET /api/events` | Any authenticated | List events (upcoming/past) |
+| `GET /api/events` | Any authenticated | List events (upcoming/past), with search + filter query params |
 | `POST /api/events` | Admin | Create event (`CpdUnitsOnsite`/`CpdUnitsOnline` start null) |
 | `PUT /api/events/{id}` | Admin | Edit event details, including setting/correcting either CPD unit value; manage `EventSession`s |
 | `POST /api/events/{id}/register` | Member | Create `EventRegistration` with a chosen `Mode` (→ `Registered`) |
@@ -162,14 +208,16 @@ proof file — for on-site registrants who paid in cash at the venue.
 | `POST /api/events/registrations/{id}/payment/cash` | Admin | Record a cash payment directly (→ `PaymentVerified`, no proof) |
 | `POST /api/events/{id}/roster/attendance` | Admin | Bulk-record which sessions each registrant attended (roster reconciliation, → `Attended`) |
 | `POST /api/events/registrations/{id}/evaluation` | Member | → `EvaluationSubmitted` |
-| `GET /api/events/{id}/roster` | Admin | Full attendee list with per-session attendance, payment, and evaluation status |
+| `GET /api/events/{id}/roster` | Admin | Full attendee list with per-session attendance, payment, and evaluation status; search + filter query params |
 | `GET /api/members/me/cpd` | Member | Own registrations plus computed, prorated credit total |
 | `GET /api/events/registrations/{id}/certificate` | Member (own) / Admin | Streams the generated PDF |
 
 ### 7. Frontend
 
 - Real Events list/detail/register pages, replacing `EventsPreviewWidget.tsx`'s static mock per its
-  own comment. Registration includes choosing Onsite or Online.
+  own comment. Registration includes choosing Onsite or Online, and shows the fee and CPD units for
+  the selected modality. The Events list supports search + filter. The event detail page shows the
+  poster image, `Type`, `Hours`, `Objectives`, and each session's `Venue` (or the event's default).
 - Admin event roster screen: per-attendee payment status (including a cash-payment action),
   per-session attendance checkboxes for reconciliation, evaluation status, and a "Set CPD units"
   action for each modality.
@@ -206,7 +254,9 @@ has no bearing on the data model or API shape.
 
 - **CPD target/renewal-cycle tracking** — comparing earned units against a required threshold tied
   to `PrcValidUntilDate`. Needs the client's actual unit requirements before it can be designed.
-- **Event cancellation, refunds, or capacity waitlisting** beyond a simple `Capacity` counter.
+- **Event cancellation, refunds, or capacity waitlisting.** `Capacity` is an informational target
+  only in this pass — it is never enforced, so there is nothing to waitlist against. *Revised
+  2026-08-29: corrects the original framing, which implied `Capacity` was an enforced counter.*
 - **Chapter-officer-level event management permissions** — Admin/staff only for now.
 - **Per-event configurable evaluation forms** — the evaluation is a fixed field set in this pass.
 - **Any CPD credit from outside PSMPE-run events** — this feature only tracks credit earned through
@@ -238,9 +288,11 @@ has no bearing on the data model or API shape.
     `PaymentService.VerifyAsync` extended to drive `EventRegistration.Status`; new cash-payment
     service method
   - `Infrastructure`: EF configurations + migration for the four new tables and the `Payment` FK
-  - `WebAPI`: new `EventsController`; `PaymentsController`'s verify endpoint extended
-  - `Web`: new Events pages, admin roster screen (with per-session reconciliation and cash-payment
-    action), member "My CPD" page; `EventsPreviewWidget.tsx` removed/replaced
+  - `WebAPI`: new `EventsController` (with search/filter query params on the list and roster
+    endpoints); `PaymentsController`'s verify endpoint extended
+  - `Web`: new Events pages (with search/filter, poster image, modality-aware fee/units display),
+    admin roster screen (with per-session reconciliation and cash-payment action), member "My CPD"
+    page; `EventsPreviewWidget.tsx` removed/replaced
 
 ## Open Questions For The Client
 
@@ -248,9 +300,9 @@ These were the user's best guesses during brainstorming, not confirmed requireme
 here so they get a real answer before (or during) implementation rather than being silently assumed:
 
 1. **Are all PSMPE events actually paid?** This proposal routes every registration through the
-   Payment flow (with `Fee` settable to 0 for a free event) rather than building a separate unpaid
-   path. If chapter meetings or similar are routinely free with no proof-of-payment step at all,
-   this needs a second registration pathway.
+   Payment flow (with `FeeOnsite`/`FeeOnline` each settable to 0 for a free modality) rather than
+   building a separate unpaid path. If chapter meetings or similar are routinely free with no
+   proof-of-payment step at all, this needs a second registration pathway.
 2. **What is the actual CPD unit requirement per renewal cycle**, and how does it map to
    `PrcValidUntilDate`? Needed before target/cycle tracking (currently deferred) can be built.
 3. **Does event cancellation need to be supported** in the first version, including any refund
@@ -263,3 +315,10 @@ here so they get a real answer before (or during) implementation rather than bei
    interview but not resolved (discussion was interrupted mid-call) — still being discussed with the
    client. Out of scope for this proposal; will need its own future proposal covering bulk
    import/invitation of legacy members who don't yet have a portal account.
+6. **Does the Fee/accreditation-code-per-modality split actually match PSMPE's internal process?**
+   This was the user's own reading of PRC's *public* accreditation data, not something confirmed with
+   PSMPE staff directly (unlike the CPD-units modality split, which the 2026-08-24 stakeholder
+   interview did confirm). Needs a direct confirmation before implementation: does PSMPE genuinely
+   charge and account for Onsite/Online registrations as separately-priced, separately-coded programs
+   internally, or is the public PRC data simply reflecting two accreditation submissions for
+   bookkeeping reasons that don't need to carry through to member-facing pricing in the portal?
