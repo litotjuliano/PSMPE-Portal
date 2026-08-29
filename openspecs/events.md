@@ -86,19 +86,6 @@ mapping: `NotFound` → `404`, `Forbidden` → `403`, `Conflict` → `409`, ever
   `RecordedAt` (mirrors `Payment.DecidedByUserId`/`DecidedAt`). One row per session a registrant is
   confirmed to have attended.
 
-## The poster image
-
-An Admin can attach a JPG/PNG banner image via `POST /api/events/{id}/poster` (multipart form,
-`events:manage`), which `EventPosterService` validates (JPG/PNG only, 8 MB raw upload cap),
-downscales to at most 1600px on the longest side, re-encodes as JPEG, and writes to
-`Event.PosterImageStorageKey` — the same validate-downscale-reencode pipeline
-`MemberUploadService` uses for Member Photo, but simpler: exactly one poster per event, stored
-directly on the `Event` row rather than a separate join table. `GET /api/events/{id}/poster` streams
-it back (any authenticated caller — the poster is shown on the member-facing events list and register
-view, not just to staff). `EventDto.HasPoster` (derived from `PosterImageStorageKey is not null`, the
-same pattern as `PaymentDto.HasProof`) tells the frontend whether to fetch it. Uploading again
-overwrites the previous poster; there is no history.
-
 **Why attendance is per-session, not per-event.** PSMPE's own certificate practice — including their
 "consideration" exception for a member who leaves an event early due to an emergency — credits
 exactly the sessions attended, not the whole event or nothing. A multi-day event with several
@@ -138,6 +125,13 @@ A registration records which modality the member actually attended in as `Mode`,
 registration time. `Mode` is what selects which of the two event-level unit values applies to that
 registration's credit — see `CpdCredit.For` below. Two registrations on the same event, one Onsite
 and one Online, can and do earn different credit even with identical attendance.
+
+`FeeOnsite`/`FeeOnline` and `CpdCodeOnsite`/`CpdCodeOnline` are independently settable per modality
+for the same underlying reason: PRC's public accreditation data shows PSMPE submits a single
+physical event as two separately-priced, separately-coded accredited programs, not one event with
+two attendance options. One real event: ₱3,000/8 CPD units Onsite vs. ₱900/4 CPD units Online — two
+different fees, two different unit counts, and two different PRC accreditation codes for what
+members experience as a single event.
 
 ## The CPD credit formula
 
@@ -206,6 +200,19 @@ payment is now verified" has exactly one definition regardless of which path rea
 Rejecting an event-registration payment sets the registration's `Status` to `Rejected` and touches
 nothing else — the member can submit a new payment proof for the same registration afterward, same
 as a rejected membership renewal today.
+
+## The poster image
+
+An Admin can attach a JPG/PNG banner image via `POST /api/events/{id}/poster` (multipart form,
+`events:manage`), which `EventPosterService` validates (JPG/PNG only, 8 MB raw upload cap),
+downscales to at most 1600px on the longest side, re-encodes as JPEG, and writes to
+`Event.PosterImageStorageKey` — the same validate-downscale-reencode pipeline
+`MemberUploadService` uses for Member Photo, but simpler: exactly one poster per event, stored
+directly on the `Event` row rather than a separate join table. `GET /api/events/{id}/poster` streams
+it back (any authenticated caller — the poster is shown on the member-facing events list and register
+view, not just to staff). `EventDto.HasPoster` (derived from `PosterImageStorageKey is not null`, the
+same pattern as `PaymentDto.HasProof`) tells the frontend whether to fetch it. Uploading again
+overwrites the previous poster; there is no history.
 
 ## Certificate
 
