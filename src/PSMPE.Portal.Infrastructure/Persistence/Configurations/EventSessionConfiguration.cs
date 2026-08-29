@@ -9,6 +9,7 @@ public class EventSessionConfiguration : IEntityTypeConfiguration<EventSession>
     public void Configure(EntityTypeBuilder<EventSession> builder)
     {
         builder.Property(s => s.Title).IsRequired().HasMaxLength(256);
+        builder.Property(s => s.Venue).HasMaxLength(256);
 
         builder.HasIndex(s => s.EventId);
 
