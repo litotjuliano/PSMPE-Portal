@@ -225,6 +225,13 @@ actually attended and the prorated credit currently computed for the registratio
 corrected after the fact is reflected the next time the certificate is requested, never a stale
 number from whenever it happened to be downloaded before.
 
+The certificate also carries `Event.Type`, `Event.Hours` (the shared PRC-declared hour count — see
+"The `Event` → `EventSession` → `EventAttendance` shape" above), and the PRC accreditation code,
+resolved per the registration's own `Mode` the same way `CpdCredit.For` resolves units —
+`CpdCodeOnsite` for an Onsite registration, `CpdCodeOnline` for an Online one. `Event.Objectives` is
+deliberately left off: it's long-form text meant for the event detail view, not a one-page
+certificate.
+
 The endpoint is reachable while the caller's membership is `Expired`
 (`[AllowExpiredMember]`) — a member should still be able to retrieve proof of CPD credit they already
 earned even after their membership has lapsed, mirroring `GET /api/members/me/cpd`'s own

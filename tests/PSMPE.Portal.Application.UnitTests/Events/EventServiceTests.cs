@@ -724,13 +724,23 @@ public class EventServiceTests
         Assert.Empty(result.Value!.Registrants);
     }
 
+    /// <summary>mode selects the registration modality ("Onsite"/"Online"); configureUpdate lets
+    /// callers layer on additional UpdateEventRequest fields (e.g. CpdCodeOnsite/CpdCodeOnline,
+    /// Type, Hours) using the same "ToUpdateRequest(...) with { ... }" idiom used elsewhere in this
+    /// file, on top of the CpdUnitsOnsite already set from onsiteUnits.</summary>
     private async Task<(EventDto Event, EventRegistrationDto Registration, Member Member)> SeedCreditedRegistrationAsync(
-        TestDbContext db, EventService service, decimal onsiteUnits = 8m)
+        TestDbContext db, EventService service, decimal onsiteUnits = 8m, string mode = "Onsite",
+        Func<UpdateEventRequest, UpdateEventRequest>? configureUpdate = null)
     {
         var created = (await service.CreateAsync(ValidCreateRequest())).Value!;
-        var @event = (await service.UpdateAsync(created.Id, ToUpdateRequest(created) with { CpdUnitsOnsite = onsiteUnits })).Value!;
+        var updateRequest = ToUpdateRequest(created) with { CpdUnitsOnsite = onsiteUnits };
+        if (configureUpdate is not null)
+        {
+            updateRequest = configureUpdate(updateRequest);
+        }
+        var @event = (await service.UpdateAsync(created.Id, updateRequest)).Value!;
         var member = await SeedMemberForEventTestsAsync(db);
-        var registration = (await service.RegisterAsync(member.UserId, @event.Id, "Onsite")).Value!;
+        var registration = (await service.RegisterAsync(member.UserId, @event.Id, mode)).Value!;
         await MarkPaymentVerifiedAsync(db, registration.Id);
         await service.RecordAttendanceAsync(@event.Id, [new RegistrantAttendanceRequest(registration.Id, [@event.Sessions.Single().Id])], Guid.NewGuid());
         await service.SubmitEvaluationAsync(member.UserId, registration.Id, rating: 5, comments: null);
@@ -844,21 +854,15 @@ public class EventServiceTests
     {
         using var db = TestDbContext.CreateInMemory();
         var service = new EventService(db);
-        var created = (await service.CreateAsync(ValidCreateRequest())).Value!;
-        var @event = (await service.UpdateAsync(created.Id, ToUpdateRequest(created) with
-        {
-            CpdUnitsOnsite = 8m,
-            CpdUnitsOnline = 3m,
-            CpdCodeOnsite = "PRC-ONSITE-001",
-            CpdCodeOnline = "PRC-ONLINE-001",
-            Type = EventTypes.Seminar,
-            Hours = 8m,
-        })).Value!;
-        var member = await SeedMemberForEventTestsAsync(db);
-        var registration = (await service.RegisterAsync(member.UserId, @event.Id, "Onsite")).Value!;
-        await MarkPaymentVerifiedAsync(db, registration.Id);
-        await service.RecordAttendanceAsync(@event.Id, [new RegistrantAttendanceRequest(registration.Id, [@event.Sessions.Single().Id])], Guid.NewGuid());
-        await service.SubmitEvaluationAsync(member.UserId, registration.Id, rating: 5, comments: null);
+        var (_, registration, member) = await SeedCreditedRegistrationAsync(db, service, onsiteUnits: 8m, mode: "Onsite",
+            configureUpdate: req => req with
+            {
+                CpdUnitsOnline = 3m,
+                CpdCodeOnsite = "PRC-ONSITE-001",
+                CpdCodeOnline = "PRC-ONLINE-001",
+                Type = EventTypes.Seminar,
+                Hours = 8m,
+            });
 
         var result = await service.GetCertificateDataAsync(member.UserId, registration.Id, isAdmin: false);
 
@@ -875,19 +879,13 @@ public class EventServiceTests
     {
         using var db = TestDbContext.CreateInMemory();
         var service = new EventService(db);
-        var created = (await service.CreateAsync(ValidCreateRequest())).Value!;
-        var @event = (await service.UpdateAsync(created.Id, ToUpdateRequest(created) with
-        {
-            CpdUnitsOnsite = 8m,
-            CpdUnitsOnline = 3m,
-            CpdCodeOnsite = "PRC-ONSITE-001",
-            CpdCodeOnline = "PRC-ONLINE-001",
-        })).Value!;
-        var member = await SeedMemberForEventTestsAsync(db);
-        var registration = (await service.RegisterAsync(member.UserId, @event.Id, "Online")).Value!;
-        await MarkPaymentVerifiedAsync(db, registration.Id);
-        await service.RecordAttendanceAsync(@event.Id, [new RegistrantAttendanceRequest(registration.Id, [@event.Sessions.Single().Id])], Guid.NewGuid());
-        await service.SubmitEvaluationAsync(member.UserId, registration.Id, rating: 5, comments: null);
+        var (_, registration, member) = await SeedCreditedRegistrationAsync(db, service, onsiteUnits: 8m, mode: "Online",
+            configureUpdate: req => req with
+            {
+                CpdUnitsOnline = 3m,
+                CpdCodeOnsite = "PRC-ONSITE-001",
+                CpdCodeOnline = "PRC-ONLINE-001",
+            });
 
         var result = await service.GetCertificateDataAsync(member.UserId, registration.Id, isAdmin: false);
 
