@@ -18,6 +18,7 @@ public static class DependencyInjection
         services.AddScoped<IMemberCertificateService, MemberCertificateService>();
         services.AddScoped<IPaymentService, PaymentService>();
         services.AddScoped<IEventService, EventService>();
+        services.AddScoped<IEventPosterService, EventPosterService>();
         return services;
     }
 }

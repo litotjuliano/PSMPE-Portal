@@ -22,7 +22,7 @@ namespace PSMPE.Portal.WebAPI.Controllers;
 [ApiController]
 [Authorize]
 [Route("api/events")]
-public class EventsController(IEventService eventService, IPaymentService paymentService) : ControllerBase
+public class EventsController(IEventService eventService, IPaymentService paymentService, IEventPosterService eventPosterService) : ControllerBase
 {
     [HttpGet]
     public async Task<ActionResult<PagedResult<EventDto>>> GetAll(
@@ -51,6 +51,26 @@ public class EventsController(IEventService eventService, IPaymentService paymen
     {
         var result = await eventService.UpdateAsync(id, request, cancellationToken);
         return result.Succeeded ? Ok(result.Value) : ToErrorActionResult(result);
+    }
+
+    /// <summary>Admin-only. Downscales/re-encodes via EventPosterService and overwrites any
+    /// previous poster - an event has exactly one.</summary>
+    [HttpPost("{id:guid}/poster")]
+    [RequirePermission(Permissions.Events.Manage)]
+    public async Task<IActionResult> UploadPoster(Guid id, IFormFile file, CancellationToken cancellationToken)
+    {
+        await using var stream = file.OpenReadStream();
+        var result = await eventPosterService.UploadAsync(id, stream, file.FileName, file.Length, cancellationToken);
+        return ToActionResult(result);
+    }
+
+    /// <summary>Any authenticated caller - same auth level as GetById, since the poster is shown on
+    /// the member-facing events list/register views, not just to staff.</summary>
+    [HttpGet("{id:guid}/poster")]
+    public async Task<IActionResult> GetPoster(Guid id, CancellationToken cancellationToken)
+    {
+        var file = await eventPosterService.GetAsync(id, cancellationToken);
+        return file is null ? NotFound() : File(file.Value.Content, file.Value.ContentType);
     }
 
     [HttpPost("{id:guid}/register")]
