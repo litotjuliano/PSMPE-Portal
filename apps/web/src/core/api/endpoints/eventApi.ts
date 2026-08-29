@@ -18,12 +18,27 @@ export const EventRegistrationStatus = {
 } as const
 export type EventRegistrationStatusValue = (typeof EventRegistrationStatus)[keyof typeof EventRegistrationStatus]
 
+/** Mirrors EventTypes.cs. Free text against this list, not a validated backend enum - see
+ *  Event.Type's backend doc comment. */
+export const EventTypes = {
+  Conference: 'Conference',
+  Seminar: 'Seminar',
+  Technoforum: 'Technoforum',
+  Convention: 'Convention',
+  Symposium: 'Symposium',
+  Expo: 'Expo',
+} as const
+export type EventTypeValue = (typeof EventTypes)[keyof typeof EventTypes]
+
 export interface EventSession {
   id: string
   title: string
   startsAt: string
   endsAt: string
   order: number
+  /** Raw override - null means "no override, falls back to the parent Event's venue." Compute the
+   *  effective venue as `session.venue ?? event.venue` at display time. */
+  venue: string | null
 }
 
 export interface EventSessionInput {
@@ -32,22 +47,30 @@ export interface EventSessionInput {
   startsAt: string
   endsAt: string
   order: number
+  venue: string | null
 }
 
 export interface Event {
   id: string
   title: string
   description: string | null
+  objectives: string | null
+  type: string | null
   chapter: string | null
   venue: string | null
   startsAt: string
   endsAt: string
+  hours: number | null
   capacity: number | null
   registeredCount: number
-  fee: number
+  feeOnsite: number
+  feeOnline: number
   /** Null means "TBD" - see Event.CpdUnitsOnsite's backend doc comment. */
   cpdUnitsOnsite: number | null
   cpdUnitsOnline: number | null
+  cpdCodeOnsite: string | null
+  cpdCodeOnline: string | null
+  hasPoster: boolean
   sessions: EventSession[]
 }
 
@@ -59,12 +82,18 @@ export interface CreateEventRequest {
   startsAt: string
   endsAt: string
   capacity: number | null
-  fee: number
+  feeOnsite: number
+  feeOnline: number
+  type: string | null
+  hours: number | null
+  objectives: string | null
 }
 
 export interface UpdateEventRequest extends CreateEventRequest {
   cpdUnitsOnsite: number | null
   cpdUnitsOnline: number | null
+  cpdCodeOnsite: string | null
+  cpdCodeOnline: string | null
   sessions: EventSessionInput[]
 }
 
@@ -138,6 +167,24 @@ export const eventApi = {
 
   updateEvent: (id: string, request: UpdateEventRequest) =>
     apiClient.put<Event>(`/api/events/${id}`, request).then((res) => res.data),
+
+  /** Admin-only. Overwrites any previous poster - an event has exactly one. */
+  uploadPoster: (eventId: string, file: File) => {
+    const form = new FormData()
+    form.append('file', file)
+    return apiClient.post(`/api/events/${eventId}/poster`, form).then((res) => res.data)
+  },
+
+  /** Fetched as a blob, same reasoning as downloadCertificate below - an authenticated image can't
+   *  be a plain <img src>. Returns null if the event has no poster yet or the request fails. */
+  getPosterUrl: async (eventId: string): Promise<string | null> => {
+    try {
+      const response = await apiClient.get(`/api/events/${eventId}/poster`, { responseType: 'blob' })
+      return URL.createObjectURL(response.data)
+    } catch {
+      return null
+    }
+  },
 
   register: (eventId: string, mode: EventModeValue) =>
     apiClient.post<EventRegistration>(`/api/events/${eventId}/register`, { mode }).then((res) => res.data),
