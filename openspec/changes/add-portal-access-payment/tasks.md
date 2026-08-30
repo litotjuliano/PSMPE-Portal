@@ -170,9 +170,13 @@ which doesn't exist yet — building it here would have nothing to call.
       `Result.Failure` in the service layer so it's unit-testable. Code review collapsed a third
       near-duplicate `ToActionResult<T>` overload into one generic version and added explicit
       boundary-date tests (`PaidOn == startDate`/`== endDate`). Commits `886f4ae`, `f301ca5`.
-- [ ] Admin Payments tab: summary panel (date-range picker — month quick-pick + custom range —
-      showing membership-only count/total, combined count/total, portal revenue collected). Moved
-      here from task 6 since it depends on the endpoint above.
+- [x] Admin Payments tab: new `PaymentsSummaryPanel.tsx` (self-contained, sibling to
+      `PaymentsQueueTable.tsx`), rendered above it in `MembersPage.tsx`. Month quick-pick (This
+      month/Last month/Last 3/Last 6 months/This year) plus a cross-constrained custom date range,
+      three stat tiles. Code review fixed the quick-pick `<select>` being uncontrolled (re-selecting
+      an already-displayed preset after a manual date edit was a silent no-op — now tracks the
+      current pick as state, including a "Custom range" label once diverged). Commits `bb1e67a`,
+      `8e58fc1`.
 
 ## 8. Documentation
 
