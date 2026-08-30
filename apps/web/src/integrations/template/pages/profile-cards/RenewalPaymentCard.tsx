@@ -39,29 +39,28 @@ export const RenewalPaymentCard = ({ member, onSubmitted }: RenewalPaymentCardPr
   const [error, setError] = useState<string | null>(null)
   // Pre-checked to the member's *current* access, so keep-renewing-the-same-way is one click.
   const [includePortalAccess, setIncludePortalAccess] = useState(member.hasPortalAccess)
-  // Mirrors includePortalAccess so `load` (a stable useCallback) always reads the latest value
-  // instead of the one captured when it was created.
-  const includePortalAccessRef = useRef(member.hasPortalAccess)
   // Tracks whether the member has touched the Amount field themselves - once they have, a
   // checkbox toggle no longer overwrites their typed value (same "don't clobber a manual edit"
   // rule ApproveApplicationWizard.tsx applies in the opposite direction to its own amount field).
   const amountManuallyEditedRef = useRef(false)
   const proofInputRef = useRef<HTMLInputElement>(null)
 
-  const load = useCallback(async () => {
+  // Takes the checkbox value as a parameter rather than reading it off state, since this is a
+  // stable useCallback ([] deps) and would otherwise close over a stale value - callers pass
+  // whatever's current at the call site (the mount effect, and handleSubmit below).
+  const load = useCallback(async (portalAccess: boolean) => {
     const [loadedFees, loadedPayments] = await Promise.all([paymentApi.getFees(), paymentApi.getMyPayments()])
     setFees(loadedFees)
     setPayments(loadedPayments)
-    // Pre-filled with what's actually owed, following the checkbox's current value - only if the
+    // Pre-filled with what's actually owed, following the given checkbox value - only if the
     // member hasn't already started typing their own amount.
     if (!amountManuallyEditedRef.current) {
-      setAmount(String(includePortalAccessRef.current ? loadedFees.renewalTotalWithPortal : loadedFees.renewalTotalWithoutPortal))
+      setAmount(String(portalAccess ? loadedFees.renewalTotalWithPortal : loadedFees.renewalTotalWithoutPortal))
     }
   }, [])
 
   const toggleIncludePortalAccess = (checked: boolean) => {
     setIncludePortalAccess(checked)
-    includePortalAccessRef.current = checked
     // The checkbox drives the amount here (opposite of the admin walk-in form, where the typed
     // amount drives the checkbox) - only while the member hasn't already typed their own figure.
     if (!amountManuallyEditedRef.current && fees) {
@@ -70,8 +69,11 @@ export const RenewalPaymentCard = ({ member, onSubmitted }: RenewalPaymentCardPr
   }
 
   useEffect(() => {
-    load().catch(() => setError('Could not load your payment details.'))
-  }, [load])
+    // Reflects the member's access as it stood when this card loaded (or when a verification
+    // elsewhere flips it). Later checkbox toggles are handled directly by
+    // toggleIncludePortalAccess, not by re-running this effect.
+    load(member.hasPortalAccess).catch(() => setError('Could not load your payment details.'))
+  }, [load, member.hasPortalAccess])
 
   const pending = payments.find((p) => p.status === 'Submitted')
   const lastRejected = payments.find((p) => p.status === 'Rejected')
@@ -106,7 +108,7 @@ export const RenewalPaymentCard = ({ member, onSubmitted }: RenewalPaymentCardPr
       await paymentApi.uploadProof(payment.id, file)
       if (proofInputRef.current) proofInputRef.current.value = ''
       setReferenceNo('')
-      await load()
+      await load(includePortalAccess)
       await onSubmitted()
     } catch (err) {
       setError(describeError(err, 'Could not submit your payment. Please try again.'))
