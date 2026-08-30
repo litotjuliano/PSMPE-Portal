@@ -36,6 +36,11 @@ internal static class PaymentVerification
         };
 
         member.Status = MembershipStatus.Active;
+
+        // Recurring, not permanent: reflects only this payment. A renewal that omits the add-on
+        // revokes access here, in the same call that would otherwise have granted it.
+        member.HasPortalAccess = payment.IncludesPortalAccess;
+
         member.UpdatedAt = DateTimeOffset.UtcNow;
 
         payment.Status = PaymentStatus.Verified;

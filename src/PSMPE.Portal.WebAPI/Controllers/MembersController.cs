@@ -164,7 +164,7 @@ public class MembersController(
 
     [HttpPost("me/submit")]
     [AllowExpiredMember]
-    public async Task<IActionResult> SubmitMyProfile(CancellationToken cancellationToken)
+    public async Task<IActionResult> SubmitMyProfile(CancellationToken cancellationToken, SubmitMyProfileRequest? request = null)
     {
         var userId = CurrentUserId;
         if (userId is null)
@@ -172,7 +172,9 @@ public class MembersController(
             return Unauthorized();
         }
 
-        var result = await memberService.SubmitMyProfileAsync(userId.Value, cancellationToken);
+        // No body at all (older clients) is the same as an unticked checkbox - see
+        // SubmitMyProfileRequest's doc comment.
+        var result = await memberService.SubmitMyProfileAsync(userId.Value, request?.IncludePortalAccess ?? false, cancellationToken);
         return ToActionResult(result);
     }
 

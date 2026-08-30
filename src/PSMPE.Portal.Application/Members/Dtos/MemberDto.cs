@@ -59,6 +59,10 @@ public record MemberDto(
     string MemberType,
     MembershipStatus Status,
     DateOnly? RenewalDueDate,
+    /// <summary>Whether the member currently has portal access. Read directly off
+    /// Member.HasPortalAccess - written exclusively by PaymentVerification.Apply, never a direct
+    /// admin toggle. See Member.HasPortalAccess's doc comment.</summary>
+    bool HasPortalAccess,
     string? NationalDuesReferenceNo,
     DateTimeOffset? ApprovedAt,
     DateTimeOffset? SubmittedAt,
@@ -272,8 +276,19 @@ public record PrcVerificationHistoryDto(
 /// </summary>
 public record ApproveMemberRequest(string MembershipNo, RecordPaymentRequest? Payment = null);
 
-/// <summary>Payment details entered by an admin on a member's behalf.</summary>
-public record RecordPaymentRequest(decimal Amount, string? ReferenceNo, DateOnly PaidOn, string ProofStorageKey);
+/// <summary>Payment details entered by an admin on a member's behalf - the walk-in path, which is
+/// also the paper-form-intake path.</summary>
+public record RecordPaymentRequest(
+    decimal Amount, string? ReferenceNo, DateOnly PaidOn, string ProofStorageKey,
+    /// <summary>Whether the amount the admin typed included the portal-access add-on. The admin
+    /// walk-in form auto-syncs this from the typed Amount by default, with manual override - see
+    /// proposal.md's mismatch-guarding decision. No server-side validation against Amount either
+    /// way.</summary>
+    bool IncludePortalAccess = false);
+
+/// <summary>POST /api/members/me/submit's optional body - a submission with no body at all (older
+/// clients) defaults to no portal access, same as before this field existed.</summary>
+public record SubmitMyProfileRequest(bool IncludePortalAccess = false);
 
 /// <summary>
 /// Advisory answer for the approve dialog's live duplicate check. Echoes the trimmed value back so

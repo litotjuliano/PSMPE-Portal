@@ -121,6 +121,9 @@ public class PaymentService(IApplicationDbContext db, ICacheService? cache = nul
             ReferenceNo = request.ReferenceNo?.Trim(),
             PaidOn = request.PaidOn,
             Status = PaymentStatus.Submitted,
+            // Whatever the member declared - no server-side forcing or branching, and no
+            // consistency check against Amount (mismatch guarding is a UI safety net only).
+            IncludesPortalAccess = request.IncludePortalAccess,
         };
 
         db.Payments.Add(payment);
@@ -391,8 +394,11 @@ public class PaymentService(IApplicationDbContext db, ICacheService? cache = nul
             var annualDues = await FeePromotionResolver.ResolveAsync(
                 db, MembershipFeeKeys.AnnualDues,
                 Read(rows, MembershipFeeKeys.AnnualDues, MembershipFeeKeys.DefaultAnnualDues), asOf, cancellationToken);
+            var portalFee = await FeePromotionResolver.ResolveAsync(
+                db, MembershipFeeKeys.PortalFee,
+                Read(rows, MembershipFeeKeys.PortalFee, MembershipFeeKeys.DefaultPortalFee), asOf, cancellationToken);
 
-            return new MembershipFeesDto(membershipFee, shippingFee, annualDues);
+            return new MembershipFeesDto(membershipFee, shippingFee, annualDues, portalFee);
         });
 
     /// <summary>Falls back to the shipped constant for a missing or unparseable row, so a bad config
@@ -409,6 +415,7 @@ public class PaymentService(IApplicationDbContext db, ICacheService? cache = nul
             (MembershipFeeKeys.MembershipFee, request.MembershipFee),
             (MembershipFeeKeys.ShippingFee, request.ShippingFee),
             (MembershipFeeKeys.AnnualDues, request.AnnualDues),
+            (MembershipFeeKeys.PortalFee, request.PortalFee),
         };
 
         if (values.Any(v => v.Value < 0))

@@ -37,7 +37,7 @@ public class PaymentServiceTests
     }
 
     private static async Task<Payment> SeedPaymentAsync(
-        TestDbContext db, Member member, PaymentKind kind, string? proofKey = "proof/key.jpg")
+        TestDbContext db, Member member, PaymentKind kind, string? proofKey = "proof/key.jpg", bool includesPortalAccess = false)
     {
         var payment = new Payment
         {
@@ -47,6 +47,7 @@ public class PaymentServiceTests
             PaidOn = DateOnly.FromDateTime(DateTime.UtcNow),
             ProofStorageKey = proofKey,
             Status = PaymentStatus.Submitted,
+            IncludesPortalAccess = includesPortalAccess,
         };
         db.Payments.Add(payment);
         await db.SaveChangesAsync();
@@ -106,6 +107,55 @@ public class PaymentServiceTests
         Assert.True((await service.VerifyAsync(payment.Id, Guid.NewGuid())).Succeeded);
 
         Assert.Equal(new DateOnly(2027, 6, 1), member.RenewalDueDate);
+    }
+
+    [Fact]
+    public async Task VerifyAsync_WithIncludesPortalAccessTrue_GrantsMemberPortalAccess()
+    {
+        using var db = TestDbContext.CreateInMemory();
+        var service = new PaymentService(db);
+        var member = await SeedApprovedMemberAsync(db);
+        var payment = await SeedPaymentAsync(db, member, PaymentKind.NewMembership, includesPortalAccess: true);
+
+        var result = await service.VerifyAsync(payment.Id, Guid.NewGuid());
+
+        Assert.True(result.Succeeded);
+        Assert.True(member.HasPortalAccess);
+    }
+
+    [Fact]
+    public async Task VerifyAsync_WithIncludesPortalAccessFalse_LeavesMemberWithoutPortalAccess()
+    {
+        using var db = TestDbContext.CreateInMemory();
+        var service = new PaymentService(db);
+        var member = await SeedApprovedMemberAsync(db);
+        var payment = await SeedPaymentAsync(db, member, PaymentKind.NewMembership, includesPortalAccess: false);
+
+        var result = await service.VerifyAsync(payment.Id, Guid.NewGuid());
+
+        Assert.True(result.Succeeded);
+        Assert.False(member.HasPortalAccess);
+    }
+
+    /// <summary>
+    /// Portal access is recurring, not permanent - it reflects only the member's most recently
+    /// verified payment. A renewal that omits the add-on must revoke access already granted by an
+    /// earlier payment.
+    /// </summary>
+    [Fact]
+    public async Task VerifyAsync_RenewalOmittingPortalAccess_RevokesPreviouslyGrantedAccess()
+    {
+        using var db = TestDbContext.CreateInMemory();
+        var service = new PaymentService(db);
+        var member = await SeedApprovedMemberAsync(db, new DateOnly(2026, 6, 1));
+        member.HasPortalAccess = true;
+        await db.SaveChangesAsync();
+        var renewal = await SeedPaymentAsync(db, member, PaymentKind.Renewal, includesPortalAccess: false);
+
+        var result = await service.VerifyAsync(renewal.Id, Guid.NewGuid());
+
+        Assert.True(result.Succeeded);
+        Assert.False(member.HasPortalAccess);
     }
 
     [Fact]
@@ -208,6 +258,37 @@ public class PaymentServiceTests
     }
 
     [Fact]
+    public async Task SubmitAsync_WithIncludePortalAccessTrue_SetsIncludesPortalAccessOnThePayment()
+    {
+        using var db = TestDbContext.CreateInMemory();
+        var service = new PaymentService(db);
+        var member = await SeedApprovedMemberAsync(db, new DateOnly(2026, 6, 1));
+
+        var result = await service.SubmitAsync(
+            member.UserId, new SubmitPaymentRequest(1500m, "REF-1", DateOnly.FromDateTime(DateTime.UtcNow), IncludePortalAccess: true));
+
+        Assert.True(result.Succeeded);
+        Assert.True(result.Value!.Id != Guid.Empty);
+        var stored = await db.Payments.FindAsync(result.Value.Id);
+        Assert.True(stored!.IncludesPortalAccess);
+    }
+
+    [Fact]
+    public async Task SubmitAsync_WithoutIncludePortalAccess_DefaultsToFalseOnThePayment()
+    {
+        using var db = TestDbContext.CreateInMemory();
+        var service = new PaymentService(db);
+        var member = await SeedApprovedMemberAsync(db, new DateOnly(2026, 6, 1));
+
+        var result = await service.SubmitAsync(
+            member.UserId, new SubmitPaymentRequest(600m, "REF-1", DateOnly.FromDateTime(DateTime.UtcNow)));
+
+        Assert.True(result.Succeeded);
+        var stored = await db.Payments.FindAsync(result.Value!.Id);
+        Assert.False(stored!.IncludesPortalAccess);
+    }
+
+    [Fact]
     public async Task SubmitAsync_WithAFutureDate_IsRefused()
     {
         using var db = TestDbContext.CreateInMemory();
@@ -240,6 +321,17 @@ public class PaymentServiceTests
     }
 
     [Fact]
+    public void MembershipFeesDto_ComputesAllFourTotalsCorrectly()
+    {
+        var fees = new MembershipFeesDto(MembershipFee: 1500m, ShippingFee: 200m, AnnualDues: 600m, PortalFee: 900m);
+
+        Assert.Equal(1700m, fees.RegistrationTotalWithoutPortal);
+        Assert.Equal(2600m, fees.RegistrationTotalWithPortal);
+        Assert.Equal(600m, fees.RenewalTotalWithoutPortal);
+        Assert.Equal(1500m, fees.RenewalTotalWithPortal);
+    }
+
+    [Fact]
     public async Task GetFeesAsync_WithNoConfigRows_FallsBackToTheShippedDefaults()
     {
         using var db = TestDbContext.CreateInMemory();
@@ -251,7 +343,8 @@ public class PaymentServiceTests
         Assert.Equal(MembershipFeeKeys.DefaultMembershipFee, fees.MembershipFee);
         Assert.Equal(MembershipFeeKeys.DefaultShippingFee, fees.ShippingFee);
         Assert.Equal(MembershipFeeKeys.DefaultAnnualDues, fees.AnnualDues);
-        Assert.Equal(1700m, fees.RegistrationTotal);
+        Assert.Equal(MembershipFeeKeys.DefaultPortalFee, fees.PortalFee);
+        Assert.Equal(1700m, fees.RegistrationTotalWithoutPortal);
     }
 
     [Fact]
@@ -260,13 +353,17 @@ public class PaymentServiceTests
         using var db = TestDbContext.CreateInMemory();
         var service = new PaymentService(db);
 
-        Assert.True((await service.UpdateFeesAsync(new UpdateMembershipFeesRequest(2000m, 250m, 750m))).Succeeded);
+        Assert.True((await service.UpdateFeesAsync(new UpdateMembershipFeesRequest(2000m, 250m, 750m, 950m))).Succeeded);
         var fees = await service.GetFeesAsync();
 
         Assert.Equal(2000m, fees.MembershipFee);
         Assert.Equal(250m, fees.ShippingFee);
         Assert.Equal(750m, fees.AnnualDues);
-        Assert.Equal(2250m, fees.RegistrationTotal);
+        Assert.Equal(950m, fees.PortalFee);
+        Assert.Equal(2250m, fees.RegistrationTotalWithoutPortal);
+        Assert.Equal(3200m, fees.RegistrationTotalWithPortal);
+        Assert.Equal(750m, fees.RenewalTotalWithoutPortal);
+        Assert.Equal(1700m, fees.RenewalTotalWithPortal);
     }
 
     [Fact]
@@ -275,7 +372,7 @@ public class PaymentServiceTests
         using var db = TestDbContext.CreateInMemory();
         var service = new PaymentService(db);
 
-        var result = await service.UpdateFeesAsync(new UpdateMembershipFeesRequest(-1m, 200m, 600m));
+        var result = await service.UpdateFeesAsync(new UpdateMembershipFeesRequest(-1m, 200m, 600m, 900m));
 
         Assert.False(result.Succeeded);
     }
@@ -295,7 +392,7 @@ public class PaymentServiceTests
         var originalAmount = payment.Amount;
         var originalIncludesPortalAccess = payment.IncludesPortalAccess;
 
-        Assert.True((await service.UpdateFeesAsync(new UpdateMembershipFeesRequest(2000m, 250m, 750m))).Succeeded);
+        Assert.True((await service.UpdateFeesAsync(new UpdateMembershipFeesRequest(2000m, 250m, 750m, 950m))).Succeeded);
 
         var reloaded = await db.Payments.FindAsync(payment.Id);
         Assert.Equal(originalAmount, reloaded!.Amount);

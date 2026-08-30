@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using PSMPE.Portal.Application.Common.Configuration;
 using PSMPE.Portal.Application.Common.Models;
 using PSMPE.Portal.Application.Members;
 using PSMPE.Portal.Application.Members.Dtos;
@@ -725,6 +726,93 @@ public class MemberServiceTests
         Assert.True(result.Succeeded);
         var updated = await service.GetByUserIdAsync(member.UserId);
         Assert.NotNull(updated!.SubmittedAt);
+    }
+
+    /// <summary>
+    /// Registration path: ticking the portal opt-in adds the resolved PortalFee on top of
+    /// MembershipFee+ShippingFee, and stamps the created Payment accordingly - no fee rows seeded,
+    /// so this exercises MembershipFeeKeys' shipped defaults (1500 + 200 + 900 = 2600).
+    /// </summary>
+    [Fact]
+    public async Task SubmitMyProfileAsync_WithIncludePortalAccessTrue_AddsPortalFeeToTheRegistrationPayment()
+    {
+        using var db = TestDbContext.CreateInMemory();
+        var service = new MemberService(db);
+        var member = await SeedCompleteDraftAsync(db);
+        db.MemberUploads.AddRange(
+            new MemberUpload { UserId = member.UserId, Kind = UploadKind.PrcId, StorageKey = $"{member.UserId}/prc-id.pdf", ContentType = "application/pdf" },
+            new MemberUpload { UserId = member.UserId, Kind = UploadKind.Photo, StorageKey = $"{member.UserId}/photo.jpg", ContentType = "image/jpeg" },
+            new MemberUpload { UserId = member.UserId, Kind = UploadKind.ProofOfPayment, StorageKey = $"{member.UserId}/proof-of-payment.jpg", ContentType = "image/jpeg" });
+        await db.SaveChangesAsync();
+
+        var result = await service.SubmitMyProfileAsync(member.UserId, includePortalAccess: true);
+
+        Assert.True(result.Succeeded);
+        var payment = await db.Payments.SingleAsync(p => p.MemberId == member.Id && p.Kind == PaymentKind.NewMembership);
+        Assert.True(payment.IncludesPortalAccess);
+        Assert.Equal(
+            MembershipFeeKeys.DefaultMembershipFee + MembershipFeeKeys.DefaultShippingFee + MembershipFeeKeys.DefaultPortalFee,
+            payment.Amount);
+    }
+
+    [Fact]
+    public async Task SubmitMyProfileAsync_WithoutIncludePortalAccess_LeavesPortalFeeOutOfTheRegistrationPayment()
+    {
+        using var db = TestDbContext.CreateInMemory();
+        var service = new MemberService(db);
+        var member = await SeedCompleteDraftAsync(db);
+        db.MemberUploads.AddRange(
+            new MemberUpload { UserId = member.UserId, Kind = UploadKind.PrcId, StorageKey = $"{member.UserId}/prc-id.pdf", ContentType = "application/pdf" },
+            new MemberUpload { UserId = member.UserId, Kind = UploadKind.Photo, StorageKey = $"{member.UserId}/photo.jpg", ContentType = "image/jpeg" },
+            new MemberUpload { UserId = member.UserId, Kind = UploadKind.ProofOfPayment, StorageKey = $"{member.UserId}/proof-of-payment.jpg", ContentType = "image/jpeg" });
+        await db.SaveChangesAsync();
+
+        var result = await service.SubmitMyProfileAsync(member.UserId);
+
+        Assert.True(result.Succeeded);
+        var payment = await db.Payments.SingleAsync(p => p.MemberId == member.Id && p.Kind == PaymentKind.NewMembership);
+        Assert.False(payment.IncludesPortalAccess);
+        Assert.Equal(MembershipFeeKeys.DefaultMembershipFee + MembershipFeeKeys.DefaultShippingFee, payment.Amount);
+    }
+
+    /// <summary>Admin walk-in path: RecordPaymentRequest.IncludePortalAccess flows onto the Payment
+    /// ResolveRegistrationPaymentAsync creates, and PaymentVerification.Apply (run by ApproveAsync
+    /// in the same transaction) grants Member.HasPortalAccess from it.</summary>
+    [Fact]
+    public async Task ApproveAsync_WithIncludePortalAccessTrue_SetsIncludesPortalAccessOnTheCreatedPayment()
+    {
+        using var db = TestDbContext.CreateInMemory();
+        var member = await SeedSubmittedMemberAsync(db);
+        member.PrcIdVerified = true;
+        await db.SaveChangesAsync();
+        var service = new MemberService(db);
+        var payment = new RecordPaymentRequest(
+            2600m, "REF-001", DateOnly.FromDateTime(DateTime.UtcNow), "uploads/proof.jpg", IncludePortalAccess: true);
+
+        var result = await service.ApproveAsync(member.Id, new ApproveMemberRequest("000123", payment), Guid.NewGuid(), CancellationToken.None);
+
+        Assert.True(result.Succeeded);
+        Assert.True(member.HasPortalAccess);
+        var created = await db.Payments.SingleAsync(p => p.MemberId == member.Id);
+        Assert.True(created.IncludesPortalAccess);
+    }
+
+    [Fact]
+    public async Task ApproveAsync_WithoutIncludePortalAccess_LeavesPortalAccessFalseOnMemberAndPayment()
+    {
+        using var db = TestDbContext.CreateInMemory();
+        var member = await SeedSubmittedMemberAsync(db);
+        member.PrcIdVerified = true;
+        await db.SaveChangesAsync();
+        var service = new MemberService(db);
+        var payment = new RecordPaymentRequest(500m, "REF-001", DateOnly.FromDateTime(DateTime.UtcNow), "uploads/proof.jpg");
+
+        var result = await service.ApproveAsync(member.Id, new ApproveMemberRequest("000123", payment), Guid.NewGuid(), CancellationToken.None);
+
+        Assert.True(result.Succeeded);
+        Assert.False(member.HasPortalAccess);
+        var created = await db.Payments.SingleAsync(p => p.MemberId == member.Id);
+        Assert.False(created.IncludesPortalAccess);
     }
 
     [Fact]
