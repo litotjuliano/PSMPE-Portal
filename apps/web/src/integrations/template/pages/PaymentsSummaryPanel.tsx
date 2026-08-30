@@ -43,6 +43,12 @@ function rangeFor(pick: QuickPick, today: Date): { startDate: string; endDate: s
 export const PaymentsSummaryPanel = () => {
   const [startDate, setStartDate] = useState(() => rangeFor('This month', new Date()).startDate)
   const [endDate, setEndDate] = useState(() => rangeFor('This month', new Date()).endDate)
+  // Drives the <select>'s value so it's controlled rather than defaultValue-only: without this,
+  // editing the date inputs directly then re-selecting the *same already-displayed* option is a
+  // no-op (the DOM value never changed, so the browser never fires onChange), leaving the stale
+  // custom range in place. Tracking the pick as state also gives the dropdown an honest "custom"
+  // label once the two dates have diverged from any preset.
+  const [pick, setPick] = useState<QuickPick | 'custom'>('This month')
   const [summary, setSummary] = useState<PaymentReportSummary | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -71,8 +77,9 @@ export const PaymentsSummaryPanel = () => {
     }
   }, [startDate, endDate])
 
-  const applyQuickPick = (pick: QuickPick) => {
-    const range = rangeFor(pick, new Date())
+  const applyQuickPick = (nextPick: QuickPick) => {
+    const range = rangeFor(nextPick, new Date())
+    setPick(nextPick)
     setStartDate(range.startDate)
     setEndDate(range.endDate)
   }
@@ -94,12 +101,15 @@ export const PaymentsSummaryPanel = () => {
             <select
               id="summary-quick-pick"
               className="form-input max-w-44"
-              defaultValue="This month"
+              value={pick}
               onChange={(e) => applyQuickPick(e.target.value as QuickPick)}
             >
-              {QUICK_PICKS.map((pick) => (
-                <option key={pick} value={pick}>
-                  {pick}
+              {/* Only shown while diverged - never a choice the user picks to get here, just an
+                  honest label for "these two dates don't match any preset right now". */}
+              {pick === 'custom' && <option value="custom">Custom range</option>}
+              {QUICK_PICKS.map((option) => (
+                <option key={option} value={option}>
+                  {option}
                 </option>
               ))}
             </select>
@@ -114,7 +124,10 @@ export const PaymentsSummaryPanel = () => {
               type="date"
               value={startDate}
               max={endDate}
-              onChange={(e) => setStartDate(e.target.value)}
+              onChange={(e) => {
+                setPick('custom')
+                setStartDate(e.target.value)
+              }}
             />
           </div>
           <div>
@@ -127,7 +140,10 @@ export const PaymentsSummaryPanel = () => {
               type="date"
               value={endDate}
               min={startDate}
-              onChange={(e) => setEndDate(e.target.value)}
+              onChange={(e) => {
+                setPick('custom')
+                setEndDate(e.target.value)
+              }}
             />
           </div>
         </div>
