@@ -11,6 +11,10 @@ public record PaymentDto(
     string? MembershipNo,
     PaymentKind Kind,
     decimal Amount,
+    /// <summary>Whether this payment included the optional portal-access add-on - see
+    /// Payment.IncludesPortalAccess. Surfaced here so the admin queue can flag a payment whose
+    /// Amount doesn't match what this flag implies, without a separate lookup.</summary>
+    bool IncludesPortalAccess,
     string? ReferenceNo,
     DateOnly PaidOn,
     bool HasProof,

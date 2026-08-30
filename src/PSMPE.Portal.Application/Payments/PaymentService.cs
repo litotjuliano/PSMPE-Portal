@@ -25,7 +25,7 @@ public class PaymentService(IApplicationDbContext db, ICacheService? cache = nul
         p.Id, p.MemberId,
         $"{p.Member.FirstName} {p.Member.LastName}".Trim(),
         p.Member.MembershipNo,
-        p.Kind, p.Amount, p.ReferenceNo, p.PaidOn,
+        p.Kind, p.Amount, p.IncludesPortalAccess, p.ReferenceNo, p.PaidOn,
         p.ProofStorageKey is not null,
         p.Status, p.RejectedReason, p.DecidedAt, p.CoversUntil, p.CreatedAt,
         p.EventRegistration?.Event.Title);
