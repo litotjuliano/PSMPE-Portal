@@ -202,6 +202,39 @@ public class PaymentsController(
     public async Task<IActionResult> UpdateFees(UpdateMembershipFeesRequest request, CancellationToken cancellationToken) =>
         ToActionResult(await paymentService.UpdateFeesAsync(request, cancellationToken));
 
+    /// <summary>Admin configuration screen - unlike GET /fees this isn't shown to an applicant, so
+    /// it requires members:manage rather than being AllowExpiredMember.</summary>
+    [HttpGet("fees/promotions")]
+    [RequirePermission(Permissions.Members.Manage)]
+    public async Task<ActionResult<IReadOnlyList<FeePromotionDto>>> GetPromotions(CancellationToken cancellationToken) =>
+        Ok(await paymentService.GetPromotionsAsync(cancellationToken));
+
+    [HttpPost("fees/promotions")]
+    [RequirePermission(Permissions.Members.Manage)]
+    public async Task<ActionResult<FeePromotionDto>> CreatePromotion(
+        CreateFeePromotionRequest request, CancellationToken cancellationToken)
+    {
+        var createdBy = CurrentUserId;
+        if (createdBy is null)
+        {
+            return Unauthorized();
+        }
+
+        var result = await paymentService.CreatePromotionAsync(request, createdBy.Value, cancellationToken);
+        return result.Succeeded
+            ? Ok(result.Value)
+            : result.ErrorType switch
+            {
+                ResultErrorType.Conflict => Conflict(new { message = result.Error }),
+                _ => BadRequest(new { message = result.Error }),
+            };
+    }
+
+    [HttpDelete("fees/promotions/{id:guid}")]
+    [RequirePermission(Permissions.Members.Manage)]
+    public async Task<IActionResult> DeletePromotion(Guid id, CancellationToken cancellationToken) =>
+        ToActionResult(await paymentService.DeletePromotionAsync(id, cancellationToken));
+
     /// <summary>Null when the payment is the caller's own; an error result otherwise.</summary>
     private async Task<IActionResult?> EnsureOwnPaymentAsync(Guid paymentId, Guid userId, CancellationToken cancellationToken)
     {

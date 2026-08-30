@@ -56,4 +56,17 @@ public interface IPaymentService
     Task<MembershipFeesDto> GetFeesAsync(CancellationToken cancellationToken = default);
 
     Task<Result> UpdateFeesAsync(UpdateMembershipFeesRequest request, CancellationToken cancellationToken = default);
+
+    /// <summary>All configured promotions, newest-starting first - the admin configuration list, not
+    /// the resolved price a member sees.</summary>
+    Task<IReadOnlyList<FeePromotionDto>> GetPromotionsAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>Rejects an unrecognized FeeKey, an inverted date range, or one overlapping an
+    /// existing promotion for the same FeeKey.</summary>
+    Task<Result<FeePromotionDto>> CreatePromotionAsync(
+        CreateFeePromotionRequest request, Guid createdByUserId, CancellationToken cancellationToken = default);
+
+    /// <summary>Hard delete - a promotion is a lightweight schedule, not an audited record; already-
+    /// created Payments captured their own amount independently.</summary>
+    Task<Result> DeletePromotionAsync(Guid id, CancellationToken cancellationToken = default);
 }

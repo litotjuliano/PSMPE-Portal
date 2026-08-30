@@ -1143,14 +1143,26 @@ public class MemberService(IApplicationDbContext db, ICacheService? cache = null
             .Where(c => c.Key == MembershipFeeKeys.MembershipFee || c.Key == MembershipFeeKeys.ShippingFee)
             .ToDictionaryAsync(c => c.Key, c => c.Value, cancellationToken);
 
+        // Resolved through FeePromotionResolver rather than the plain configured value, so a
+        // promotion applies here the same way it does in PaymentService.GetFeesAsync. No cache
+        // parameter needed: the resolver does no caching of its own (callers decide), and this
+        // method already reads SystemConfig uncached above, so there is nothing to keep consistent
+        // with by adding one.
+        var asOf = DateOnly.FromDateTime(DateTime.UtcNow);
+        var membershipFee = await FeePromotionResolver.ResolveAsync(
+            db, MembershipFeeKeys.MembershipFee,
+            ReadFee(feeRows, MembershipFeeKeys.MembershipFee, MembershipFeeKeys.DefaultMembershipFee), asOf, cancellationToken);
+        var shippingFee = await FeePromotionResolver.ResolveAsync(
+            db, MembershipFeeKeys.ShippingFee,
+            ReadFee(feeRows, MembershipFeeKeys.ShippingFee, MembershipFeeKeys.DefaultShippingFee), asOf, cancellationToken);
+
         db.Payments.Add(new Payment
         {
             MemberId = member.Id,
             Kind = PaymentKind.NewMembership,
             // What PSMPE charges, not what the member typed - they didn't declare an amount on this
             // path. The admin sees the proof and can reject if it doesn't match.
-            Amount = ReadFee(feeRows, MembershipFeeKeys.MembershipFee, MembershipFeeKeys.DefaultMembershipFee)
-                + ReadFee(feeRows, MembershipFeeKeys.ShippingFee, MembershipFeeKeys.DefaultShippingFee),
+            Amount = membershipFee + shippingFee,
             PaidOn = DateOnly.FromDateTime(DateTime.UtcNow),
             ProofStorageKey = proofKey,
             Status = PaymentStatus.Submitted,

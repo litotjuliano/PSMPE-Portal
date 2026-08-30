@@ -280,6 +280,156 @@ public class PaymentServiceTests
         Assert.False(result.Succeeded);
     }
 
+    /// <summary>
+    /// The invariant the whole promotional-pricing/fee-editing plan depends on: amounts are
+    /// captured once, at submission time. An admin editing fees afterward must not reach back and
+    /// change what a member already submitted or had verified.
+    /// </summary>
+    [Fact]
+    public async Task UpdateFeesAsync_DoesNotRetroactivelyChangeAnAlreadySubmittedPayment()
+    {
+        using var db = TestDbContext.CreateInMemory();
+        var service = new PaymentService(db);
+        var member = await SeedApprovedMemberAsync(db);
+        var payment = await SeedPaymentAsync(db, member, PaymentKind.NewMembership);
+        var originalAmount = payment.Amount;
+        var originalIncludesPortalAccess = payment.IncludesPortalAccess;
+
+        Assert.True((await service.UpdateFeesAsync(new UpdateMembershipFeesRequest(2000m, 250m, 750m))).Succeeded);
+
+        var reloaded = await db.Payments.FindAsync(payment.Id);
+        Assert.Equal(originalAmount, reloaded!.Amount);
+        // Task 3 wires this up for real; here it just needs to still be whatever it was before the
+        // edit (the domain default), proving UpdateFeesAsync doesn't touch it at all.
+        Assert.Equal(originalIncludesPortalAccess, reloaded.IncludesPortalAccess);
+        Assert.False(reloaded.IncludesPortalAccess);
+    }
+
+    [Fact]
+    public async Task CreatePromotionAsync_ActiveToday_IsReflectedInGetFeesAsync()
+    {
+        using var db = TestDbContext.CreateInMemory();
+        var service = new PaymentService(db);
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+
+        var result = await service.CreatePromotionAsync(
+            new CreateFeePromotionRequest(MembershipFeeKeys.MembershipFee, 999m, today, today.AddDays(1)),
+            Guid.NewGuid());
+
+        Assert.True(result.Succeeded);
+        var fees = await service.GetFeesAsync();
+        Assert.Equal(999m, fees.MembershipFee);
+    }
+
+    [Fact]
+    public async Task CreatePromotionAsync_OutsideItsDateRange_DoesNotAffectGetFeesAsync()
+    {
+        using var db = TestDbContext.CreateInMemory();
+        var service = new PaymentService(db);
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+
+        var result = await service.CreatePromotionAsync(
+            new CreateFeePromotionRequest(MembershipFeeKeys.MembershipFee, 999m, today.AddDays(5), today.AddDays(10)),
+            Guid.NewGuid());
+
+        Assert.True(result.Succeeded);
+        var fees = await service.GetFeesAsync();
+        Assert.Equal(MembershipFeeKeys.DefaultMembershipFee, fees.MembershipFee);
+    }
+
+    [Fact]
+    public async Task CreatePromotionAsync_OverlappingAnExistingPromotionForTheSameFeeKey_IsRejected()
+    {
+        using var db = TestDbContext.CreateInMemory();
+        var service = new PaymentService(db);
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        Assert.True((await service.CreatePromotionAsync(
+            new CreateFeePromotionRequest(MembershipFeeKeys.MembershipFee, 999m, today, today.AddDays(10)),
+            Guid.NewGuid())).Succeeded);
+
+        // Overlaps by one day (today+5..today+15 vs today..today+10).
+        var result = await service.CreatePromotionAsync(
+            new CreateFeePromotionRequest(MembershipFeeKeys.MembershipFee, 800m, today.AddDays(5), today.AddDays(15)),
+            Guid.NewGuid());
+
+        Assert.False(result.Succeeded);
+        Assert.Equal(ResultErrorType.Conflict, result.ErrorType);
+    }
+
+    [Fact]
+    public async Task CreatePromotionAsync_NonOverlappingRangeForTheSameFeeKey_Succeeds()
+    {
+        using var db = TestDbContext.CreateInMemory();
+        var service = new PaymentService(db);
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        Assert.True((await service.CreatePromotionAsync(
+            new CreateFeePromotionRequest(MembershipFeeKeys.MembershipFee, 999m, today, today.AddDays(10)),
+            Guid.NewGuid())).Succeeded);
+
+        var result = await service.CreatePromotionAsync(
+            new CreateFeePromotionRequest(MembershipFeeKeys.MembershipFee, 800m, today.AddDays(11), today.AddDays(20)),
+            Guid.NewGuid());
+
+        Assert.True(result.Succeeded);
+    }
+
+    [Fact]
+    public async Task CreatePromotionAsync_ForAnUnrecognizedFeeKey_IsRejected()
+    {
+        using var db = TestDbContext.CreateInMemory();
+        var service = new PaymentService(db);
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+
+        var result = await service.CreatePromotionAsync(
+            new CreateFeePromotionRequest("NotARealFee", 500m, today, today.AddDays(1)), Guid.NewGuid());
+
+        Assert.False(result.Succeeded);
+    }
+
+    [Fact]
+    public async Task CreatePromotionAsync_WithStartDateAfterEndDate_IsRejected()
+    {
+        using var db = TestDbContext.CreateInMemory();
+        var service = new PaymentService(db);
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+
+        var result = await service.CreatePromotionAsync(
+            new CreateFeePromotionRequest(MembershipFeeKeys.MembershipFee, 500m, today.AddDays(5), today),
+            Guid.NewGuid());
+
+        Assert.False(result.Succeeded);
+    }
+
+    [Fact]
+    public async Task DeletePromotionAsync_RemovesIt_AndFeesRevertToRegular()
+    {
+        using var db = TestDbContext.CreateInMemory();
+        var service = new PaymentService(db);
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var created = await service.CreatePromotionAsync(
+            new CreateFeePromotionRequest(MembershipFeeKeys.MembershipFee, 999m, today, today.AddDays(1)),
+            Guid.NewGuid());
+        Assert.Equal(999m, (await service.GetFeesAsync()).MembershipFee);
+
+        var deleteResult = await service.DeletePromotionAsync(created.Value!.Id);
+
+        Assert.True(deleteResult.Succeeded);
+        Assert.Equal(MembershipFeeKeys.DefaultMembershipFee, (await service.GetFeesAsync()).MembershipFee);
+        Assert.Empty(await service.GetPromotionsAsync());
+    }
+
+    [Fact]
+    public async Task DeletePromotionAsync_ForAnUnknownId_ReturnsNotFound()
+    {
+        using var db = TestDbContext.CreateInMemory();
+        var service = new PaymentService(db);
+
+        var result = await service.DeletePromotionAsync(Guid.NewGuid());
+
+        Assert.False(result.Succeeded);
+        Assert.Equal(ResultErrorType.NotFound, result.ErrorType);
+    }
+
     private static async Task<(Member Member, EventRegistration Registration)> SeedEventRegistrationAsync(
         TestDbContext db, EventRegistrationStatus status = EventRegistrationStatus.Registered)
     {

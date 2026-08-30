@@ -57,3 +57,13 @@ public record MembershipFeesDto(decimal MembershipFee, decimal ShippingFee, deci
 }
 
 public record UpdateMembershipFeesRequest(decimal MembershipFee, decimal ShippingFee, decimal AnnualDues);
+
+/// <summary>A configured FeePromotion, for the admin Promotions panel. See FeePromotion for the
+/// resolution mechanics and the overlap rule enforced at creation.</summary>
+public record FeePromotionDto(
+    Guid Id, string FeeKey, decimal PromoAmount, DateOnly StartDate, DateOnly EndDate,
+    Guid CreatedByUserId, DateTimeOffset CreatedAt);
+
+/// <summary>FeeKey must be one of the MembershipFeeKeys constants; StartDate/EndDate must not
+/// overlap an existing promotion for the same FeeKey - see PaymentService.CreatePromotionAsync.</summary>
+public record CreateFeePromotionRequest(string FeeKey, decimal PromoAmount, DateOnly StartDate, DateOnly EndDate);

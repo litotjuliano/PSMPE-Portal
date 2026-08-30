@@ -15,12 +15,14 @@ public static class MembershipFeeKeys
     public const string MembershipFee = "MembershipFee";
     public const string ShippingFee = "MembershipShippingFee";
     public const string AnnualDues = "AnnualDues";
+    public const string PortalFee = "PortalFee";
 
     public const decimal DefaultMembershipFee = 1500m;
     public const decimal DefaultShippingFee = 200m;
     public const decimal DefaultAnnualDues = 600m;
+    public const decimal DefaultPortalFee = 900m;
 
-    /// <summary>Single cache entry for all three - they are always read together, and one entry
+    /// <summary>Single cache entry for all four - they are always read together, and one entry
     /// means one thing to evict when an admin edits them.</summary>
     public const string CacheKey = "config:membership-fees";
 
@@ -29,5 +31,6 @@ public static class MembershipFeeKeys
         (MembershipFee, DefaultMembershipFee, "One-time membership fee charged at registration, in PHP."),
         (ShippingFee, DefaultShippingFee, "One-time ID/card shipping fee charged at registration, in PHP."),
         (AnnualDues, DefaultAnnualDues, "Annual dues payable each year on the member's renewal date, in PHP."),
+        (PortalFee, DefaultPortalFee, "Optional portal-access add-on fee, available at every registration and renewal, in PHP."),
     ];
 }

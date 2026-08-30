@@ -377,10 +377,22 @@ public class PaymentService(IApplicationDbContext db, ICacheService? cache = nul
                 .Where(c => keys.Contains(c.Key))
                 .ToDictionaryAsync(c => c.Key, c => c.Value, cancellationToken);
 
-            return new MembershipFeesDto(
-                Read(rows, MembershipFeeKeys.MembershipFee, MembershipFeeKeys.DefaultMembershipFee),
-                Read(rows, MembershipFeeKeys.ShippingFee, MembershipFeeKeys.DefaultShippingFee),
-                Read(rows, MembershipFeeKeys.AnnualDues, MembershipFeeKeys.DefaultAnnualDues));
+            // Resolved through FeePromotionResolver, not the plain configured value, so an active
+            // promotion is reflected here without a separate code path - still inside this single
+            // cached factory, so a promotion starting/ending exactly at a date boundary can be up to
+            // 10 minutes late to reflect, same accepted tradeoff as a manual fee edit today.
+            var asOf = DateOnly.FromDateTime(DateTime.UtcNow);
+            var membershipFee = await FeePromotionResolver.ResolveAsync(
+                db, MembershipFeeKeys.MembershipFee,
+                Read(rows, MembershipFeeKeys.MembershipFee, MembershipFeeKeys.DefaultMembershipFee), asOf, cancellationToken);
+            var shippingFee = await FeePromotionResolver.ResolveAsync(
+                db, MembershipFeeKeys.ShippingFee,
+                Read(rows, MembershipFeeKeys.ShippingFee, MembershipFeeKeys.DefaultShippingFee), asOf, cancellationToken);
+            var annualDues = await FeePromotionResolver.ResolveAsync(
+                db, MembershipFeeKeys.AnnualDues,
+                Read(rows, MembershipFeeKeys.AnnualDues, MembershipFeeKeys.DefaultAnnualDues), asOf, cancellationToken);
+
+            return new MembershipFeesDto(membershipFee, shippingFee, annualDues);
         });
 
     /// <summary>Falls back to the shipped constant for a missing or unparseable row, so a bad config
@@ -424,6 +436,83 @@ public class PaymentService(IApplicationDbContext db, ICacheService? cache = nul
         // This is the first write path to SystemConfigs in the product - every other consumer
         // assumed the table was seed-only and TTL expiry was enough. Evicting here is what keeps
         // the wizard's total and the receipt from showing a stale price for up to 10 minutes.
+        Cache.Remove(MembershipFeeKeys.CacheKey);
+        return Result.Success();
+    }
+
+    private static FeePromotionDto ToPromotionDto(FeePromotion p) =>
+        new(p.Id, p.FeeKey, p.PromoAmount, p.StartDate, p.EndDate, p.CreatedByUserId, p.CreatedAt);
+
+    public async Task<IReadOnlyList<FeePromotionDto>> GetPromotionsAsync(CancellationToken cancellationToken = default)
+    {
+        var promotions = await db.FeePromotions.AsNoTracking()
+            // Newest-starting first - this is an admin configuration list, not a fee read, so the
+            // most recently scheduled promotion is what someone editing this screen cares about.
+            .OrderByDescending(p => p.StartDate)
+            .ToListAsync(cancellationToken);
+        return promotions.Select(ToPromotionDto).ToList();
+    }
+
+    public async Task<Result<FeePromotionDto>> CreatePromotionAsync(
+        CreateFeePromotionRequest request, Guid createdByUserId, CancellationToken cancellationToken = default)
+    {
+        if (!MembershipFeeKeys.All.Any(f => f.Key == request.FeeKey))
+        {
+            return Result<FeePromotionDto>.Failure($"'{request.FeeKey}' is not a recognized fee.");
+        }
+
+        if (request.StartDate > request.EndDate)
+        {
+            return Result<FeePromotionDto>.Failure("Start date must be on or before the end date.");
+        }
+
+        if (request.PromoAmount < 0)
+        {
+            return Result<FeePromotionDto>.Failure("Promo amount can't be negative.");
+        }
+
+        // Inclusive overlap check: two ranges overlap unless one ends before the other starts. Kept
+        // to one row active per FeeKey per day so FeePromotionResolver never has to pick among
+        // several matches.
+        var overlaps = await db.FeePromotions.AsNoTracking().AnyAsync(
+            p => p.FeeKey == request.FeeKey && p.StartDate <= request.EndDate && p.EndDate >= request.StartDate,
+            cancellationToken);
+        if (overlaps)
+        {
+            return Result<FeePromotionDto>.Conflict("A promotion for this fee already covers part of that date range.");
+        }
+
+        var promotion = new FeePromotion
+        {
+            FeeKey = request.FeeKey,
+            PromoAmount = request.PromoAmount,
+            StartDate = request.StartDate,
+            EndDate = request.EndDate,
+            CreatedByUserId = createdByUserId,
+        };
+        db.FeePromotions.Add(promotion);
+        await db.SaveChangesAsync(cancellationToken);
+
+        // A promotion covering today changes what GetFeesAsync's cached factory should return,
+        // exactly like UpdateFeesAsync's own edit - evicted here for the same reason.
+        Cache.Remove(MembershipFeeKeys.CacheKey);
+
+        return Result<FeePromotionDto>.Success(ToPromotionDto(promotion));
+    }
+
+    public async Task<Result> DeletePromotionAsync(Guid id, CancellationToken cancellationToken = default)
+    {
+        var promotion = await db.FeePromotions.FirstOrDefaultAsync(p => p.Id == id, cancellationToken);
+        if (promotion is null)
+        {
+            return Result.NotFound($"Promotion '{id}' was not found.");
+        }
+
+        // Hard delete: this is a lightweight promotional record, not an audited financial
+        // transaction like Payment - nothing downstream references a FeePromotion by Id once it's
+        // gone, since already-created Payments captured their own amount at submission time.
+        db.FeePromotions.Remove(promotion);
+        await db.SaveChangesAsync(cancellationToken);
         Cache.Remove(MembershipFeeKeys.CacheKey);
         return Result.Success();
     }
