@@ -180,10 +180,13 @@ which doesn't exist yet — building it here would have nothing to call.
 
 ## 8. Documentation
 
-- [ ] `openspecs/payments.md`: new sections for "Portal access is a per-payment add-on," "Fee edits
-      are prospective only," "Promotional pricing," and "Payment reporting"; update the verification
-      effects table and the access-restriction paragraph (second `PORTAL_ACCESS_REQUIRED` condition,
-      ordering rule); add the two new "Not built" items (mid-cycle upgrade, bulk import).
+- [x] `openspecs/payments.md`: four new sections added, verification table and access-restriction
+      paragraph updated, two new "Not built" items added, Fees/Endpoints sections updated. Two review
+      rounds: (1) corrected the access-restriction wording — the `PORTAL_ACCESS_REQUIRED` condition
+      has no Active-only guard and also catches `Pending` applicants by construction, which the first
+      draft mischaracterized; (2) named `MembershipFeesDto`'s four total properties, added
+      `RenewalPaymentCard`'s checkbox to "Member UI," fixed a GET/POST/DELETE ordering inconsistency.
+      Commits `fe4fe19`, `746f0b0`, `0ae9d2a`.
 
 ## 9. Tests
 
