@@ -335,14 +335,20 @@ sets `Status = Active` on every verify — a member flipped to `Expired` by the 
 restored to full access the moment their payment is verified, whether that happens the same day or
 months later.
 
-**A second, independent condition restricts access the same way**: an `Active` member whose
-`HasPortalAccess` is `false` — i.e. their most recently verified payment didn't include the add-on —
-is 403'd with `PORTAL_ACCESS_REQUIRED`, same allowlist and same JSON shape (`{ code, message }`) as
-`MEMBERSHIP_EXPIRED`. `Deactivated` members are excluded from this check, mirroring the existing
-exclusion in `ComputeIsExpired`/`ComputeIsInGracePeriod` — deactivation is a distinct admin action,
-not a lapsed-payment state, and shouldn't be newly affected by this feature. The two checks run in a
-fixed order: the pre-existing `Status == Expired` check runs first, unchanged, so a member failing
-both conditions sees `MEMBERSHIP_EXPIRED`, never `PORTAL_ACCESS_REQUIRED`.
+**A second, independent condition restricts access the same way**: any member — whatever their
+`Status`, `Deactivated` excepted — whose `HasPortalAccess` is `false` is 403'd with
+`PORTAL_ACCESS_REQUIRED`, same allowlist and same JSON shape (`{ code, message }`) as
+`MEMBERSHIP_EXPIRED`. There is no `Active`-only guard on this check; it's a plain
+`!member.HasPortalAccess && member.Status != MembershipStatus.Deactivated`. `Deactivated` members
+are excluded, mirroring the existing exclusion in `ComputeIsExpired`/`ComputeIsInGracePeriod` —
+deactivation is a distinct admin action, not a lapsed-payment state, and shouldn't be newly affected
+by this feature. This also means a `Pending` applicant is caught by the same condition by
+construction — `HasPortalAccess` defaults to `false` and stays that way until their first payment is
+ever verified — which is harmless in practice, since a pending applicant only needs the same
+`[AllowExpiredMember]`-allowlisted self-service endpoints anyway while working through the
+registration wizard. The two checks run in a fixed order: the pre-existing `Status == Expired` check
+runs first, unchanged, so a member failing both conditions sees `MEMBERSHIP_EXPIRED`, never
+`PORTAL_ACCESS_REQUIRED`.
 
 ## Admin UI
 
