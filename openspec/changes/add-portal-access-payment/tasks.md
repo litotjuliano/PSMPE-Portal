@@ -113,32 +113,26 @@ found**: `PaymentDto` (`src/PSMPE.Portal.Application/Payments/Dtos/PaymentDto.cs
 `IncludesPortalAccess` at all — it's only on the `Payment` domain entity — so the admin queue table
 below has no way to know it. Backend fix needed first:
 
-- [ ] `PaymentDto` gains `bool IncludesPortalAccess`; `PaymentService.ToDto` (~line 24, the single
-      mapping function used by every `PaymentDto` consumer) passes `p.IncludesPortalAccess`.
-- [ ] `apps/web/src/core/api/endpoints/paymentApi.ts`: `MembershipFees` interface loses
-      `registrationTotal`, gains `portalFee` and the four totals
-      (`registrationTotalWithoutPortal`/`WithPortal`, `renewalTotalWithoutPortal`/`WithPortal`) to
-      match the reshaped backend DTO. `Payment` interface gains `includesPortalAccess: boolean`.
-      `SubmitPaymentRequest` gains `includePortalAccess: boolean`. `updateFees`'s param type gains
-      `portalFee: number` (needed by task 6's fees page, but the type belongs here since this task
-      touches the same file first).
-- [ ] `apps/web/src/core/api/endpoints/memberApi.ts`: `approveMember`'s `payment` param type gains
-      `includePortalAccess: boolean`.
-- [ ] `ApproveApplicationWizard.tsx` (the admin walk-in payment form): fix both stale
-      `fees.registrationTotal` reads to use the correct with/without-portal total for the context
-      (the read-only "existing payment" review branch should key off that payment's own
-      `includesPortalAccess`; the walk-in "record a new payment" branch keys off the new checkbox
-      below). Add the "Include Portal Access" checkbox to the walk-in branch: as `Amount` is typed,
-      auto-set it (checked once `Amount >= withPortalTotal`); allow manual override. Add an inline,
-      non-blocking caution when the checkbox state doesn't match what the typed amount implies
-      (either auto-synced-then-overridden, or typed after toggling). Thread `includePortalAccess`
-      through to `memberApi.approveMember`.
-- [ ] `PaymentsQueueTable.tsx` (Admin Payments queue, `Submitted` list — a *different* screen from
-      the wizard above, listing payments across all members including renewals): fetch fees itself
-      on mount (matching this component's existing "its own fetch" self-containment), and add a
-      caution badge/icon on any row whose `Amount` doesn't match its own `IncludesPortalAccess`
-      given its `Kind` (`NewMembership` compares against the registration totals, `Renewal` against
-      the renewal totals) — so a self-submitted member mismatch is visible before Verify.
+- [x] `PaymentDto` gains `bool IncludesPortalAccess`; `PaymentService.ToDto` passes it through.
+- [x] `paymentApi.ts`/`memberApi.ts` types reshaped (`MembershipFees` gains `portalFee` + four
+      totals, `Payment.includesPortalAccess`, `SubmitPaymentRequest.includePortalAccess?` made
+      *optional* — deliberately, so `RenewalPaymentCard.tsx`'s not-yet-updated call site keeps
+      compiling until task 6 — `approveMember`'s `includePortalAccess` required, `updateFees`'s
+      `portalFee`).
+- [x] `ApproveApplicationWizard.tsx`: both stale totals fixed, checkbox added with auto-sync from
+      `Amount`, a `portalManuallyToggledRef` latches once the admin directly toggles it so a later
+      unrelated amount edit can't silently discard their override (added after code review caught
+      the original naive recompute-on-every-keystroke version doing exactly that), non-blocking
+      caution in both the walk-in and read-only review branches, Confirm-step note,
+      `includePortalAccess` threaded to `approveMember`.
+- [x] `PaymentsQueueTable.tsx`: mount-only fees fetch, per-row caution badge comparing `Amount`
+      against the expected total for `IncludesPortalAccess` given `Kind` (registration totals for
+      `NewMembership`, renewal totals otherwise).
+      (Two extra stale-`registrationTotal` consumers found and minimally fixed along the way,
+      compile-preserving only, real UI deferred to task 6: `MembershipFeesPage.tsx`'s `portalFee`
+      round-tripped but not yet editable; `MembershipApplicationWizardCard.tsx`'s Step 3 total swapped
+      to `registrationTotalWithoutPortal`, no checkbox added yet. Commits `0dd7de7`, `6340810`,
+      `f413709`, `1ca6b7b`, `5438d54`.)
 
 ## 6. Frontend UI
 
