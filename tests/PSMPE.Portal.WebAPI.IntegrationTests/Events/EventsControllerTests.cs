@@ -53,7 +53,10 @@ public class EventsControllerTests : IClassFixture<CustomWebApplicationFactory>,
     /// looks one up by UserId), which the bare auth flow alone never creates - registering an
     /// ApplicationUser and completing a membership application are deliberately separate steps in
     /// this system, so tests exercising event registration need to skip straight to "already an
-    /// approved member" the same way MembershipAccessMiddlewareTests does.
+    /// approved member" the same way MembershipAccessMiddlewareTests does. HasPortalAccess is set
+    /// true - these tests exercise event registration over real HTTP (so MembershipAccessMiddleware's
+    /// portal-access check does apply), not the portal-access axis itself, which
+    /// MembershipAccessMiddlewareTests covers directly.
     /// </summary>
     private async Task<string> RegisterMemberAsync()
     {
@@ -80,6 +83,7 @@ public class EventsControllerTests : IClassFixture<CustomWebApplicationFactory>,
                 Status = MembershipStatus.Active,
                 SubmittedAt = DateTimeOffset.UtcNow.AddYears(-1),
                 ApprovedAt = DateTimeOffset.UtcNow.AddYears(-1),
+                HasPortalAccess = true,
             });
             await db.SaveChangesAsync();
         }
