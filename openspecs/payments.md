@@ -159,6 +159,12 @@ They drive the registration wizard's Payment Details totals, `ReceiptGenerator`,
 pre-filled on a member's renewal form. `ReceiptGenerator` takes them as a parameter rather than
 reading them itself, so it stays a pure renderer with no database dependency.
 
+`MembershipFeesDto` exposes four computed totals — `RegistrationTotalWithoutPortal`,
+`RegistrationTotalWithPortal`, `RenewalTotalWithoutPortal`, `RenewalTotalWithPortal` — rather than
+one figure per context, since every total now has a with/without-the-add-on pair. These are what the
+wizard and `RenewalPaymentCard` actually read to show a payer the price with and without portal
+access; see "Portal access is a per-payment add-on" below for why there's no single combined total.
+
 - **`/membership-fees`** (`members:manage`) is the first admin-editable configuration screen in the
   product. Now scoped to these four values (`PortalFee` joined the original three) rather than a
   general `SystemConfig` editor.
@@ -238,7 +244,7 @@ midnight.
   (`PaymentService.CreatePromotionAsync`), which keeps at most one row active per `FeeKey` per day —
   the resolver never has to pick among several matches, and the first match is always the only
   match.
-- **Admin CRUD** via `POST/GET/DELETE /api/payments/fees/promotions` (`members:manage` — unlike
+- **Admin CRUD** via `GET/POST/DELETE /api/payments/fees/promotions` (`members:manage` — unlike
   `GET /fees`, this configuration surface isn't shown to an unapproved applicant, so it isn't
   `[AllowExpiredMember]`). Deletes are hard deletes: a `FeePromotion` is a lightweight scheduling
   record, not an audited transaction like `Payment`, and nothing downstream references one by `Id`
@@ -371,6 +377,11 @@ after expiry, and carries the submit form plus full payment history with rejecti
 
 The form appears within 60 days of the due date, during grace, after expiry, or when no due date is
 set yet. Paying early is fine; showing it eleven months out would be noise.
+
+The card also shows the member's current portal status (`member.hasPortalAccess`, "Included"/"Not
+included") and the same opt-in checkbox as the registration wizard — pre-checked to that current
+status, with the pre-filled amount following it (`renewalTotalWithoutPortal`/`WithPortal`) — threaded
+through as `SubmitPaymentRequest.IncludePortalAccess`.
 
 ## Not built
 
