@@ -116,20 +116,9 @@ public class PaymentService(IApplicationDbContext db, ICacheService? cache = nul
         // other three fees - this is "what PortalFee was configured (net of any promotion) when
         // this payment was made," so later fee/promo edits can never retroactively change what a
         // historical payment's portal-revenue contribution was. Zero when the add-on isn't included.
-        var portalFeeAmount = 0m;
-        if (request.IncludePortalAccess)
-        {
-            var portalFeeRaw = await db.SystemConfigs.AsNoTracking()
-                .Where(c => c.Key == MembershipFeeKeys.PortalFee)
-                .Select(c => c.Value)
-                .FirstOrDefaultAsync(cancellationToken);
-            var regularPortalFee = portalFeeRaw is not null
-                && decimal.TryParse(portalFeeRaw, NumberStyles.Number, CultureInfo.InvariantCulture, out var parsed)
-                ? parsed
-                : MembershipFeeKeys.DefaultPortalFee;
-            portalFeeAmount = await FeePromotionResolver.ResolveAsync(
-                db, MembershipFeeKeys.PortalFee, regularPortalFee, DateOnly.FromDateTime(DateTime.UtcNow), cancellationToken);
-        }
+        var portalFeeAmount = request.IncludePortalAccess
+            ? await FeePromotionResolver.ResolveCurrentAsync(db, MembershipFeeKeys.PortalFee, MembershipFeeKeys.DefaultPortalFee, cancellationToken)
+            : 0m;
 
         var payment = new Payment
         {

@@ -1,3 +1,4 @@
+using System.Globalization;
 using Microsoft.EntityFrameworkCore;
 using PSMPE.Portal.Application.Common.Interfaces;
 
@@ -28,5 +29,32 @@ public static class FeePromotionResolver
             .FirstOrDefaultAsync(cancellationToken);
 
         return promoAmount ?? regularAmount;
+    }
+
+    /// <summary>
+    /// The "single fee, as of today" shape: reads one SystemConfig row directly (no preloaded
+    /// dictionary - callers with several keys to resolve at once, like PaymentService.GetFeesAsync
+    /// and MemberService.EnsureRegistrationPaymentAsync, load their own dictionary and call
+    /// ResolveAsync per key instead), falls back to <paramref name="fallback"/> when the row is
+    /// missing or unparseable, then runs the result through the same date-range promo override as
+    /// ResolveAsync. Extracted because PaymentService.SubmitAsync and
+    /// MemberService.ResolveRegistrationPaymentAsync (the admin walk-in path) both need exactly this
+    /// one-off "what does this single fee currently cost" lookup and had drifted into two
+    /// near-identical copies of it.
+    /// </summary>
+    public static async Task<decimal> ResolveCurrentAsync(
+        IApplicationDbContext db, string feeKey, decimal fallback, CancellationToken cancellationToken = default)
+    {
+        var raw = await db.SystemConfigs.AsNoTracking()
+            .Where(c => c.Key == feeKey)
+            .Select(c => c.Value)
+            .FirstOrDefaultAsync(cancellationToken);
+
+        var regularAmount = raw is not null
+            && decimal.TryParse(raw, NumberStyles.Number, CultureInfo.InvariantCulture, out var parsed)
+            ? parsed
+            : fallback;
+
+        return await ResolveAsync(db, feeKey, regularAmount, DateOnly.FromDateTime(DateTime.UtcNow), cancellationToken);
     }
 }

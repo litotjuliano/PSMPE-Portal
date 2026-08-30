@@ -625,20 +625,9 @@ public class MemberService(IApplicationDbContext db, ICacheService? cache = null
         // independently here (through the same promotion-aware lookup) so it reflects "what
         // PortalFee was configured at the time," same as Amount is already allowed to diverge from
         // configured fees without validation.
-        var portalFeeAmount = 0m;
-        if (supplied.IncludePortalAccess)
-        {
-            var portalFeeRaw = await db.SystemConfigs.AsNoTracking()
-                .Where(c => c.Key == MembershipFeeKeys.PortalFee)
-                .Select(c => c.Value)
-                .FirstOrDefaultAsync(cancellationToken);
-            var regularPortalFee = portalFeeRaw is not null
-                && decimal.TryParse(portalFeeRaw, System.Globalization.NumberStyles.Number, System.Globalization.CultureInfo.InvariantCulture, out var parsed)
-                ? parsed
-                : MembershipFeeKeys.DefaultPortalFee;
-            portalFeeAmount = await FeePromotionResolver.ResolveAsync(
-                db, MembershipFeeKeys.PortalFee, regularPortalFee, DateOnly.FromDateTime(DateTime.UtcNow), cancellationToken);
-        }
+        var portalFeeAmount = supplied.IncludePortalAccess
+            ? await FeePromotionResolver.ResolveCurrentAsync(db, MembershipFeeKeys.PortalFee, MembershipFeeKeys.DefaultPortalFee, cancellationToken)
+            : 0m;
 
         var created = new Payment
         {
