@@ -24,6 +24,9 @@ export interface Payment {
   membershipNo: string | null
   kind: PaymentKindValue
   amount: number
+  /** Whether this payment included the optional portal-access add-on - captured once at
+   *  submission time, never retroactively affected by later fee/promo edits. */
+  includesPortalAccess: boolean
   referenceNo: string | null
   paidOn: string
   /** The storage key itself is never sent - it embeds the member's name and birthdate. */
@@ -43,13 +46,23 @@ export interface SubmitPaymentRequest {
   amount: number
   referenceNo: string | null
   paidOn: string
+  /** Always the caller's own declared intent, never server-forced. No global mode to switch:
+   *  ticked produces the "combined" total, left unticked the "separate" one. Optional here (the
+   *  backend defaults to false when omitted) so existing callers that don't yet expose the
+   *  checkbox in their own UI (task 6) keep compiling unchanged. */
+  includePortalAccess?: boolean
 }
 
 export interface MembershipFees {
   membershipFee: number
   shippingFee: number
   annualDues: number
-  registrationTotal: number
+  /** The raw configured portal-access fee (net of any active promotion), not a total. */
+  portalFee: number
+  registrationTotalWithoutPortal: number
+  registrationTotalWithPortal: number
+  renewalTotalWithoutPortal: number
+  renewalTotalWithPortal: number
 }
 
 export const paymentApi = {
@@ -97,6 +110,6 @@ export const paymentApi = {
 
   getFees: () => apiClient.get<MembershipFees>('/api/payments/fees').then((res) => res.data),
 
-  updateFees: (fees: { membershipFee: number; shippingFee: number; annualDues: number }) =>
+  updateFees: (fees: { membershipFee: number; shippingFee: number; annualDues: number; portalFee: number }) =>
     apiClient.put('/api/payments/fees', fees).then((res) => res.data),
 }

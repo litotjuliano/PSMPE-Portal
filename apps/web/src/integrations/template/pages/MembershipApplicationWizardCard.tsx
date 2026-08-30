@@ -791,7 +791,11 @@ export const MembershipApplicationWizardCard = ({
                 {/* Read from SystemConfig, not hardcoded - the same figures the receipt uses,
                     so the two can no longer drift apart. */}
                 <div className="text-sm text-default-700 flex flex-col gap-1">
-                  <p className="font-semibold text-default-800">TOTAL: {fees ? peso.format(fees.registrationTotal) : '…'}</p>
+                  {/* Portal Access isn't offered as a checkbox on this step yet (task 6) - shown
+                      without the add-on for now, same figure this total always showed. */}
+                  <p className="font-semibold text-default-800">
+                    TOTAL: {fees ? peso.format(fees.registrationTotalWithoutPortal) : '…'}
+                  </p>
                   <p>Membership Fee: {fees ? peso.format(fees.membershipFee) : '…'}</p>
                   <p>Annual Dues: {fees ? peso.format(fees.annualDues) : '…'} (payable one year after registration)</p>
                   <p>PVC ID: Included</p>

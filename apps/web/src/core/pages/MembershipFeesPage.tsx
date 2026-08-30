@@ -20,6 +20,9 @@ export function MembershipFeesPage() {
   const [membershipFee, setMembershipFee] = useState('')
   const [shippingFee, setShippingFee] = useState('')
   const [annualDues, setAnnualDues] = useState('')
+  // Not yet editable on this page - the Portal Fee field and Promotions panel are a separate,
+  // larger addition. Round-tripped as-is so saving the three fields above never resets it to 0.
+  const [portalFee, setPortalFee] = useState(0)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -30,6 +33,7 @@ export function MembershipFeesPage() {
       setMembershipFee(String(fees.membershipFee))
       setShippingFee(String(fees.shippingFee))
       setAnnualDues(String(fees.annualDues))
+      setPortalFee(fees.portalFee)
     })
 
   useEffect(() => {
@@ -42,6 +46,8 @@ export function MembershipFeesPage() {
     membershipFee: Number(membershipFee),
     shippingFee: Number(shippingFee),
     annualDues: Number(annualDues),
+    // Not yet editable on this page - round-tripped as-is (see the state comment above).
+    portalFee,
   }
   const allValid = Object.values(parsed).every((v) => Number.isFinite(v) && v >= 0)
 

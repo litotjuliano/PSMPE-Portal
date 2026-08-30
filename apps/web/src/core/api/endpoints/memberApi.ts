@@ -249,7 +249,13 @@ export const memberApi = {
   approveMember: (
     id: string,
     membershipNo: string,
-    payment?: { amount: number; referenceNo: string | null; paidOn: string; proofStorageKey: string },
+    payment?: {
+      amount: number
+      referenceNo: string | null
+      paidOn: string
+      proofStorageKey: string
+      includePortalAccess: boolean
+    },
   ) => apiClient.post(`/api/members/${id}/approve`, { membershipNo, payment }).then((res) => res.data),
 
   /** Advisory - the approve endpoint re-checks, and the database has the final say. */
