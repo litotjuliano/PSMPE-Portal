@@ -21,7 +21,9 @@ namespace PSMPE.Portal.Infrastructure.Persistence.Migrations
             migrationBuilder.AddColumn<decimal>(
                 name: "PortalFeeAmount",
                 table: "Payments",
-                type: "numeric",
+                type: "numeric(12,2)",
+                precision: 12,
+                scale: 2,
                 nullable: false,
                 defaultValue: 0m);
 

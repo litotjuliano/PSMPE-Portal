@@ -1010,7 +1010,8 @@ namespace PSMPE.Portal.Infrastructure.Persistence.Migrations
                         .HasColumnType("date");
 
                     b.Property<decimal>("PortalFeeAmount")
-                        .HasColumnType("numeric");
+                        .HasPrecision(12, 2)
+                        .HasColumnType("numeric(12,2)");
 
                     b.Property<string>("ProofStorageKey")
                         .HasMaxLength(512)

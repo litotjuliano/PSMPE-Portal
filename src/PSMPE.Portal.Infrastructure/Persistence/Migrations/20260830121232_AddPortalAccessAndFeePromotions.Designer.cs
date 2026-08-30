@@ -12,7 +12,7 @@ using PSMPE.Portal.Infrastructure.Persistence;
 namespace PSMPE.Portal.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    [Migration("20260830120610_AddPortalAccessAndFeePromotions")]
+    [Migration("20260830121232_AddPortalAccessAndFeePromotions")]
     partial class AddPortalAccessAndFeePromotions
     {
         /// <inheritdoc />
@@ -1013,7 +1013,8 @@ namespace PSMPE.Portal.Infrastructure.Persistence.Migrations
                         .HasColumnType("date");
 
                     b.Property<decimal>("PortalFeeAmount")
-                        .HasColumnType("numeric");
+                        .HasPrecision(12, 2)
+                        .HasColumnType("numeric(12,2)");
 
                     b.Property<string>("ProofStorageKey")
                         .HasMaxLength(512)
