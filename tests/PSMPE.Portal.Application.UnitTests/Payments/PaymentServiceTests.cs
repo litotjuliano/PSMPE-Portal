@@ -842,6 +842,46 @@ public class PaymentServiceTests
         Assert.Equal(0, result.Value.CombinedCount);
     }
 
+    /// <summary>Guards the inclusive lower bound (PaidOn >= startDate) against a future off-by-one,
+    /// e.g. someone "fixing" it to a strict >.</summary>
+    [Fact]
+    public async Task GetReportSummaryAsync_VerifiedPaymentPaidExactlyOnStartDate_IsIncluded()
+    {
+        using var db = TestDbContext.CreateInMemory();
+        var service = new PaymentService(db);
+        var member = await SeedApprovedMemberAsync(db);
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        await SeedReportPaymentAsync(
+            db, member, PaymentKind.NewMembership, PaymentStatus.Verified, today, 1700m,
+            includesPortalAccess: false, portalFeeAmount: 0m);
+
+        var result = await service.GetReportSummaryAsync(today, today.AddDays(5));
+
+        Assert.True(result.Succeeded);
+        Assert.Equal(1, result.Value!.MembershipOnlyCount);
+        Assert.Equal(1700m, result.Value.MembershipOnlyTotal);
+    }
+
+    /// <summary>Guards the inclusive upper bound (PaidOn <= endDate) against a future off-by-one,
+    /// e.g. someone "fixing" it to a strict <.</summary>
+    [Fact]
+    public async Task GetReportSummaryAsync_VerifiedPaymentPaidExactlyOnEndDate_IsIncluded()
+    {
+        using var db = TestDbContext.CreateInMemory();
+        var service = new PaymentService(db);
+        var member = await SeedApprovedMemberAsync(db);
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        await SeedReportPaymentAsync(
+            db, member, PaymentKind.NewMembership, PaymentStatus.Verified, today, 1700m,
+            includesPortalAccess: false, portalFeeAmount: 0m);
+
+        var result = await service.GetReportSummaryAsync(today.AddDays(-5), today);
+
+        Assert.True(result.Succeeded);
+        Assert.Equal(1, result.Value!.MembershipOnlyCount);
+        Assert.Equal(1700m, result.Value.MembershipOnlyTotal);
+    }
+
     [Fact]
     public async Task GetReportSummaryAsync_NoMatchingPayments_ReturnsAllZeros_NotAnException()
     {

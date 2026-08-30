@@ -269,23 +269,7 @@ public class PaymentsController(
         };
     }
 
-    private ActionResult<FeePromotionDto> ToActionResult(Result<FeePromotionDto> result)
-    {
-        if (result.Succeeded)
-        {
-            return Ok(result.Value);
-        }
-
-        return result.ErrorType switch
-        {
-            ResultErrorType.NotFound => NotFound(new { message = result.Error }),
-            ResultErrorType.Forbidden => Forbid(),
-            ResultErrorType.Conflict => Conflict(new { message = result.Error }),
-            _ => BadRequest(new { message = result.Error }),
-        };
-    }
-
-    private ActionResult<PaymentReportSummaryDto> ToActionResult(Result<PaymentReportSummaryDto> result)
+    private ActionResult<T> ToActionResult<T>(Result<T> result)
     {
         if (result.Succeeded)
         {
