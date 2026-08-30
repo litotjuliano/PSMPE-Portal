@@ -64,11 +64,13 @@ export const ApproveApplicationWizard = ({ member, onApproved, onCancel }: Appro
   const [paymentsLoaded, setPaymentsLoaded] = useState(false)
   const [fees, setFees] = useState<MembershipFees | null>(null)
   const [amount, setAmount] = useState('')
-  // Auto-synced from `amount` as it's typed (see handleAmountChange); a direct toggle of the
-  // checkbox sticks only until the next amount keystroke, at which point it's recomputed from the
-  // new amount. Simple and predictable, and avoids a second piece of state to track "has this been
-  // manually overridden."
+  // Auto-synced from `amount` as it's typed (see handleAmountChange) until the admin directly
+  // toggles the checkbox themselves - portalManuallyToggledRef then latches so a later typo fix in
+  // Amount can't silently overwrite a deliberate override with no warning. Reset alongside the
+  // rest of the payment-step state below whenever the wizard opens for a different member, so a
+  // fresh session always starts in auto-sync mode.
   const [includePortalAccess, setIncludePortalAccess] = useState(false)
+  const portalManuallyToggledRef = useRef(false)
   const [referenceNo, setReferenceNo] = useState('')
   const [paidOn, setPaidOn] = useState(() => new Date().toISOString().slice(0, 10))
   const [proofKey, setProofKey] = useState<string | null>(null)
@@ -103,6 +105,7 @@ export const ApproveApplicationWizard = ({ member, onApproved, onCancel }: Appro
     // the registration wizard's own default. Otherwise this would leak the previous wizard
     // session's checkbox state onto an unrelated member.
     setIncludePortalAccess(false)
+    portalManuallyToggledRef.current = false
     if (proofInputRef.current) proofInputRef.current.value = ''
 
     void Promise.all([paymentApi.getPaymentsForMember(member.id), paymentApi.getFees()])
@@ -230,10 +233,13 @@ export const ApproveApplicationWizard = ({ member, onApproved, onCancel }: Appro
 
   // Auto-syncs the checkbox from what's typed: this is the one context where the amount is a
   // known, already-collected fact rather than a declared intent, so it drives the checkbox rather
-  // than the other way around. A direct toggle of the checkbox (see the input below) sticks only
-  // until the next keystroke here, which recomputes it from the new amount.
+  // than the other way around. Stops once the admin has directly toggled the checkbox themselves
+  // (see the input below) - otherwise fixing an unrelated typo in Amount afterward would silently
+  // overwrite a deliberate override with no warning, exactly the kind of silent mismatch this
+  // whole feature exists to catch.
   const handleAmountChange = (value: string) => {
     setAmount(value)
+    if (portalManuallyToggledRef.current) return
     const parsed = Number(value)
     setIncludePortalAccess(Boolean(fees) && Number.isFinite(parsed) && parsed >= fees!.registrationTotalWithPortal)
   }
@@ -438,7 +444,10 @@ export const ApproveApplicationWizard = ({ member, onApproved, onCancel }: Appro
                         type="checkbox"
                         className="form-checkbox"
                         checked={includePortalAccess}
-                        onChange={(e) => setIncludePortalAccess(e.target.checked)}
+                        onChange={(e) => {
+                          portalManuallyToggledRef.current = true
+                          setIncludePortalAccess(e.target.checked)
+                        }}
                       />
                       Include Portal Access {fees ? `(+${peso.format(fees.portalFee)})` : ''}
                     </label>
