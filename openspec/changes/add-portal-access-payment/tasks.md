@@ -108,8 +108,13 @@ below is `apps/web/src/integrations/template/components/shared/ApproveApplicatio
 still reads `fees.registrationTotal` (twice), a field task 3 removed from the backend response.
 Neither this task nor task 6 originally listed the shared frontend type files that need updating
 for that to even compile against real data. Both are now in scope here, since this task is the
-first one that needs a working, portal-aware `MembershipFees` type on the frontend:
+first one that needs a working, portal-aware `MembershipFees` type on the frontend. **Second gap
+found**: `PaymentDto` (`src/PSMPE.Portal.Application/Payments/Dtos/PaymentDto.cs`) never exposes
+`IncludesPortalAccess` at all — it's only on the `Payment` domain entity — so the admin queue table
+below has no way to know it. Backend fix needed first:
 
+- [ ] `PaymentDto` gains `bool IncludesPortalAccess`; `PaymentService.ToDto` (~line 24, the single
+      mapping function used by every `PaymentDto` consumer) passes `p.IncludesPortalAccess`.
 - [ ] `apps/web/src/core/api/endpoints/paymentApi.ts`: `MembershipFees` interface loses
       `registrationTotal`, gains `portalFee` and the four totals
       (`registrationTotalWithoutPortal`/`WithPortal`, `renewalTotalWithoutPortal`/`WithPortal`) to
