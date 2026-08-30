@@ -43,19 +43,22 @@ snapshot below is still accurate (other branches may have landed since this was 
 
 ## 2. Fee configuration and promotional pricing
 
-- [ ] `PortalFee` added to `MembershipFeeKeys` (default `900m`), picked up automatically by
+- [x] `PortalFee` added to `MembershipFeeKeys` (default `900m`), picked up automatically by
       `SystemConfigSeeder`'s per-key seeding.
-- [ ] Fee-resolution function (extend `GetFeesAsync` or add `GetEffectiveFeesAsync(DateOnly asOf)`)
-      that overrides a `SystemConfig` amount with an active `FeePromotion`'s `PromoAmount` when
-      `StartDate <= asOf <= EndDate`. Pure function of the date — no background job.
-- [ ] Reject overlapping `FeePromotion` date ranges for the same `FeeKey` on create.
-- [ ] `POST /api/payments/fees/promotions`, `GET /api/payments/fees/promotions`,
+- [x] Fee-resolution function (`FeePromotionResolver.ResolveAsync`) that overrides a `SystemConfig`
+      amount with an active `FeePromotion`'s `PromoAmount` when `StartDate <= asOf <= EndDate`. Pure
+      lookup, no caching of its own, no background job.
+- [x] Reject overlapping `FeePromotion` date ranges for the same `FeeKey` on create.
+- [x] `POST /api/payments/fees/promotions`, `GET /api/payments/fees/promotions`,
       `DELETE /api/payments/fees/promotions/{id}` (`members:manage`).
-- [ ] Route every amount-computing call site (`EnsureRegistrationPaymentAsync`, the wizard/renewal
-      `GET /fees` response, the admin walk-in default) through the same resolver, so promotions are
-      prospective-only for free.
-- [ ] Unit test: fee edit via `UpdateFeesAsync`, then verify an already-submitted payment — confirm
-      its `Amount`/`IncludesPortalAccess` are untouched.
+- [x] Routed `PaymentService.GetFeesAsync` and `MemberService.EnsureRegistrationPaymentAsync` through
+      the resolver. ("The admin walk-in default" from the original wording doesn't exist as a real
+      call site — `ResolveRegistrationPaymentAsync` has no default-amount computation at all; the
+      admin types the amount directly. Nothing to route there.)
+- [x] Unit test: fee edit via `UpdateFeesAsync`, then verify an already-submitted payment — confirms
+      `Amount`/`IncludesPortalAccess` untouched.
+      (Commits `967fb39`, `8c68df3` — the latter reusing `MembersController`'s existing
+      `ToActionResult(Result<T>)` pattern instead of an incomplete inline switch, per code review.)
 
 ## 3. Application layer
 
