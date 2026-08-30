@@ -103,13 +103,37 @@ snapshot below is still accurate (other branches may have landed since this was 
 
 ## 5. Mismatch guarding (frontend only, no backend validation)
 
-- [ ] Admin walk-in payment form: as `Amount` is typed, auto-set the Portal Access checkbox
-      (checked once `Amount >= withPortalTotal`); allow manual override.
-- [ ] Inline, non-blocking caution when the checkbox state doesn't match what the typed amount
-      implies (either auto-synced-then-overridden, or typed after toggling).
-- [ ] Admin Payments queue (`Submitted` list): caution badge/icon on any pending payment whose
-      `Amount` doesn't match its own `IncludesPortalAccess`, so a self-submitted member mismatch is
-      visible before Verify.
+**Scope correction found before starting this task**: the admin walk-in payment form referenced
+below is `apps/web/src/integrations/template/components/shared/ApproveApplicationWizard.tsx` — it
+still reads `fees.registrationTotal` (twice), a field task 3 removed from the backend response.
+Neither this task nor task 6 originally listed the shared frontend type files that need updating
+for that to even compile against real data. Both are now in scope here, since this task is the
+first one that needs a working, portal-aware `MembershipFees` type on the frontend:
+
+- [ ] `apps/web/src/core/api/endpoints/paymentApi.ts`: `MembershipFees` interface loses
+      `registrationTotal`, gains `portalFee` and the four totals
+      (`registrationTotalWithoutPortal`/`WithPortal`, `renewalTotalWithoutPortal`/`WithPortal`) to
+      match the reshaped backend DTO. `Payment` interface gains `includesPortalAccess: boolean`.
+      `SubmitPaymentRequest` gains `includePortalAccess: boolean`. `updateFees`'s param type gains
+      `portalFee: number` (needed by task 6's fees page, but the type belongs here since this task
+      touches the same file first).
+- [ ] `apps/web/src/core/api/endpoints/memberApi.ts`: `approveMember`'s `payment` param type gains
+      `includePortalAccess: boolean`.
+- [ ] `ApproveApplicationWizard.tsx` (the admin walk-in payment form): fix both stale
+      `fees.registrationTotal` reads to use the correct with/without-portal total for the context
+      (the read-only "existing payment" review branch should key off that payment's own
+      `includesPortalAccess`; the walk-in "record a new payment" branch keys off the new checkbox
+      below). Add the "Include Portal Access" checkbox to the walk-in branch: as `Amount` is typed,
+      auto-set it (checked once `Amount >= withPortalTotal`); allow manual override. Add an inline,
+      non-blocking caution when the checkbox state doesn't match what the typed amount implies
+      (either auto-synced-then-overridden, or typed after toggling). Thread `includePortalAccess`
+      through to `memberApi.approveMember`.
+- [ ] `PaymentsQueueTable.tsx` (Admin Payments queue, `Submitted` list — a *different* screen from
+      the wizard above, listing payments across all members including renewals): fetch fees itself
+      on mount (matching this component's existing "its own fetch" self-containment), and add a
+      caution badge/icon on any row whose `Amount` doesn't match its own `IncludesPortalAccess`
+      given its `Kind` (`NewMembership` compares against the registration totals, `Renewal` against
+      the renewal totals) — so a self-submitted member mismatch is visible before Verify.
 
 ## 6. Frontend UI
 
