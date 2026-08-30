@@ -162,10 +162,14 @@ which doesn't exist yet — building it here would have nothing to call.
 
 ## 7. Payment reporting
 
-- [ ] `GET /api/payments/reports/summary?startDate=&endDate=` (`members:view`): for `Verified`
-      `NewMembership`/`Renewal` payments with `PaidOn` in range (excludes `EventRegistration`) —
-      membership-only count/`SUM(Amount)`, combined count/`SUM(Amount)`, and
-      `SUM(PortalFeeAmount)` for combined payments only.
+- [x] `GET /api/payments/reports/summary?startDate=&endDate=` (`Permissions.Members.View`): filters
+      to `Verified` `NewMembership`/`Renewal` payments, inclusive date range on `PaidOn`
+      (`EventRegistration` and non-`Verified` payments excluded); `PaymentReportSummaryDto` with
+      membership-only count/total, combined count/total, portal revenue total (summed explicitly
+      over the combined subset, not relying on the zero-invariant). Inverted range rejected as a
+      `Result.Failure` in the service layer so it's unit-testable. Code review collapsed a third
+      near-duplicate `ToActionResult<T>` overload into one generic version and added explicit
+      boundary-date tests (`PaidOn == startDate`/`== endDate`). Commits `886f4ae`, `f301ca5`.
 - [ ] Admin Payments tab: summary panel (date-range picker — month quick-pick + custom range —
       showing membership-only count/total, combined count/total, portal revenue collected). Moved
       here from task 6 since it depends on the endpoint above.
