@@ -136,16 +136,29 @@ below has no way to know it. Backend fix needed first:
 
 ## 6. Frontend UI
 
-- [ ] `MembershipFeesPage.tsx`: fourth editable field (Portal Fee) + Promotions panel (table with
-      active/upcoming/expired status; add form with fee/amount/date-range and a "Single day"
-      checkbox that sets `StartDate = EndDate`; cancel action).
-- [ ] `MembershipApplicationWizardCard.tsx` (Step 3): "Include Portal Access (+₱{portalFee})"
-      checkbox, recomputed TOTAL, sent as `includePortalAccess` on submit.
-- [ ] `RenewalPaymentCard.tsx`: current portal status shown; same opt-in checkbox, pre-checked to
-      `hasPortalAccess`; pre-filled amount follows the checkbox.
-- [ ] `apps/web/src/core/types/member.ts`: add `hasPortalAccess: boolean`.
-- [ ] Admin Payments tab: summary panel (date-range picker — month quick-pick + custom range —
-      showing membership-only count/total, combined count/total, portal revenue collected).
+`apps/web/src/core/types/member.ts`'s `hasPortalAccess: boolean` was already added in task 4 (pulled
+forward — see that section's note). **Reordering note**: the original "Admin Payments tab: summary
+panel" bullet here is moved to task 7, since it displays data from that task's reporting endpoint,
+which doesn't exist yet — building it here would have nothing to call.
+
+- [ ] `apps/web/src/core/api/endpoints/paymentApi.ts`: add client methods for the three promotion
+      endpoints task 2 built (`GET/POST/DELETE /api/payments/fees/promotions`) — not yet exposed on
+      the frontend at all.
+- [ ] `MembershipFeesPage.tsx`: fourth editable field (Portal Fee — currently round-tripped
+      read-only, see task 5's note) + Promotions panel (table with active/upcoming/expired status;
+      add form with fee/amount/date-range and a "Single day" checkbox that sets `StartDate =
+      EndDate`; cancel action).
+- [ ] `MembershipApplicationWizardCard.tsx` (Step 3) + `MyProfilePage.tsx`: "Include Portal Access
+      (+₱{portalFee})" checkbox on `MembershipApplicationState`, recomputed TOTAL (currently hardcoded
+      to `registrationTotalWithoutPortal` per task 5's minimal compile-fix), threaded through
+      `handleWizardSubmit` → `memberApi.submitMyProfile()` (currently takes no arguments —
+      `POST /api/members/me/submit` already accepts an optional `includePortalAccess` body per task 3,
+      just never sent from here) as `includePortalAccess`.
+- [ ] `RenewalPaymentCard.tsx`: current portal status shown (`member.hasPortalAccess`); same opt-in
+      checkbox, pre-checked to it; pre-filled amount follows the checkbox
+      (`renewalTotalWithoutPortal`/`WithPortal` instead of the current bare `annualDues`); threaded
+      through `paymentApi.submitMyPayment(...)` as `includePortalAccess` (already accepted, optional,
+      per task 5).
 
 ## 7. Payment reporting
 
@@ -153,6 +166,9 @@ below has no way to know it. Backend fix needed first:
       `NewMembership`/`Renewal` payments with `PaidOn` in range (excludes `EventRegistration`) —
       membership-only count/`SUM(Amount)`, combined count/`SUM(Amount)`, and
       `SUM(PortalFeeAmount)` for combined payments only.
+- [ ] Admin Payments tab: summary panel (date-range picker — month quick-pick + custom range —
+      showing membership-only count/total, combined count/total, portal revenue collected). Moved
+      here from task 6 since it depends on the endpoint above.
 
 ## 8. Documentation
 
