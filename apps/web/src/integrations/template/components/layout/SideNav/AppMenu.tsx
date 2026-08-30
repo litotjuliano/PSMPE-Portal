@@ -65,8 +65,9 @@ const filterByRole = (items: MenuItemType[], roles: readonly string[]): MenuItem
     .filter((item) => !item.requiredRoles || item.requiredRoles.some((r) => roles.includes(r)))
     .map((item) => (item.children ? { ...item, children: filterByRole(item.children, roles) } : item))
 
-/** A fully Expired member keeps only the Profile link - everything else the backend now 403s
- *  anyway (see MembershipAccessMiddleware). Drops a section title left with no items under it. */
+/** A restricted member (fully Expired, or lacking portal access) keeps only the Profile link -
+ *  everything else the backend now 403s anyway (see MembershipAccessMiddleware). Drops a section
+ *  title left with no items under it. */
 const keepProfileOnly = (items: MenuItemType[]): MenuItemType[] =>
   items.filter((item, index, all) => {
     if (item.isTitle) {
@@ -78,9 +79,9 @@ const keepProfileOnly = (items: MenuItemType[]): MenuItemType[] =>
 
 const AppMenu = () => {
   const { user } = useAuth()
-  const isExpired = useMembershipAccess()
+  const { isRestricted } = useMembershipAccess()
   const roleFiltered = filterByRole(menuItemsData, user?.roles ?? [])
-  const items = isExpired ? keepProfileOnly(roleFiltered) : roleFiltered
+  const items = isRestricted ? keepProfileOnly(roleFiltered) : roleFiltered
 
   return (
     <ul className="side-nav py-3 hs-accordion-group">
