@@ -89,14 +89,17 @@ snapshot below is still accurate (other branches may have landed since this was 
 
 ## 4. Access enforcement
 
-- [ ] `MembershipAccessMiddleware`: second independent check — 403 `PORTAL_ACCESS_REQUIRED` when
+- [x] `MembershipAccessMiddleware`: second independent check — 403 `PORTAL_ACCESS_REQUIRED` when
       `member.HasPortalAccess == false` and `member.Status != MembershipStatus.Deactivated`, checked
       *after* the existing `Status == Expired` check (so a member failing both sees
       `MEMBERSHIP_EXPIRED`). Reuses `[AllowExpiredMember]` unchanged as the allowlist.
-- [ ] `ExpiredMembershipGate.tsx`: `useMembershipAccess()` returns
+- [x] `ExpiredMembershipGate.tsx`: `useMembershipAccess()` returns
       `{ isExpired, lacksPortalAccess, isRestricted }`; redirect-to-`/profile` condition extended to
       `isRestricted`.
-- [ ] `AppMenu.tsx`: `keepProfileOnly(...)` keyed on `isRestricted` instead of `isExpired`.
+- [x] `AppMenu.tsx`: `keepProfileOnly(...)` keyed on `isRestricted` instead of `isExpired`.
+      (`apps/web/src/core/types/member.ts` also gained `hasPortalAccess: boolean`, pulled forward
+      from task 6 since this task's frontend gate can't compute `lacksPortalAccess` without it -
+      task 6's own copy of this item is a no-op when that task runs.)
 
 ## 5. Mismatch guarding (frontend only, no backend validation)
 
