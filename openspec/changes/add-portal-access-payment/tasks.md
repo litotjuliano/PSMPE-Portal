@@ -146,13 +146,13 @@ which doesn't exist yet — building it here would have nothing to call.
       added with a Status filter and (added after code review, matching `AdminUsersPage.tsx`'s
       search+categorical-filter precedent) a Fee filter, add-form with Single-day checkbox, delete
       via `ConfirmationModal`. Commits `4940c9b`, `a2fa434`.
-- [ ] `MembershipApplicationWizardCard.tsx` (Step 3) + `MyProfilePage.tsx`: "Include Portal Access
+- [x] `MembershipApplicationWizardCard.tsx` (Step 3) + `MyProfilePage.tsx`: "Include Portal Access
       (+₱{portalFee})" checkbox on `MembershipApplicationState`, recomputed TOTAL (currently hardcoded
       to `registrationTotalWithoutPortal` per task 5's minimal compile-fix), threaded through
       `handleWizardSubmit` → `memberApi.submitMyProfile()` (currently takes no arguments —
       `POST /api/members/me/submit` already accepts an optional `includePortalAccess` body per task 3,
       just never sent from here) as `includePortalAccess`.
-- [ ] `RenewalPaymentCard.tsx`: current portal status shown (`member.hasPortalAccess`); same opt-in
+- [x] `RenewalPaymentCard.tsx`: current portal status shown (`member.hasPortalAccess`); same opt-in
       checkbox, pre-checked to it; pre-filled amount follows the checkbox
       (`renewalTotalWithoutPortal`/`WithPortal` instead of the current bare `annualDues`); threaded
       through `paymentApi.submitMyPayment(...)` as `includePortalAccess` (already accepted, optional,

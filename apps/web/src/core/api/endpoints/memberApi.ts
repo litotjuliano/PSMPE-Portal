@@ -266,7 +266,8 @@ export const memberApi = {
       })
       .then((res) => res.data),
 
-  submitMyProfile: () => apiClient.post('/api/members/me/submit').then((res) => res.data),
+  submitMyProfile: (includePortalAccess?: boolean) =>
+    apiClient.post('/api/members/me/submit', { includePortalAccess }).then((res) => res.data),
 
   approvePrcVerification: (id: string) => apiClient.post(`/api/members/${id}/prc-verification/approve`).then((res) => res.data),
 
