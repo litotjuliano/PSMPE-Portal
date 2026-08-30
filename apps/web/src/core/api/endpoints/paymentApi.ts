@@ -77,6 +77,17 @@ export interface FeePromotion {
   createdAt: string
 }
 
+/** Aggregate figures for Verified NewMembership/Renewal payments whose PaidOn falls within the
+ *  requested (inclusive) date range - see GET /api/payments/reports/summary. Portal revenue is
+ *  summed only over the combined subset, so it's a sub-total of Combined, not a third bucket. */
+export interface PaymentReportSummary {
+  membershipOnlyCount: number
+  membershipOnlyTotal: number
+  combinedCount: number
+  combinedTotal: number
+  portalRevenueTotal: number
+}
+
 export const paymentApi = {
   /** Admin queue. Defaults server-side to Submitted, the only status needing action. */
   getPayments: (params: { page?: number; pageSize?: number; status?: PaymentStatusValue } = {}) =>
@@ -132,4 +143,11 @@ export const paymentApi = {
     apiClient.post<FeePromotion>('/api/payments/fees/promotions', request).then((res) => res.data),
 
   deletePromotion: (id: string) => apiClient.delete(`/api/payments/fees/promotions/${id}`).then((res) => res.data),
+
+  /** Admin Payments tab summary panel. startDate/endDate are ISO date-only strings ("2026-08-01"),
+   *  inclusive on both ends. A 400 (startDate > endDate) surfaces via describeError at the caller. */
+  getReportSummary: (startDate: string, endDate: string) =>
+    apiClient
+      .get<PaymentReportSummary>('/api/payments/reports/summary', { params: { startDate, endDate } })
+      .then((res) => res.data),
 }
