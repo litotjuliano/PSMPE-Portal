@@ -65,6 +65,18 @@ export interface MembershipFees {
   renewalTotalWithPortal: number
 }
 
+/** A temporary, self-expiring override of one fee's amount for a date range - never touches an
+ *  already-created Payment, only what a later read of /fees resolves to while today falls in range. */
+export interface FeePromotion {
+  id: string
+  feeKey: string
+  promoAmount: number
+  startDate: string
+  endDate: string
+  createdByUserId: string
+  createdAt: string
+}
+
 export const paymentApi = {
   /** Admin queue. Defaults server-side to Submitted, the only status needing action. */
   getPayments: (params: { page?: number; pageSize?: number; status?: PaymentStatusValue } = {}) =>
@@ -112,4 +124,12 @@ export const paymentApi = {
 
   updateFees: (fees: { membershipFee: number; shippingFee: number; annualDues: number; portalFee: number }) =>
     apiClient.put('/api/payments/fees', fees).then((res) => res.data),
+
+  /** Admin configuration screen only - unlike GET /fees this isn't shown to an applicant. */
+  getPromotions: () => apiClient.get<FeePromotion[]>('/api/payments/fees/promotions').then((res) => res.data),
+
+  createPromotion: (request: { feeKey: string; promoAmount: number; startDate: string; endDate: string }) =>
+    apiClient.post<FeePromotion>('/api/payments/fees/promotions', request).then((res) => res.data),
+
+  deletePromotion: (id: string) => apiClient.delete(`/api/payments/fees/promotions/${id}`).then((res) => res.data),
 }
