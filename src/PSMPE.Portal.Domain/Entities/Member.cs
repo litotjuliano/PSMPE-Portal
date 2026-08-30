@@ -135,6 +135,15 @@ public class Member : BaseEntity
     public string? NationalDuesReferenceNo { get; set; }
 
     /// <summary>
+    /// Whether the member currently has portal (this software) access. Written exclusively by
+    /// PaymentVerification.Apply, driven by that payment's own IncludesPortalAccess - never a
+    /// direct admin toggle, same convention as PrcIdVerified. Reflects only the most recently
+    /// verified payment: a renewal that omits the Portal Fee add-on revokes access in that same
+    /// call, so this is current state, not history.
+    /// </summary>
+    public bool HasPortalAccess { get; set; }
+
+    /// <summary>
     /// When an admin approved this application. Null means "not yet reviewed" - a distinct axis
     /// from Status, since an approved application can still be Pending until dues are paid.
     /// </summary>
