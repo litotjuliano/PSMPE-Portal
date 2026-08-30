@@ -156,7 +156,9 @@ which doesn't exist yet — building it here would have nothing to call.
       checkbox, pre-checked to it; pre-filled amount follows the checkbox
       (`renewalTotalWithoutPortal`/`WithPortal` instead of the current bare `annualDues`); threaded
       through `paymentApi.submitMyPayment(...)` as `includePortalAccess` (already accepted, optional,
-      per task 5).
+      per task 5). An initial `includePortalAccessRef` workaround for `load()`'s stale closure was
+      simplified away in code review — `load` now takes the checkbox value as a parameter instead.
+      Commits `01e2665`, `209a115`.
 
 ## 7. Payment reporting
 
