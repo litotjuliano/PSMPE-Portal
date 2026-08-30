@@ -220,14 +220,7 @@ public class PaymentsController(
             return Unauthorized();
         }
 
-        var result = await paymentService.CreatePromotionAsync(request, createdBy.Value, cancellationToken);
-        return result.Succeeded
-            ? Ok(result.Value)
-            : result.ErrorType switch
-            {
-                ResultErrorType.Conflict => Conflict(new { message = result.Error }),
-                _ => BadRequest(new { message = result.Error }),
-            };
+        return ToActionResult(await paymentService.CreatePromotionAsync(request, createdBy.Value, cancellationToken));
     }
 
     [HttpDelete("fees/promotions/{id:guid}")]
@@ -256,6 +249,22 @@ public class PaymentsController(
         if (result.Succeeded)
         {
             return NoContent();
+        }
+
+        return result.ErrorType switch
+        {
+            ResultErrorType.NotFound => NotFound(new { message = result.Error }),
+            ResultErrorType.Forbidden => Forbid(),
+            ResultErrorType.Conflict => Conflict(new { message = result.Error }),
+            _ => BadRequest(new { message = result.Error }),
+        };
+    }
+
+    private ActionResult<FeePromotionDto> ToActionResult(Result<FeePromotionDto> result)
+    {
+        if (result.Succeeded)
+        {
+            return Ok(result.Value);
         }
 
         return result.ErrorType switch
