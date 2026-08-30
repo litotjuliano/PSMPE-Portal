@@ -228,6 +228,15 @@ public class PaymentsController(
     public async Task<IActionResult> DeletePromotion(Guid id, CancellationToken cancellationToken) =>
         ToActionResult(await paymentService.DeletePromotionAsync(id, cancellationToken));
 
+    /// <summary>Admin Payments tab's reporting panel - aggregate figures only, no line-item
+    /// drill-down (see proposal.md's "Not Built"). Verified NewMembership/Renewal payments only;
+    /// EventRegistration is a separate revenue stream and is always excluded.</summary>
+    [HttpGet("reports/summary")]
+    [RequirePermission(Permissions.Members.View)]
+    public async Task<ActionResult<PaymentReportSummaryDto>> GetReportSummary(
+        DateOnly startDate, DateOnly endDate, CancellationToken cancellationToken) =>
+        ToActionResult(await paymentService.GetReportSummaryAsync(startDate, endDate, cancellationToken));
+
     /// <summary>Null when the payment is the caller's own; an error result otherwise.</summary>
     private async Task<IActionResult?> EnsureOwnPaymentAsync(Guid paymentId, Guid userId, CancellationToken cancellationToken)
     {
@@ -261,6 +270,22 @@ public class PaymentsController(
     }
 
     private ActionResult<FeePromotionDto> ToActionResult(Result<FeePromotionDto> result)
+    {
+        if (result.Succeeded)
+        {
+            return Ok(result.Value);
+        }
+
+        return result.ErrorType switch
+        {
+            ResultErrorType.NotFound => NotFound(new { message = result.Error }),
+            ResultErrorType.Forbidden => Forbid(),
+            ResultErrorType.Conflict => Conflict(new { message = result.Error }),
+            _ => BadRequest(new { message = result.Error }),
+        };
+    }
+
+    private ActionResult<PaymentReportSummaryDto> ToActionResult(Result<PaymentReportSummaryDto> result)
     {
         if (result.Succeeded)
         {

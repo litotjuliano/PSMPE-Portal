@@ -69,4 +69,14 @@ public interface IPaymentService
     /// <summary>Hard delete - a promotion is a lightweight schedule, not an audited record; already-
     /// created Payments captured their own amount independently.</summary>
     Task<Result> DeletePromotionAsync(Guid id, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Admin Payments tab's reporting panel: membership-only vs. combined count/total, plus portal
+    /// revenue collected, for Verified NewMembership/Renewal payments with PaidOn in
+    /// [startDate, endDate] - both ends inclusive. EventRegistration payments are a separate
+    /// revenue stream and are always excluded. Rejects an inverted date range (startDate after
+    /// endDate) as a Validation failure.
+    /// </summary>
+    Task<Result<PaymentReportSummaryDto>> GetReportSummaryAsync(
+        DateOnly startDate, DateOnly endDate, CancellationToken cancellationToken = default);
 }

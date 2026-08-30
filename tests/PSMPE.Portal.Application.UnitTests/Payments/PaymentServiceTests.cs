@@ -719,4 +719,156 @@ public class PaymentServiceTests
         var updated = await db.EventRegistrations.FindAsync(registration.Id);
         Assert.Equal(EventRegistrationStatus.Cancelled, updated!.Status);
     }
+
+    /// <summary>Full control over Status/Kind/PaidOn/IncludesPortalAccess/PortalFeeAmount, unlike
+    /// SeedPaymentAsync above which always leaves Status at Submitted and PaidOn at today - both
+    /// need to vary independently for GetReportSummaryAsync's tests.</summary>
+    private static async Task<Payment> SeedReportPaymentAsync(
+        TestDbContext db, Member member, PaymentKind kind, PaymentStatus status, DateOnly paidOn,
+        decimal amount, bool includesPortalAccess, decimal portalFeeAmount)
+    {
+        var payment = new Payment
+        {
+            MemberId = member.Id,
+            Kind = kind,
+            Amount = amount,
+            PaidOn = paidOn,
+            ProofStorageKey = "proof/key.jpg",
+            Status = status,
+            IncludesPortalAccess = includesPortalAccess,
+            PortalFeeAmount = portalFeeAmount,
+        };
+        db.Payments.Add(payment);
+        await db.SaveChangesAsync();
+        return payment;
+    }
+
+    [Fact]
+    public async Task GetReportSummaryAsync_MembershipOnlyVerifiedPaymentInRange_CountsAsMembershipOnly()
+    {
+        using var db = TestDbContext.CreateInMemory();
+        var service = new PaymentService(db);
+        var member = await SeedApprovedMemberAsync(db);
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        await SeedReportPaymentAsync(
+            db, member, PaymentKind.NewMembership, PaymentStatus.Verified, today, 1700m,
+            includesPortalAccess: false, portalFeeAmount: 0m);
+
+        var result = await service.GetReportSummaryAsync(today.AddDays(-1), today.AddDays(1));
+
+        Assert.True(result.Succeeded);
+        Assert.Equal(1, result.Value!.MembershipOnlyCount);
+        Assert.Equal(1700m, result.Value.MembershipOnlyTotal);
+        Assert.Equal(0, result.Value.CombinedCount);
+        Assert.Equal(0m, result.Value.CombinedTotal);
+        Assert.Equal(0m, result.Value.PortalRevenueTotal);
+    }
+
+    [Fact]
+    public async Task GetReportSummaryAsync_CombinedVerifiedRenewalInRange_CountsAsCombined_AndSumsPortalRevenue()
+    {
+        using var db = TestDbContext.CreateInMemory();
+        var service = new PaymentService(db);
+        var member = await SeedApprovedMemberAsync(db, new DateOnly(2026, 6, 1));
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        await SeedReportPaymentAsync(
+            db, member, PaymentKind.Renewal, PaymentStatus.Verified, today, 1500m,
+            includesPortalAccess: true, portalFeeAmount: 900m);
+
+        var result = await service.GetReportSummaryAsync(today.AddDays(-1), today.AddDays(1));
+
+        Assert.True(result.Succeeded);
+        Assert.Equal(0, result.Value!.MembershipOnlyCount);
+        Assert.Equal(0m, result.Value.MembershipOnlyTotal);
+        Assert.Equal(1, result.Value.CombinedCount);
+        Assert.Equal(1500m, result.Value.CombinedTotal);
+        Assert.Equal(900m, result.Value.PortalRevenueTotal);
+    }
+
+    [Fact]
+    public async Task GetReportSummaryAsync_VerifiedEventRegistrationPayment_IsExcludedEvenInRange()
+    {
+        using var db = TestDbContext.CreateInMemory();
+        var service = new PaymentService(db);
+        var (member, registration) = await SeedEventRegistrationAsync(db);
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        await SeedReportPaymentAsync(
+            db, member, PaymentKind.EventRegistration, PaymentStatus.Verified, today, 500m,
+            includesPortalAccess: false, portalFeeAmount: 0m);
+
+        var result = await service.GetReportSummaryAsync(today.AddDays(-1), today.AddDays(1));
+
+        Assert.True(result.Succeeded);
+        Assert.Equal(0, result.Value!.MembershipOnlyCount);
+        Assert.Equal(0, result.Value.CombinedCount);
+        Assert.Equal(0m, result.Value.MembershipOnlyTotal);
+        Assert.Equal(0m, result.Value.CombinedTotal);
+        Assert.Equal(0m, result.Value.PortalRevenueTotal);
+    }
+
+    [Fact]
+    public async Task GetReportSummaryAsync_SubmittedNotYetVerifiedPayment_IsExcluded()
+    {
+        using var db = TestDbContext.CreateInMemory();
+        var service = new PaymentService(db);
+        var member = await SeedApprovedMemberAsync(db);
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        await SeedReportPaymentAsync(
+            db, member, PaymentKind.NewMembership, PaymentStatus.Submitted, today, 1700m,
+            includesPortalAccess: false, portalFeeAmount: 0m);
+
+        var result = await service.GetReportSummaryAsync(today.AddDays(-1), today.AddDays(1));
+
+        Assert.True(result.Succeeded);
+        Assert.Equal(0, result.Value!.MembershipOnlyCount);
+        Assert.Equal(0, result.Value.CombinedCount);
+    }
+
+    [Fact]
+    public async Task GetReportSummaryAsync_VerifiedPaymentPaidOutsideTheRange_IsExcluded()
+    {
+        using var db = TestDbContext.CreateInMemory();
+        var service = new PaymentService(db);
+        var member = await SeedApprovedMemberAsync(db);
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        await SeedReportPaymentAsync(
+            db, member, PaymentKind.NewMembership, PaymentStatus.Verified, today.AddMonths(-2), 1700m,
+            includesPortalAccess: false, portalFeeAmount: 0m);
+
+        var result = await service.GetReportSummaryAsync(today.AddDays(-1), today.AddDays(1));
+
+        Assert.True(result.Succeeded);
+        Assert.Equal(0, result.Value!.MembershipOnlyCount);
+        Assert.Equal(0, result.Value.CombinedCount);
+    }
+
+    [Fact]
+    public async Task GetReportSummaryAsync_NoMatchingPayments_ReturnsAllZeros_NotAnException()
+    {
+        using var db = TestDbContext.CreateInMemory();
+        var service = new PaymentService(db);
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+
+        var result = await service.GetReportSummaryAsync(today.AddDays(-1), today.AddDays(1));
+
+        Assert.True(result.Succeeded);
+        Assert.Equal(0, result.Value!.MembershipOnlyCount);
+        Assert.Equal(0m, result.Value.MembershipOnlyTotal);
+        Assert.Equal(0, result.Value.CombinedCount);
+        Assert.Equal(0m, result.Value.CombinedTotal);
+        Assert.Equal(0m, result.Value.PortalRevenueTotal);
+    }
+
+    [Fact]
+    public async Task GetReportSummaryAsync_WithStartDateAfterEndDate_IsRejected()
+    {
+        using var db = TestDbContext.CreateInMemory();
+        var service = new PaymentService(db);
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+
+        var result = await service.GetReportSummaryAsync(today, today.AddDays(-1));
+
+        Assert.False(result.Succeeded);
+        Assert.Equal(ResultErrorType.Validation, result.ErrorType);
+    }
 }

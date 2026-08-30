@@ -79,3 +79,12 @@ public record FeePromotionDto(
 /// <summary>FeeKey must be one of the MembershipFeeKeys constants; StartDate/EndDate must not
 /// overlap an existing promotion for the same FeeKey - see PaymentService.CreatePromotionAsync.</summary>
 public record CreateFeePromotionRequest(string FeeKey, decimal PromoAmount, DateOnly StartDate, DateOnly EndDate);
+
+/// <summary>Summary figures for a date range, driving the admin Payments tab's reporting panel.
+/// Only NewMembership/Renewal payments count - EventRegistration is a separate revenue stream.
+/// See PaymentService.GetReportSummaryAsync for the exact filter (Verified status, PaidOn in
+/// range, inclusive on both ends).</summary>
+public record PaymentReportSummaryDto(
+    int MembershipOnlyCount, decimal MembershipOnlyTotal,
+    int CombinedCount, decimal CombinedTotal,
+    decimal PortalRevenueTotal);

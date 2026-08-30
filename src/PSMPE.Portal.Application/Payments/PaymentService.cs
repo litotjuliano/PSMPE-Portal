@@ -532,4 +532,43 @@ public class PaymentService(IApplicationDbContext db, ICacheService? cache = nul
         Cache.Remove(MembershipFeeKeys.CacheKey);
         return Result.Success();
     }
+
+    public async Task<Result<PaymentReportSummaryDto>> GetReportSummaryAsync(
+        DateOnly startDate, DateOnly endDate, CancellationToken cancellationToken = default)
+    {
+        if (startDate > endDate)
+        {
+            return Result<PaymentReportSummaryDto>.Failure("Start date must be on or before the end date.");
+        }
+
+        // Verified only - a Submitted or Rejected payment isn't real revenue yet. NewMembership/
+        // Renewal only - EventRegistration is a separate revenue stream (see proposal.md). PaidOn
+        // range is inclusive on both ends, matching FeePromotion's own StartDate/EndDate convention.
+        var query = db.Payments.AsNoTracking().Where(p =>
+            p.Status == PaymentStatus.Verified &&
+            (p.Kind == PaymentKind.NewMembership || p.Kind == PaymentKind.Renewal) &&
+            p.PaidOn >= startDate && p.PaidOn <= endDate);
+
+        var membershipOnly = query.Where(p => !p.IncludesPortalAccess);
+        var combined = query.Where(p => p.IncludesPortalAccess);
+
+        var membershipOnlyCount = await membershipOnly.CountAsync(cancellationToken);
+        var membershipOnlyTotal = await membershipOnly.SumAsync(p => p.Amount, cancellationToken);
+        var combinedCount = await combined.CountAsync(cancellationToken);
+        var combinedTotal = await combined.SumAsync(p => p.Amount, cancellationToken);
+
+        // Filtered explicitly to the combined subset rather than relying on the (true today, but
+        // not worth depending on silently) invariant that PortalFeeAmount is always zero on a
+        // membership-only payment - see PaymentService.SubmitAsync and
+        // MemberService.EnsureRegistrationPaymentAsync/ResolveRegistrationPaymentAsync, the three
+        // call sites that stamp it.
+        var portalRevenueTotal = await combined.SumAsync(p => p.PortalFeeAmount, cancellationToken);
+
+        // SumAsync over zero matching rows returns 0m, not null/an exception - guaranteed by LINQ
+        // for a non-nullable numeric selector, and EF Core's SQL translation wraps SUM() in
+        // COALESCE(..., 0) for the same reason, so this holds against both the InMemory provider
+        // used by this project's unit tests and the real Npgsql provider in production.
+        return Result<PaymentReportSummaryDto>.Success(new PaymentReportSummaryDto(
+            membershipOnlyCount, membershipOnlyTotal, combinedCount, combinedTotal, portalRevenueTotal));
+    }
 }
