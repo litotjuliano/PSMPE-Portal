@@ -19,10 +19,10 @@ snapshot below is still accurate (other branches may have landed since this was 
 
 ## 0. Pre-flight (do this first)
 
-- [ ] `git fetch`, `git branch -a`, `git worktree list` — confirm no new in-progress work overlaps
+- [x] `git fetch`, `git branch -a`, `git worktree list` — confirm no new in-progress work overlaps
       the critical files listed in `proposal.md`'s "What Changes" (last checked 2026-08-30: only
       `feature/smtp-email-sender` was in progress, touching two unrelated new files).
-- [ ] Branch off the latest `origin/develop` into a dedicated feature branch (e.g.
+- [x] Branch off the latest `origin/develop` into a dedicated feature branch (e.g.
       `feature/portal-access-payment`).
 - [ ] Grep for `RegistrationTotal`/`registrationTotal` across `src/` and `apps/web/src/` to enumerate
       every consumer before the breaking rename in step 4.
@@ -31,13 +31,15 @@ snapshot below is still accurate (other branches may have landed since this was 
 
 ## 1. Domain and persistence
 
-- [ ] `Payment` gains `bool IncludesPortalAccess` (default `false`) and `decimal PortalFeeAmount`
+- [x] `Payment` gains `bool IncludesPortalAccess` (default `false`) and `decimal PortalFeeAmount`
       (default `0`).
-- [ ] `Member` gains `bool HasPortalAccess` (default `false`), documented as written exclusively by
+- [x] `Member` gains `bool HasPortalAccess` (default `false`), documented as written exclusively by
       `PaymentVerification.Apply`.
-- [ ] New `FeePromotion` entity: `Id`, `FeeKey` (string), `PromoAmount` (decimal), `StartDate`/
+- [x] New `FeePromotion` entity: `Id`, `FeeKey` (string), `PromoAmount` (decimal), `StartDate`/
       `EndDate` (`DateOnly`), `CreatedByUserId`, `CreatedAt`. Own EF configuration.
-- [ ] One migration adding both `Payment`/`Member` columns and the `FeePromotions` table.
+- [x] One migration adding both `Payment`/`Member` columns and the `FeePromotions` table.
+      (Commits `6f9a828`, `803400c` — the latter fixing a missing decimal precision on
+      `PortalFeeAmount` found in code review.)
 
 ## 2. Fee configuration and promotional pricing
 
