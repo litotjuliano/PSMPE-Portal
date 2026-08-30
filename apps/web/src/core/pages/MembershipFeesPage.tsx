@@ -81,6 +81,7 @@ export function MembershipFeesPage() {
   const [promotionsLoading, setPromotionsLoading] = useState(true)
   const [promotionsError, setPromotionsError] = useState<string | null>(null)
   const [statusFilter, setStatusFilter] = useState<'All' | PromotionStatus>('All')
+  const [feeFilter, setFeeFilter] = useState<'All' | string>('All')
 
   const [newFeeKey, setNewFeeKey] = useState(FEE_KEY_OPTIONS[0].key)
   const [newAmount, setNewAmount] = useState('')
@@ -106,7 +107,9 @@ export function MembershipFeesPage() {
   }, [])
 
   const filteredPromotions = promotions.filter(
-    (promotion) => statusFilter === 'All' || promotionStatus(promotion) === statusFilter,
+    (promotion) =>
+      (statusFilter === 'All' || promotionStatus(promotion) === statusFilter) &&
+      (feeFilter === 'All' || promotion.feeKey === feeFilter),
   )
 
   const newAmountParsed = Number(newAmount)
@@ -287,6 +290,23 @@ export function MembershipFeesPage() {
                       <option value="Upcoming">Upcoming</option>
                       <option value="Expired">Expired</option>
                     </select>
+
+                    <label htmlFor="promotion-fee-filter" className="text-sm font-medium text-default-900">
+                      Fee
+                    </label>
+                    <select
+                      id="promotion-fee-filter"
+                      className="form-input max-w-48"
+                      value={feeFilter}
+                      onChange={(e) => setFeeFilter(e.target.value)}
+                    >
+                      <option value="All">All</option>
+                      {FEE_KEY_OPTIONS.map((option) => (
+                        <option key={option.key} value={option.key}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
                   </div>
 
                   <div className="overflow-x-auto">
@@ -332,7 +352,7 @@ export function MembershipFeesPage() {
                         {filteredPromotions.length === 0 && (
                           <tr>
                             <td colSpan={6} className="py-6 px-3.5 text-center text-default-500">
-                              {promotions.length === 0 ? 'No promotions yet.' : 'No promotions match this filter.'}
+                              {promotions.length === 0 ? 'No promotions yet.' : 'No promotions match these filters.'}
                             </td>
                           </tr>
                         )}
