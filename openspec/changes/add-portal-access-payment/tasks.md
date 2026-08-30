@@ -62,20 +62,25 @@ snapshot below is still accurate (other branches may have landed since this was 
 
 ## 3. Application layer
 
-- [ ] `PaymentVerification.Apply` sets `member.HasPortalAccess = payment.IncludesPortalAccess`
+- [x] `PaymentVerification.Apply` sets `member.HasPortalAccess = payment.IncludesPortalAccess`
       alongside the existing `Status`/`RenewalDueDate` writes.
-- [ ] `SubmitPaymentRequest` gains `bool IncludePortalAccess = false`;
+- [x] `SubmitPaymentRequest` gains `bool IncludePortalAccess = false`;
       `PaymentService.SubmitAsync` sets `Payment.IncludesPortalAccess` directly from it (renewal
       path).
-- [ ] `POST /api/members/me/submit` gains optional `includePortalAccess`, threaded through
+- [x] `POST /api/members/me/submit` gains optional `includePortalAccess`, threaded through
       `SubmitMyProfileAsync(userId, includePortalAccess, ct)` into `EnsureRegistrationPaymentAsync`,
       which adds `PortalFee` to the computed default amount when ticked (registration path).
-- [ ] `RecordPaymentRequest` / `ApproveMemberRequest.Payment` gains `bool IncludePortalAccess = false`
+- [x] `RecordPaymentRequest` / `ApproveMemberRequest.Payment` gains `bool IncludePortalAccess = false`
       for the admin walk-in path (also the paper-form-intake path).
-- [ ] `MembershipFeesDto`: replace `RegistrationTotal` with `PortalFee` and four explicit totals
+- [x] `MembershipFeesDto`: replace `RegistrationTotal` with `PortalFee` and four explicit totals
       (`RegistrationTotalWithoutPortal`, `RegistrationTotalWithPortal`, `RenewalTotalWithoutPortal`,
       `RenewalTotalWithPortal`); update every consumer found in step 0.
-- [ ] `MemberDto` gains `bool HasPortalAccess`, read directly off `Member.HasPortalAccess`.
+      (`UpdateMembershipFeesRequest` also gained `PortalFee`, since task 2 added the config key but
+      no write path for it - `UpdateFeesAsync` now persists it.)
+- [x] `MemberDto` gains `bool HasPortalAccess`, read directly off `Member.HasPortalAccess`.
+      (Note: `Payment.PortalFeeAmount`, added in task 1, is not yet stamped by any of the three
+      payment-creation paths this task touches - see the task-completion report for details. It
+      stays 0 until a follow-up sets it, which will matter once task 7's reporting endpoint sums it.)
 
 ## 4. Access enforcement
 
