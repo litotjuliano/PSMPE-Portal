@@ -753,6 +753,9 @@ public class MemberServiceTests
         Assert.Equal(
             MembershipFeeKeys.DefaultMembershipFee + MembershipFeeKeys.DefaultShippingFee + MembershipFeeKeys.DefaultPortalFee,
             payment.Amount);
+        // Captured independently of Amount, from the same resolved value used to size it - so a
+        // later fee edit can never retroactively change this payment's own portal-revenue figure.
+        Assert.Equal(MembershipFeeKeys.DefaultPortalFee, payment.PortalFeeAmount);
     }
 
     [Fact]
@@ -773,6 +776,7 @@ public class MemberServiceTests
         var payment = await db.Payments.SingleAsync(p => p.MemberId == member.Id && p.Kind == PaymentKind.NewMembership);
         Assert.False(payment.IncludesPortalAccess);
         Assert.Equal(MembershipFeeKeys.DefaultMembershipFee + MembershipFeeKeys.DefaultShippingFee, payment.Amount);
+        Assert.Equal(0m, payment.PortalFeeAmount);
     }
 
     /// <summary>Admin walk-in path: RecordPaymentRequest.IncludePortalAccess flows onto the Payment
@@ -795,6 +799,41 @@ public class MemberServiceTests
         Assert.True(member.HasPortalAccess);
         var created = await db.Payments.SingleAsync(p => p.MemberId == member.Id);
         Assert.True(created.IncludesPortalAccess);
+        // Resolved independently of the admin-typed Amount (2600m here) - this stamps "what
+        // PortalFee was configured," not "what was actually collected," mirroring how Amount
+        // itself is never validated against configured fees.
+        Assert.Equal(MembershipFeeKeys.DefaultPortalFee, created.PortalFeeAmount);
+    }
+
+    /// <summary>Confirms the admin-typed Amount is irrelevant to PortalFeeAmount - it's resolved
+    /// from the currently-configured/promoted PortalFee, not derived from what the admin typed.</summary>
+    [Fact]
+    public async Task ApproveAsync_WithIncludePortalAccessTrue_StampsPortalFeeAmountFromAnActivePromotion_RegardlessOfTypedAmount()
+    {
+        using var db = TestDbContext.CreateInMemory();
+        var member = await SeedSubmittedMemberAsync(db);
+        member.PrcIdVerified = true;
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        db.FeePromotions.Add(new FeePromotion
+        {
+            FeeKey = MembershipFeeKeys.PortalFee,
+            PromoAmount = 350m,
+            StartDate = today,
+            EndDate = today.AddDays(1),
+            CreatedByUserId = Guid.NewGuid(),
+        });
+        await db.SaveChangesAsync();
+        var service = new MemberService(db);
+        // Amount typed by the admin doesn't match the resolved 350m promo at all - by design,
+        // Amount is never validated against configured fees.
+        var payment = new RecordPaymentRequest(9999m, "REF-001", today, "uploads/proof.jpg", IncludePortalAccess: true);
+
+        var result = await service.ApproveAsync(member.Id, new ApproveMemberRequest("000123", payment), Guid.NewGuid(), CancellationToken.None);
+
+        Assert.True(result.Succeeded);
+        var created = await db.Payments.SingleAsync(p => p.MemberId == member.Id);
+        Assert.Equal(9999m, created.Amount);
+        Assert.Equal(350m, created.PortalFeeAmount);
     }
 
     [Fact]
@@ -813,6 +852,7 @@ public class MemberServiceTests
         Assert.False(member.HasPortalAccess);
         var created = await db.Payments.SingleAsync(p => p.MemberId == member.Id);
         Assert.False(created.IncludesPortalAccess);
+        Assert.Equal(0m, created.PortalFeeAmount);
     }
 
     [Fact]

@@ -620,6 +620,26 @@ public class MemberService(IApplicationDbContext db, ICacheService? cache = null
             return Result<Payment>.Failure("Proof of payment is required.");
         }
 
+        // The admin types a raw Amount directly on this path - there's no fee computation to piggy-
+        // back PortalFeeAmount onto, unlike EnsureRegistrationPaymentAsync. Still resolved
+        // independently here (through the same promotion-aware lookup) so it reflects "what
+        // PortalFee was configured at the time," same as Amount is already allowed to diverge from
+        // configured fees without validation.
+        var portalFeeAmount = 0m;
+        if (supplied.IncludePortalAccess)
+        {
+            var portalFeeRaw = await db.SystemConfigs.AsNoTracking()
+                .Where(c => c.Key == MembershipFeeKeys.PortalFee)
+                .Select(c => c.Value)
+                .FirstOrDefaultAsync(cancellationToken);
+            var regularPortalFee = portalFeeRaw is not null
+                && decimal.TryParse(portalFeeRaw, System.Globalization.NumberStyles.Number, System.Globalization.CultureInfo.InvariantCulture, out var parsed)
+                ? parsed
+                : MembershipFeeKeys.DefaultPortalFee;
+            portalFeeAmount = await FeePromotionResolver.ResolveAsync(
+                db, MembershipFeeKeys.PortalFee, regularPortalFee, DateOnly.FromDateTime(DateTime.UtcNow), cancellationToken);
+        }
+
         var created = new Payment
         {
             MemberId = member.Id,
@@ -631,6 +651,7 @@ public class MemberService(IApplicationDbContext db, ICacheService? cache = null
             ProofStorageKey = supplied.ProofStorageKey,
             Status = PaymentStatus.Submitted,
             IncludesPortalAccess = supplied.IncludePortalAccess,
+            PortalFeeAmount = portalFeeAmount,
         };
         db.Payments.Add(created);
         return Result<Payment>.Success(created);
@@ -1172,6 +1193,10 @@ public class MemberService(IApplicationDbContext db, ICacheService? cache = null
             ProofStorageKey = proofKey,
             Status = PaymentStatus.Submitted,
             IncludesPortalAccess = includePortalAccess,
+            // Same resolved value already used above to size Amount - captured independently so a
+            // later fee/promo edit can never retroactively change what this payment's own
+            // portal-revenue contribution was.
+            PortalFeeAmount = includePortalAccess ? portalFee : 0m,
         });
     }
 

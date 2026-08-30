@@ -271,6 +271,29 @@ public class PaymentServiceTests
         Assert.True(result.Value!.Id != Guid.Empty);
         var stored = await db.Payments.FindAsync(result.Value.Id);
         Assert.True(stored!.IncludesPortalAccess);
+        // Resolved independently of the caller-declared Amount, same as GetFeesAsync resolves the
+        // other three fees - captures "what PortalFee was configured" so a later fee edit can't
+        // retroactively change this payment's own portal-revenue contribution.
+        Assert.Equal(MembershipFeeKeys.DefaultPortalFee, stored.PortalFeeAmount);
+    }
+
+    [Fact]
+    public async Task SubmitAsync_WithIncludePortalAccessTrue_StampsPortalFeeAmountFromAnActivePromotion()
+    {
+        using var db = TestDbContext.CreateInMemory();
+        var service = new PaymentService(db);
+        var member = await SeedApprovedMemberAsync(db, new DateOnly(2026, 6, 1));
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        Assert.True((await service.CreatePromotionAsync(
+            new CreateFeePromotionRequest(MembershipFeeKeys.PortalFee, 450m, today, today.AddDays(1)),
+            Guid.NewGuid())).Succeeded);
+
+        var result = await service.SubmitAsync(
+            member.UserId, new SubmitPaymentRequest(1500m, "REF-1", today, IncludePortalAccess: true));
+
+        Assert.True(result.Succeeded);
+        var stored = await db.Payments.FindAsync(result.Value!.Id);
+        Assert.Equal(450m, stored!.PortalFeeAmount);
     }
 
     [Fact]
@@ -286,6 +309,7 @@ public class PaymentServiceTests
         Assert.True(result.Succeeded);
         var stored = await db.Payments.FindAsync(result.Value!.Id);
         Assert.False(stored!.IncludesPortalAccess);
+        Assert.Equal(0m, stored.PortalFeeAmount);
     }
 
     [Fact]

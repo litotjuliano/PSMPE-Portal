@@ -78,9 +78,14 @@ snapshot below is still accurate (other branches may have landed since this was 
       (`UpdateMembershipFeesRequest` also gained `PortalFee`, since task 2 added the config key but
       no write path for it - `UpdateFeesAsync` now persists it.)
 - [x] `MemberDto` gains `bool HasPortalAccess`, read directly off `Member.HasPortalAccess`.
-      (Note: `Payment.PortalFeeAmount`, added in task 1, is not yet stamped by any of the three
-      payment-creation paths this task touches - see the task-completion report for details. It
-      stays 0 until a follow-up sets it, which will matter once task 7's reporting endpoint sums it.)
+      (Note: `Payment.PortalFeeAmount`, added in task 1, is now stamped on all three
+      payment-creation paths this task touches - `PaymentService.SubmitAsync`,
+      `MemberService.EnsureRegistrationPaymentAsync`, and `ResolveRegistrationPaymentAsync` - each
+      resolving the currently-effective `PortalFee` through `FeePromotionResolver` independently of
+      the payment's own `Amount`, so a later fee/promo edit can never retroactively change what a
+      historical payment's portal-revenue contribution was. Originally left unset in the first pass
+      of this task and caught in spec review before task 7 could ship a reporting endpoint that
+      silently summed zero; fixed in the same task.)
 
 ## 4. Access enforcement
 

@@ -112,6 +112,25 @@ public class PaymentService(IApplicationDbContext db, ICacheService? cache = nul
         // was never activated, nor a second "new membership" payment once they're active.
         var kind = member.RenewalDueDate is null ? PaymentKind.NewMembership : PaymentKind.Renewal;
 
+        // Captured independently of the caller-declared Amount, same as GetFeesAsync resolves the
+        // other three fees - this is "what PortalFee was configured (net of any promotion) when
+        // this payment was made," so later fee/promo edits can never retroactively change what a
+        // historical payment's portal-revenue contribution was. Zero when the add-on isn't included.
+        var portalFeeAmount = 0m;
+        if (request.IncludePortalAccess)
+        {
+            var portalFeeRaw = await db.SystemConfigs.AsNoTracking()
+                .Where(c => c.Key == MembershipFeeKeys.PortalFee)
+                .Select(c => c.Value)
+                .FirstOrDefaultAsync(cancellationToken);
+            var regularPortalFee = portalFeeRaw is not null
+                && decimal.TryParse(portalFeeRaw, NumberStyles.Number, CultureInfo.InvariantCulture, out var parsed)
+                ? parsed
+                : MembershipFeeKeys.DefaultPortalFee;
+            portalFeeAmount = await FeePromotionResolver.ResolveAsync(
+                db, MembershipFeeKeys.PortalFee, regularPortalFee, DateOnly.FromDateTime(DateTime.UtcNow), cancellationToken);
+        }
+
         var payment = new Payment
         {
             MemberId = member.Id,
@@ -124,6 +143,7 @@ public class PaymentService(IApplicationDbContext db, ICacheService? cache = nul
             // Whatever the member declared - no server-side forcing or branching, and no
             // consistency check against Amount (mismatch guarding is a UI safety net only).
             IncludesPortalAccess = request.IncludePortalAccess,
+            PortalFeeAmount = portalFeeAmount,
         };
 
         db.Payments.Add(payment);
