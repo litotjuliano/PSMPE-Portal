@@ -141,13 +141,11 @@ forward — see that section's note). **Reordering note**: the original "Admin P
 panel" bullet here is moved to task 7, since it displays data from that task's reporting endpoint,
 which doesn't exist yet — building it here would have nothing to call.
 
-- [ ] `apps/web/src/core/api/endpoints/paymentApi.ts`: add client methods for the three promotion
-      endpoints task 2 built (`GET/POST/DELETE /api/payments/fees/promotions`) — not yet exposed on
-      the frontend at all.
-- [ ] `MembershipFeesPage.tsx`: fourth editable field (Portal Fee — currently round-tripped
-      read-only, see task 5's note) + Promotions panel (table with active/upcoming/expired status;
-      add form with fee/amount/date-range and a "Single day" checkbox that sets `StartDate =
-      EndDate`; cancel action).
+- [x] `paymentApi.ts` gained the three promotion client methods.
+- [x] `MembershipFeesPage.tsx`: Portal Fee is now a real fourth editable field; Promotions panel
+      added with a Status filter and (added after code review, matching `AdminUsersPage.tsx`'s
+      search+categorical-filter precedent) a Fee filter, add-form with Single-day checkbox, delete
+      via `ConfirmationModal`. Commits `4940c9b`, `a2fa434`.
 - [ ] `MembershipApplicationWizardCard.tsx` (Step 3) + `MyProfilePage.tsx`: "Include Portal Access
       (+₱{portalFee})" checkbox on `MembershipApplicationState`, recomputed TOTAL (currently hardcoded
       to `registrationTotalWithoutPortal` per task 5's minimal compile-fix), threaded through
