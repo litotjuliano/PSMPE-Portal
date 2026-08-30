@@ -190,19 +190,25 @@ which doesn't exist yet — building it here would have nothing to call.
 
 ## 9. Tests
 
-- [ ] Verifying a payment sets `Member.HasPortalAccess` to match `Payment.IncludesPortalAccess`
-      (both true/false); a renewal omitting portal revokes prior access.
-- [ ] `MembershipAccessMiddleware` 403s with `PORTAL_ACCESS_REQUIRED` for an Active member with
-      `HasPortalAccess=false` outside the allowlist; passes for allowlisted routes; does not 403 a
-      Deactivated member on this check.
-- [ ] Fee edit doesn't retroactively change a pending/verified payment (see step 2).
-- [ ] `FeePromotion` active today resolves to `PromoAmount`; one outside its range does not;
+Every item below was already written and reviewed as part of the task that introduced the behavior,
+not as a separate pass — re-confirmed here against a fresh `dotnet test` run rather than trusted from
+the task list (checkboxes lag reality easily on a long-running branch like this one).
+
+- [x] Verifying a payment sets `Member.HasPortalAccess` to match `Payment.IncludesPortalAccess`
+      (both true/false); a renewal omitting portal revokes prior access. (Task 3.)
+- [x] `MembershipAccessMiddleware` 403s with `PORTAL_ACCESS_REQUIRED` for a member with
+      `HasPortalAccess=false` outside the allowlist (any non-`Deactivated` `Status`, including
+      `Pending` — see task 8's correction); passes for allowlisted routes; does not 403 a Deactivated
+      member. (Task 4.)
+- [x] Fee edit doesn't retroactively change a pending/verified payment. (Task 2.)
+- [x] `FeePromotion` active today resolves to `PromoAmount`; one outside its range does not;
       overlapping promo for the same `FeeKey` is rejected; a payment created during a promo window
-      keeps its captured amount after the promo expires.
-- [ ] Reports summary endpoint buckets membership-only vs. combined correctly and sums
-      `PortalFeeAmount` only for combined payments in range, excluding `EventRegistration` and
-      non-`Verified` payments.
-- [ ] All pre-existing tests still pass.
+      keeps its captured amount after the promo expires. (Task 2.)
+- [x] Reports summary endpoint buckets membership-only vs. combined correctly, sums
+      `PortalFeeAmount` only for the combined subset, excludes `EventRegistration` and
+      non-`Verified` payments, and covers the inclusive date boundary exactly. (Task 7a.)
+- [x] All pre-existing tests still pass — fresh run: **530/530** (212 Application.UnitTests + 19
+      Infrastructure.UnitTests + 299 WebAPI.IntegrationTests), 0 build warnings/errors.
 
 ## 10. Verification
 
