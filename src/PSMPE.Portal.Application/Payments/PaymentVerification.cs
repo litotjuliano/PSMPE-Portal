@@ -29,6 +29,11 @@ internal static class PaymentVerification
             // payable one year after registration".
             PaymentKind.NewMembership => DateOnly.FromDateTime(member.ApprovedAt!.Value.UtcDateTime).AddYears(1),
 
+            // Mid-cycle add-on purchase, not a renewal - the member's existing cycle (and its
+            // anniversary) is untouched. PaymentService.SubmitAsync already guarantees
+            // RenewalDueDate isn't null for this Kind.
+            PaymentKind.PortalAccessOnly => member.RenewalDueDate!.Value,
+
             // Renewal: one year from the *previous* due date, so the anniversary is fixed.
             // Advancing from today would hand every late payer the grace period for free and
             // permanently shift their date each year.

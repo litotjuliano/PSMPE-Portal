@@ -23,6 +23,7 @@ const KIND_LABELS: Record<Payment['kind'], string> = {
   NewMembership: 'New membership',
   Renewal: 'Renewal',
   EventRegistration: 'Event registration',
+  PortalAccessOnly: 'Portal access',
 }
 
 const PROOF_MISSING_MESSAGE =
@@ -64,11 +65,15 @@ export const PaymentsQueueTable = ({
 
   // Soft visibility only, matching the codebase's stance that Amount is never hard-validated
   // against configured fees - just something for the admin to notice before clicking Verify.
-  // NewMembership compares against the registration totals, Renewal against the renewal totals.
+  // NewMembership compares against the registration totals, Renewal against the renewal totals,
+  // PortalAccessOnly against the bare portal fee alone (it's not a dues payment).
   const expectedTotalFor = (payment: Payment): number | null => {
     if (!fees) return null
     if (payment.kind === 'NewMembership') {
       return payment.includesPortalAccess ? fees.registrationTotalWithPortal : fees.registrationTotalWithoutPortal
+    }
+    if (payment.kind === 'PortalAccessOnly') {
+      return fees.portalFee
     }
     return payment.includesPortalAccess ? fees.renewalTotalWithPortal : fees.renewalTotalWithoutPortal
   }

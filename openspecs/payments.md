@@ -84,6 +84,7 @@ deliberately over an override variant; revisit if that case turns out to be comm
 |---|---|
 | `NewMembership` | `Status = Active`, `RenewalDueDate = ApprovedAt + 1 year`, `Member.HasPortalAccess = payment.IncludesPortalAccess` |
 | `Renewal` | `Status = Active`, `RenewalDueDate = previous RenewalDueDate + 1 year`, `Member.HasPortalAccess = payment.IncludesPortalAccess` |
+| `PortalAccessOnly` | `Status = Active`, `RenewalDueDate` **unchanged**, `Member.HasPortalAccess = true` |
 
 Both record `CoversUntil` on the payment, so the history says not just that money was accepted but
 what period it bought.
@@ -112,6 +113,16 @@ what period it bought.
 `SubmitAsync` decides: no `RenewalDueDate` yet → `NewMembership`, otherwise `Renewal`. A member
 cannot claim a renewal for a membership that was never activated, nor a second "new membership"
 payment once they are active.
+
+**`PortalAccessOnly` is the one exception** - it's opted into explicitly via
+`SubmitPaymentRequest.PortalAccessOnly`, for a member who's current on dues but never took the
+portal-access add-on and doesn't want to wait for their next renewal to add it. `SubmitAsync`
+refuses it if `RenewalDueDate` is still null (never been through a cycle) or the member already has
+portal access. `IncludesPortalAccess` is forced `true` regardless of what `IncludePortalAccess` was
+passed as - the whole point of this Kind is buying the add-on, nothing else. Surfaced on
+`RenewalPaymentCard` as a standalone "Add Portal Access" card, shown only when the full
+renewal/dues form is hidden (outside the renewal window) - within the window the form's own
+"Include Portal Access" checkbox already covers this.
 
 ### One at a time
 
@@ -259,7 +270,8 @@ midnight.
 `GET /api/payments/reports/summary?startDate=&endDate=` (`members:view`) answers "how much portal
 revenue and membership revenue came in over this range" for the board/admin, without a full
 line-item export. It filters to `Verified` `NewMembership`/`Renewal` payments only —
-`EventRegistration` is excluded as a separate revenue stream (see `openspecs/events.md`), and a
+`EventRegistration` and `PortalAccessOnly` are both excluded as separate revenue streams (see
+`openspecs/events.md` for the former; the latter isn't dues revenue at all), and a
 `Submitted` or `Rejected` payment isn't real revenue yet — with `PaidOn` falling in the inclusive
 `[startDate, endDate]` range.
 
