@@ -46,14 +46,14 @@ interface MembersTableProps {
   onRejectRmp?: (id: string, reason: string) => void
 }
 
-const statusLabels: Record<number, string> = {
+const statusLabels: Record<MembershipStatusValue, string> = {
   [MembershipStatus.Pending]: 'Pending',
   [MembershipStatus.Active]: 'Active',
   [MembershipStatus.Expired]: 'Expired',
   [MembershipStatus.Deactivated]: 'Deactivated',
 }
 
-const statusClasses: Record<number, string> = {
+const statusClasses: Record<MembershipStatusValue, string> = {
   [MembershipStatus.Pending]: 'bg-warning/10 text-warning',
   [MembershipStatus.Active]: 'bg-success/10 text-success',
   [MembershipStatus.Expired]: 'bg-danger/10 text-danger',
@@ -155,9 +155,7 @@ export const MembersTable = ({
           <select
             className="form-input max-w-40"
             value={statusFilter ?? ''}
-            onChange={(e) =>
-              onStatusFilterChange?.(e.target.value === '' ? null : (Number(e.target.value) as MembershipStatusValue))
-            }
+            onChange={(e) => onStatusFilterChange?.(e.target.value === '' ? null : (e.target.value as MembershipStatusValue))}
           >
             <option value="">All statuses</option>
             <option value={MembershipStatus.Pending}>Pending</option>

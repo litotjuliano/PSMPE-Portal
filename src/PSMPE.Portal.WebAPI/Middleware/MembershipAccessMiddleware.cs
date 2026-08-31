@@ -6,12 +6,16 @@ using PSMPE.Portal.Infrastructure.Authorization;
 namespace PSMPE.Portal.WebAPI.Middleware;
 
 /// <summary>
-/// Restricts a fully Expired member (persisted Status, kept in sync by
-/// MembershipLifecycleService's daily auto-flip) to an explicit allowlist of self-service endpoints
-/// - the ones they need to actually renew. Staff/admin roles (which never have a Member row) and
-/// Active/grace-period members are unaffected. Sits after UseAuthorization() so normal
-/// authentication/permission failures are handled first, and before MapControllers() so a blocked
-/// request never reaches a controller action.
+/// Restricts a member to an explicit allowlist of self-service endpoints - the ones they need to
+/// actually renew - under either of two independent conditions: a fully Expired member (persisted
+/// Status, kept in sync by MembershipLifecycleService's daily auto-flip), or a member whose most
+/// recently verified payment didn't include portal access (Member.HasPortalAccess, written
+/// exclusively by PaymentVerification.Apply). A member failing both sees MEMBERSHIP_EXPIRED - that
+/// check runs first. Staff/admin roles (which never have a Member row), Active/grace-period members
+/// with portal access, and Deactivated members (a distinct admin action, excluded from both checks)
+/// are unaffected. Sits after UseAuthorization() so normal authentication/permission failures are
+/// handled first, and before MapControllers() so a blocked request never reaches a controller
+/// action.
 /// </summary>
 public class MembershipAccessMiddleware(RequestDelegate next)
 {
@@ -58,6 +62,23 @@ public class MembershipAccessMiddleware(RequestDelegate next)
             {
                 code = "MEMBERSHIP_EXPIRED",
                 message = "Your membership has expired. Renew your dues to restore full access.",
+            });
+            return;
+        }
+
+        // Independent of the expiry check above: portal access reflects only the member's most
+        // recently verified payment (PaymentVerification.Apply), so a renewal that omits the add-on
+        // revokes it even while Status stays Active. Deactivated is excluded, same as the expiry
+        // checks in MemberService.ComputeIsExpired/ComputeIsInGracePeriod - it's a distinct admin
+        // action, not a lapsed-payment state.
+        if (member is not null && !member.HasPortalAccess && member.Status != MembershipStatus.Deactivated)
+        {
+            context.Response.StatusCode = StatusCodes.Status403Forbidden;
+            context.Response.ContentType = "application/json";
+            await context.Response.WriteAsJsonAsync(new
+            {
+                code = "PORTAL_ACCESS_REQUIRED",
+                message = "Your membership doesn't currently include portal access. Add it on your next renewal to restore full access.",
             });
             return;
         }

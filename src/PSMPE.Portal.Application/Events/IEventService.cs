@@ -1,0 +1,36 @@
+using PSMPE.Portal.Application.Common.Models;
+using PSMPE.Portal.Application.Events.Dtos;
+
+namespace PSMPE.Portal.Application.Events;
+
+public interface IEventService
+{
+    Task<PagedResult<EventDto>> GetAllAsync(
+        int page, int pageSize, string? search, string? chapter, bool upcomingOnly,
+        Guid? currentUserId = null, bool includeDrafts = false, CancellationToken cancellationToken = default);
+
+    Task<EventDto?> GetByIdAsync(
+        Guid id, Guid? currentUserId = null, bool includeDrafts = false, CancellationToken cancellationToken = default);
+
+    Task<Result<EventDto>> CreateAsync(CreateEventRequest request, CancellationToken cancellationToken = default);
+
+    Task<Result<EventDto>> UpdateAsync(Guid id, UpdateEventRequest request, CancellationToken cancellationToken = default);
+
+    Task<Result<EventRegistrationDto>> RegisterAsync(Guid userId, Guid eventId, string mode, CancellationToken cancellationToken = default);
+
+    Task<Result> CancelRegistrationAsync(Guid userId, Guid registrationId, CancellationToken cancellationToken = default);
+
+    Task<Result> SubmitEvaluationAsync(Guid userId, Guid registrationId, int rating, string? comments, CancellationToken cancellationToken = default);
+
+    Task<Result> RecordAttendanceAsync(
+        Guid eventId, IReadOnlyList<RegistrantAttendanceRequest> registrants, Guid adminUserId, CancellationToken cancellationToken = default);
+
+    Task<MyCpdSummaryDto> GetMyCpdAsync(Guid userId, CancellationToken cancellationToken = default);
+
+    Task<Result<EventRosterDto>> GetRosterAsync(Guid eventId, CancellationToken cancellationToken = default);
+
+    /// <summary>isAdmin bypasses the ownership check - an Admin can pull any registration's
+    /// certificate data, a member only their own.</summary>
+    Task<Result<CertificateDataDto>> GetCertificateDataAsync(
+        Guid userId, Guid registrationId, bool isAdmin, CancellationToken cancellationToken = default);
+}

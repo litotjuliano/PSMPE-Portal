@@ -81,10 +81,16 @@ public static class ReceiptGenerator
 
         DrawRow("Membership Fee", $"₱{fees.MembershipFee:N2}");
         DrawRow("Shipping Fee", $"₱{fees.ShippingFee:N2}");
+        // Only itemized when this member actually has it - keeps the total below matching exactly
+        // what's listed above it, for either kind of member.
+        if (member.HasPortalAccess)
+        {
+            DrawRow("Portal Access Fee", $"₱{fees.PortalFee:N2}");
+        }
         y += 10;
         canvas.DrawLine(marginX, y, Width - marginX, y, linePaint);
         y += 46;
-        DrawRow("Total Paid", $"₱{fees.RegistrationTotal:N2}");
+        DrawRow("Total Paid", $"₱{(member.HasPortalAccess ? fees.RegistrationTotalWithPortal : fees.RegistrationTotalWithoutPortal):N2}");
 
         y += 40;
         canvas.DrawText($"Annual Dues of ₱{fees.AnnualDues:N2} are payable one year after registration.", marginX, y, labelPaint);

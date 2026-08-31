@@ -123,6 +123,7 @@ export interface MembershipApplicationState {
   housePhone: string
   agreedToTerms: boolean
   dataPrivacyConsent: boolean
+  includePortalAccess: boolean
 }
 
 interface WizardFieldErrors {
@@ -791,12 +792,30 @@ export const MembershipApplicationWizardCard = ({
                 {/* Read from SystemConfig, not hardcoded - the same figures the receipt uses,
                     so the two can no longer drift apart. */}
                 <div className="text-sm text-default-700 flex flex-col gap-1">
-                  <p className="font-semibold text-default-800">TOTAL: {fees ? peso.format(fees.registrationTotal) : '…'}</p>
+                  <p className="font-semibold text-default-800">
+                    TOTAL:{' '}
+                    {fees
+                      ? peso.format(state.includePortalAccess ? fees.registrationTotalWithPortal : fees.registrationTotalWithoutPortal)
+                      : '…'}
+                  </p>
                   <p>Membership Fee: {fees ? peso.format(fees.membershipFee) : '…'}</p>
                   <p>Annual Dues: {fees ? peso.format(fees.annualDues) : '…'} (payable one year after registration)</p>
                   <p>PVC ID: Included</p>
                   <p>Shipping Fee (delivery option only): {fees ? peso.format(fees.shippingFee) : '…'}</p>
+                  <p>
+                    Portal Access:{' '}
+                    {state.includePortalAccess ? `Included (+${fees ? peso.format(fees.portalFee) : '…'})` : 'Not included'}
+                  </p>
                 </div>
+                <label className="flex items-center gap-2 text-sm text-default-800 mt-3">
+                  <input
+                    type="checkbox"
+                    className="form-checkbox"
+                    checked={state.includePortalAccess}
+                    onChange={(e) => onChange('includePortalAccess', e.target.checked)}
+                  />
+                  Include Portal Access {fees ? `(+${peso.format(fees.portalFee)})` : ''}
+                </label>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-3 text-sm">
                   <div className="border border-default-200 rounded-lg p-3">
                     <p className="font-semibold text-default-800 mb-1">Bank Deposit</p>

@@ -4,7 +4,7 @@ import { LuBadgeCheck, LuTriangleAlert } from 'react-icons/lu'
 import PageBreadcrumb from '../components/shared/PageBreadcrumb'
 import PageMeta from '../components/shared/PageMeta'
 import { MembershipDashboard } from '../components/dashboard-membership/MembershipDashboard'
-import { EventsPreviewWidget } from '../components/dashboard-previews/EventsPreviewWidget'
+import { UpcomingEventsWidget } from '../components/dashboard-events/UpcomingEventsWidget'
 import { NewsPreviewWidget } from '../components/dashboard-previews/NewsPreviewWidget'
 import { GaugeStat } from '../components/shared/GaugeStat'
 import { FilePreviewModal } from '../components/shared/FilePreviewModal'
@@ -166,7 +166,7 @@ export const DashboardPage = () => {
             {!isMember && <MembershipDashboard />}
           </div>
           <div className="lg:col-span-1 col-span-1 flex flex-col gap-5">
-            <EventsPreviewWidget />
+            <UpcomingEventsWidget />
             <NewsPreviewWidget />
           </div>
         </div>

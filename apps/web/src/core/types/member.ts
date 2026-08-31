@@ -1,8 +1,8 @@
 export const MembershipStatus = {
-  Pending: 0,
-  Active: 1,
-  Expired: 2,
-  Deactivated: 3,
+  Pending: 'Pending',
+  Active: 'Active',
+  Expired: 'Expired',
+  Deactivated: 'Deactivated',
 } as const
 
 export type MembershipStatusValue = (typeof MembershipStatus)[keyof typeof MembershipStatus]
@@ -124,6 +124,9 @@ export interface Member {
   memberType: string
   status: MembershipStatusValue
   renewalDueDate: string | null
+  /** Whether the member currently has portal access. Reflects only the most recently verified
+   *  payment - written server-side exclusively by PaymentVerification.Apply, never a direct toggle. */
+  hasPortalAccess: boolean
   nationalDuesReferenceNo: string | null
   approvedAt: string | null
   submittedAt: string | null

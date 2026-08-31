@@ -4,6 +4,8 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using PSMPE.Portal.Application.Common.Interfaces;
 using PSMPE.Portal.Application.Common.Models;
+using PSMPE.Portal.Application.Events;
+using PSMPE.Portal.Application.Events.Dtos;
 using PSMPE.Portal.Application.Members;
 using PSMPE.Portal.Application.Members.Dtos;
 using PSMPE.Portal.Application.Payments;
@@ -24,7 +26,7 @@ namespace PSMPE.Portal.WebAPI.Controllers;
 public class MembersController(
     IMemberService memberService, IMemberUploadService memberUploadService,
     IMemberCertificateService memberCertificateService, UserManager<ApplicationUser> userManager,
-    IEmailSender emailSender, IPaymentService paymentService) : ControllerBase
+    IEmailSender emailSender, IPaymentService paymentService, IEventService eventService) : ControllerBase
 {
     [HttpGet]
     [RequirePermission(Permissions.Members.View)]
@@ -71,6 +73,21 @@ public class MembersController(
 
         var member = await memberService.GetByUserIdAsync(userId.Value, cancellationToken);
         return member is null ? NotFound() : Ok(member);
+    }
+
+    /// <summary>Own registrations plus computed, prorated credit total - see
+    /// EventService.GetMyCpdAsync. Reachable even while Expired, same as the other me/* reads.</summary>
+    [HttpGet("me/cpd")]
+    [AllowExpiredMember]
+    public async Task<ActionResult<MyCpdSummaryDto>> GetMyCpd(CancellationToken cancellationToken)
+    {
+        var userId = CurrentUserId;
+        if (userId is null)
+        {
+            return Unauthorized();
+        }
+
+        return Ok(await eventService.GetMyCpdAsync(userId.Value, cancellationToken));
     }
 
     [HttpPost]
@@ -147,7 +164,7 @@ public class MembersController(
 
     [HttpPost("me/submit")]
     [AllowExpiredMember]
-    public async Task<IActionResult> SubmitMyProfile(CancellationToken cancellationToken)
+    public async Task<IActionResult> SubmitMyProfile(CancellationToken cancellationToken, SubmitMyProfileRequest? request = null)
     {
         var userId = CurrentUserId;
         if (userId is null)
@@ -155,7 +172,9 @@ public class MembersController(
             return Unauthorized();
         }
 
-        var result = await memberService.SubmitMyProfileAsync(userId.Value, cancellationToken);
+        // No body at all (older clients) is the same as an unticked checkbox - see
+        // SubmitMyProfileRequest's doc comment.
+        var result = await memberService.SubmitMyProfileAsync(userId.Value, request?.IncludePortalAccess ?? false, cancellationToken);
         return ToActionResult(result);
     }
 

@@ -12,6 +12,7 @@ import {
   PageBreadcrumb,
   PageMeta,
   PaymentsQueueTable,
+  PaymentsSummaryPanel,
   type MembersView,
 } from '../../integrations/template'
 
@@ -259,16 +260,19 @@ export function MembersPage() {
         {loading ? (
           <p className="text-sm text-default-500">Loading…</p>
         ) : isPayments ? (
-          <PaymentsQueueTable
-            payments={payments}
-            canManagePayments={canManageMembers}
-            onVerify={handleVerifyPayment}
-            onReject={handleRejectPayment}
-            page={page}
-            pageSize={PAGE_SIZE}
-            totalCount={totalCount}
-            onPageChange={setPage}
-          />
+          <>
+            <PaymentsSummaryPanel />
+            <PaymentsQueueTable
+              payments={payments}
+              canManagePayments={canManageMembers}
+              onVerify={handleVerifyPayment}
+              onReject={handleRejectPayment}
+              page={page}
+              pageSize={PAGE_SIZE}
+              totalCount={totalCount}
+              onPageChange={setPage}
+            />
+          </>
         ) : (
           <MembersTable
             members={members}

@@ -38,6 +38,9 @@ All under `/api/payments`, all authenticated.
 - `GET /fees` — **any authenticated caller**: the registration wizard shows the total to an
   applicant who holds no permissions yet.
 - `PUT /fees` — `members:manage`.
+- `GET /fees/promotions`, `POST /fees/promotions`, `DELETE /fees/promotions/{id}` — `members:manage`.
+  See "Promotional pricing" below.
+- `GET /reports/summary?startDate=&endDate=` — `members:view`. See "Payment reporting" below.
 
 ## Approval and payment are one act
 
@@ -79,11 +82,17 @@ deliberately over an override variant; revisit if that case turns out to be comm
 
 | Kind | Effect |
 |---|---|
-| `NewMembership` | `Status = Active`, `RenewalDueDate = ApprovedAt + 1 year` |
-| `Renewal` | `Status = Active`, `RenewalDueDate = previous RenewalDueDate + 1 year` |
+| `NewMembership` | `Status = Active`, `RenewalDueDate = ApprovedAt + 1 year`, `Member.HasPortalAccess = payment.IncludesPortalAccess` |
+| `Renewal` | `Status = Active`, `RenewalDueDate = previous RenewalDueDate + 1 year`, `Member.HasPortalAccess = payment.IncludesPortalAccess` |
 
 Both record `CoversUntil` on the payment, so the history says not just that money was accepted but
 what period it bought.
+
+- **`Member.HasPortalAccess` is written exclusively here**, inside `PaymentVerification.Apply`. No
+  admin action grants or denies it independently of what was actually paid for — verifying a
+  payment and settling portal access happen in the same transaction as the same statement, with no
+  separate "grant portal access" endpoint or admin toggle to bypass it. See "Portal access is a
+  per-payment add-on" below.
 
 - **The anniversary is fixed.** A renewal advances from the *previous due date*, not from today.
   Advancing from today would hand every late payer the grace period for free and permanently shift
@@ -141,16 +150,24 @@ configured registration total, since the member declared none on that path.
 
 ## Fees
 
-Three `SystemConfig` keys — `MembershipFee` (1500), `MembershipShippingFee` (200), `AnnualDues`
-(600) — read together through one cached accessor, with the shipped constants as fallbacks so a
-database missing the rows behaves as before rather than charging zero.
+Four `SystemConfig` keys — `MembershipFee` (1500), `MembershipShippingFee` (200), `AnnualDues`
+(600), `PortalFee` (900) — read together through one cached accessor (`MembershipFeeKeys.All` now
+has four entries), with the shipped constants as fallbacks so a database missing the rows behaves as
+before rather than charging zero.
 
 They drive the registration wizard's Payment Details totals, `ReceiptGenerator`, and the amount
 pre-filled on a member's renewal form. `ReceiptGenerator` takes them as a parameter rather than
 reading them itself, so it stays a pure renderer with no database dependency.
 
+`MembershipFeesDto` exposes four computed totals — `RegistrationTotalWithoutPortal`,
+`RegistrationTotalWithPortal`, `RenewalTotalWithoutPortal`, `RenewalTotalWithPortal` — rather than
+one figure per context, since every total now has a with/without-the-add-on pair. These are what the
+wizard and `RenewalPaymentCard` actually read to show a payer the price with and without portal
+access; see "Portal access is a per-payment add-on" below for why there's no single combined total.
+
 - **`/membership-fees`** (`members:manage`) is the first admin-editable configuration screen in the
-  product. Deliberately scoped to these three values rather than a general `SystemConfig` editor.
+  product. Now scoped to these four values (`PortalFee` joined the original three) rather than a
+  general `SystemConfig` editor.
 - **`UpdateFeesAsync` is the first write path to `SystemConfigs`** anywhere in the app. Every other
   consumer assumed the table was seed-only and TTL expiry was enough, so it evicts its own cache
   entry — a stale price for ten minutes after an edit would be worse than no cache. If a
@@ -158,6 +175,136 @@ reading them itself, so it stays a pure renderer with no database dependency.
 - **`SystemConfigSeeder` now seeds per key.** It previously only ran when the whole table was empty,
   so any key added after the first deployment would never appear on an existing database. Each
   missing key is now filled independently and admin-edited values are left alone.
+
+## Portal access is a per-payment add-on
+
+`PortalFee` is a fourth fee alongside the other three, but it is never mandatory and never a global
+mode. The board considered an admin-wide switch between "membership only" and "membership + portal"
+pricing policies first, but a member mid-cycle under one policy wouldn't pick up the other until
+their own next renewal — up to twelve months away, with no clean way to backfill the difference.
+Instead every registration and every renewal independently offers portal access as an optional
+tick-box, decided fresh each time by whoever is paying (the member, or the admin recording a
+walk-in's actual payment).
+
+Three fields carry this:
+
+- **`Payment.IncludesPortalAccess`** (bool) — whether *this specific payment* declared the add-on.
+- **`Payment.PortalFeeAmount`** (decimal) — the exact `PortalFee` amount in effect when this payment
+  was created, resolved through `FeePromotionResolver` (see "Promotional pricing" below).
+  Deliberately captured independently of whatever the payer's declared `Amount` actually was — the
+  same way the other three fees are never validated against `Amount` (see "Not built") — so a later
+  fee or promotion edit can never retroactively change what a historical payment's portal-revenue
+  contribution was. It is zero whenever `IncludesPortalAccess` is false.
+- **`Member.HasPortalAccess`** (bool) — the member's *current* access. Recurring, not permanent: it
+  reflects only the most recently *verified* payment's `IncludesPortalAccess`, and is written
+  exclusively by `PaymentVerification.Apply` (see "What verification does" above). A renewal that
+  omits the add-on revokes access at that point, in the same call that would otherwise have granted
+  it.
+
+Three call sites create a `Payment` and each independently resolves and stamps
+`PortalFeeAmount`/`IncludesPortalAccess`:
+
+- **`PaymentService.SubmitAsync`** — self-service submission (`POST /api/payments/me`), covering
+  both registration proof-submission and renewals. `SubmitPaymentRequest.IncludePortalAccess` sets
+  `IncludesPortalAccess` directly; `PortalFeeAmount` is resolved via
+  `FeePromotionResolver.ResolveCurrentAsync` when it's true, else zero.
+- **`MemberService.EnsureRegistrationPaymentAsync`** — the registration wizard's fallback path,
+  called from `SubmitMyProfileAsync` when the applicant hasn't already created a payment through
+  `POST /api/payments/me`. Adds the resolved `PortalFee` onto the computed `Amount` when the
+  applicant ticked the wizard's opt-in checkbox.
+- **`MemberService.ResolveRegistrationPaymentAsync`** — the admin walk-in path, invoked from
+  `ApproveAsync` via `RecordPaymentRequest.IncludePortalAccess`. This is also the paper-form
+  registration path: an admin re-keys an offline application through the same member-creation
+  screen and records the payment/portal choice at approval time, so an applicant without reliable
+  internet or portal comfort is served the same way. Unlike the other two call sites there's no
+  computed default `Amount` to add the fee onto here — the admin types the total directly — but
+  `PortalFeeAmount` is still resolved and stamped independently, for the same reporting-accuracy
+  reason.
+
+## Fee edits are prospective only
+
+Editing `/membership-fees` — now four fields, MembershipFee/ShippingFee/AnnualDues/PortalFee —
+only affects payments created *after* the edit. Every payment captures its own
+`Amount`/`IncludesPortalAccess`/`PortalFeeAmount` once, at creation, and nothing ever re-reads live
+config for an existing row — the same principle behind "Amount validation against the configured
+fee" already being a deliberate non-feature (see "Not built"): a `Payment` is a record of what was
+charged at the time, not a live view of current pricing.
+
+## Promotional pricing
+
+The `FeePromotion` entity (`FeeKey`, `PromoAmount`, `StartDate`/`EndDate`, `CreatedByUserId`) lets
+any of the four fees carry a temporary discounted price for a date range — a one-day discounted
+membership fee during an outreach event was the motivating case. It's resolved live by
+`FeePromotionResolver.ResolveAsync`/`ResolveCurrentAsync`, a pure date-range lookup with no caching
+of its own and no background job: it starts and stops by itself because every fee read simply asks
+"is today between `StartDate` and `EndDate`?" rather than something having to flip a value at
+midnight.
+
+- **Overlapping promotions for the same fee are rejected at creation**
+  (`PaymentService.CreatePromotionAsync`), which keeps at most one row active per `FeeKey` per day —
+  the resolver never has to pick among several matches, and the first match is always the only
+  match.
+- **Admin CRUD** via `GET/POST/DELETE /api/payments/fees/promotions` (`members:manage` — unlike
+  `GET /fees`, this configuration surface isn't shown to an unapproved applicant, so it isn't
+  `[AllowExpiredMember]`). Deletes are hard deletes: a `FeePromotion` is a lightweight scheduling
+  record, not an audited transaction like `Payment`, and nothing downstream references one by `Id`
+  once it's gone since payments created during its window already captured their own amount.
+- **UI**: a Promotions panel on `/membership-fees`, with Status and Fee filters and a "Single day"
+  convenience checkbox that sets `StartDate = EndDate`.
+- A promotion covering today evicts the same fees cache entry an `UpdateFeesAsync` edit does, so it
+  takes effect on the same up-to-ten-minutes cadence as a manual price change.
+
+## Payment reporting
+
+`GET /api/payments/reports/summary?startDate=&endDate=` (`members:view`) answers "how much portal
+revenue and membership revenue came in over this range" for the board/admin, without a full
+line-item export. It filters to `Verified` `NewMembership`/`Renewal` payments only —
+`EventRegistration` is excluded as a separate revenue stream (see `openspecs/events.md`), and a
+`Submitted` or `Rejected` payment isn't real revenue yet — with `PaidOn` falling in the inclusive
+`[startDate, endDate]` range.
+
+`PaymentReportSummaryDto` returns:
+
+- Membership-only count/total (`IncludesPortalAccess == false`).
+- Combined count/total (`IncludesPortalAccess == true`).
+- Portal revenue — `PortalFeeAmount` summed explicitly over the combined subset, rather than over
+  every matching payment, so the figure doesn't quietly depend on the (currently true, but not
+  worth trusting blindly) invariant that a membership-only payment always has a zero
+  `PortalFeeAmount`.
+
+An inverted range (`startDate > endDate`) is rejected as a `Result.Failure` in the service layer
+rather than at the controller, so the rule is unit-testable. Admin UI: `PaymentsSummaryPanel.tsx` on
+the Payments tab, with a month quick-pick (this month / last month / last 3 / last 6 months / this
+year) plus a custom date range, rendered above `PaymentsQueueTable.tsx`.
+
+## Event registration payments (`Kind.EventRegistration`)
+
+`Payment.Kind` gained a third case, `EventRegistration`, alongside `NewMembership`/`Renewal`, and
+`Payment` gained a nullable `EventRegistrationId` FK (mirrors how `Payment.MemberId` already works)
+— added for the Event Management & CPD Credit Tracker feature, see `openspecs/events.md`.
+
+- **`POST /{id}/verify` and `POST /{id}/reject` now branch on `Kind`.** For an `EventRegistration`
+  payment, verifying/rejecting drives the linked `EventRegistration.Status` instead of
+  `MembershipStatus`/`RenewalDueDate` — verifying moves it to `PaymentVerified`, rejecting moves it
+  to `Rejected` (the member can resubmit). `EventPaymentVerification.Apply`
+  (`Application/Payments/EventPaymentVerification.cs`) is the `EventRegistration` counterpart to
+  `PaymentVerification.Apply` above: same shape (marks the `Payment` verified, stamps
+  `DecidedByUserId`/`DecidedAt`), but with none of `PaymentVerification.Apply`'s membership-specific
+  `Member.ApprovedAt`/`RenewalDueDate` arithmetic, since none of that applies to an event payment.
+  Both `PaymentService.VerifyAsync` and the event-only `RecordEventCashPaymentAsync` (below) call it,
+  so "this event payment is now verified" has exactly one definition regardless of which path reached
+  it — the same reasoning that gives `PaymentVerification.Apply` a single definition for memberships.
+- **Two new endpoints exist under `/api/events/...`, not `/api/payments/...`**, for the two payment
+  actions that are genuinely new and specific to events — not just `Kind`-branching on an existing
+  one:
+  - `POST /api/events/registrations/{id}/payment` — member proof submission, scoped to a
+    registration id rather than a bare payment id.
+  - `POST /api/events/registrations/{id}/payment/cash` — admin-only, records a cash payment for an
+    on-site payer: creates and verifies a `Payment` in one call, with no proof file, reaching
+    `PaymentVerified` directly. Refused if the registration already has a submitted or verified
+    `Payment` — a registration has exactly one active `Payment` regardless of path.
+  See `openspecs/events.md` ("The two payment paths") for the full detail — not duplicated here so
+  this file doesn't become a second copy of that documentation.
 
 ## Membership lifecycle: reminders, grace period, and auto-expiry
 
@@ -194,6 +341,21 @@ sets `Status = Active` on every verify — a member flipped to `Expired` by the 
 restored to full access the moment their payment is verified, whether that happens the same day or
 months later.
 
+**A second, independent condition restricts access the same way**: any member — whatever their
+`Status`, `Deactivated` excepted — whose `HasPortalAccess` is `false` is 403'd with
+`PORTAL_ACCESS_REQUIRED`, same allowlist and same JSON shape (`{ code, message }`) as
+`MEMBERSHIP_EXPIRED`. There is no `Active`-only guard on this check; it's a plain
+`!member.HasPortalAccess && member.Status != MembershipStatus.Deactivated`. `Deactivated` members
+are excluded, mirroring the existing exclusion in `ComputeIsExpired`/`ComputeIsInGracePeriod` —
+deactivation is a distinct admin action, not a lapsed-payment state, and shouldn't be newly affected
+by this feature. This also means a `Pending` applicant is caught by the same condition by
+construction — `HasPortalAccess` defaults to `false` and stays that way until their first payment is
+ever verified — which is harmless in practice, since a pending applicant only needs the same
+`[AllowExpiredMember]`-allowlisted self-service endpoints anyway while working through the
+registration wizard. The two checks run in a fixed order: the pre-existing `Status == Expired` check
+runs first, unchanged, so a member failing both conditions sees `MEMBERSHIP_EXPIRED`, never
+`PORTAL_ACCESS_REQUIRED`.
+
 ## Admin UI
 
 A fourth tab on the Members page: **Payments**, listing `Submitted` payments with member, kind,
@@ -216,9 +378,19 @@ after expiry, and carries the submit form plus full payment history with rejecti
 The form appears within 60 days of the due date, during grace, after expiry, or when no due date is
 set yet. Paying early is fine; showing it eleven months out would be noise.
 
+The card also shows the member's current portal status (`member.hasPortalAccess`, "Included"/"Not
+included") and the same opt-in checkbox as the registration wizard — pre-checked to that current
+status, with the pre-filled amount following it (`renewalTotalWithoutPortal`/`WithPortal`) — threaded
+through as `SubmitPaymentRequest.IncludePortalAccess`.
+
 ## Not built
 
 - **Online payment gateway.** Members upload proof of an out-of-band transfer.
 - **Partial payments, refunds, invoices.** One payment covers one period.
 - **Amount validation against the configured fee.** Under- and overpayments both happen; the admin
   sees the proof and the declared amount and decides.
+- **Mid-cycle portal upgrade.** No standalone way to add portal access between renewal dates — only
+  through a renewal payment that includes it.
+- **Bulk import for paper-form registrants.** The admin walk-in path
+  (`MemberService.ResolveRegistrationPaymentAsync`) handles one paper form at a time; no batch/CSV
+  intake exists. Confirmed still acceptable at current volumes (~100 forms) during design.

@@ -18,6 +18,13 @@ public class Payment : BaseEntity
     public Guid MemberId { get; set; }
     public Member Member { get; set; } = null!;
 
+    /// <summary>Set only when Kind is EventRegistration. Nullable because NewMembership/Renewal
+    /// payments have no event. A registration can have more than one Payment row over time (e.g. a
+    /// Rejected one followed by a resubmission), same as a member's own NewMembership/Renewal
+    /// history - only one may be Submitted or Verified at a time, enforced in PaymentService.</summary>
+    public Guid? EventRegistrationId { get; set; }
+    public EventRegistration? EventRegistration { get; set; }
+
     public PaymentKind Kind { get; set; }
 
     /// <summary>What the member says they paid, and when. Not validated against the configured fee -
@@ -41,4 +48,14 @@ public class Payment : BaseEntity
     /// <summary>The RenewalDueDate this payment produced, recorded at verification. Without it the
     /// history says a payment was accepted but not what period it bought.</summary>
     public DateOnly? CoversUntil { get; set; }
+
+    /// <summary>Whether this payment included the optional Portal Fee add-on, decided by whoever
+    /// submitted it (the member, or an admin recording a walk-in). Set once at submission and never
+    /// changed afterward - see openspec/changes/add-portal-access-payment/proposal.md.</summary>
+    public bool IncludesPortalAccess { get; set; }
+
+    /// <summary>The exact Portal Fee amount in effect (promo-aware) when this payment was created,
+    /// captured separately from Amount so revenue reporting stays accurate even after a later fee
+    /// or FeePromotion change. Zero when IncludesPortalAccess is false.</summary>
+    public decimal PortalFeeAmount { get; set; }
 }
