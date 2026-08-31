@@ -1,7 +1,7 @@
 import { LuBadgeCheck, LuCircleAlert, LuClock, LuCircleSlash } from 'react-icons/lu'
 import type { IconType } from 'react-icons/lib'
 import type { ProfileCompleteness } from '../../../../core/api/endpoints/memberApi'
-import type { Member } from '../../../../core/types/member'
+import type { Member, MembershipStatusValue } from '../../../../core/types/member'
 import { MembershipStatus } from '../../../../core/types/member'
 
 interface MembershipStatusCardProps {
@@ -9,7 +9,7 @@ interface MembershipStatusCardProps {
   completeness: ProfileCompleteness | null
 }
 
-const statusDisplay: Record<number, { title: string; blurb: string; icon: IconType; tone: string; tint: string }> = {
+const statusDisplay: Record<MembershipStatusValue, { title: string; blurb: string; icon: IconType; tone: string; tint: string }> = {
   [MembershipStatus.Pending]: {
     title: 'Pending Approval',
     blurb: 'Your application has been received and is awaiting review by an administrator.',
