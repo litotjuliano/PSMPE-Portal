@@ -16,6 +16,12 @@ public static class IdentitySeeder
     /// <summary>
     /// Default permission grants applied only when a role is first created (see the loop below) -
     /// re-running the seeder never clobbers permissions an admin edits later via /admin/roles.
+    /// Super Admin is the one exception: AdminController.GetRoles excludes it from that same UI
+    /// ("isn't manageable through the app for any caller"), so it is never a customization surface
+    /// an admin might have deliberately narrowed - unlike every other role, its claims are always
+    /// reconciled up to exactly Permissions.All on every startup (see the loop below), so a
+    /// permission added to Permissions.* after this role already exists in a given environment
+    /// (e.g. Events.* did, on an environment seeded before that feature shipped) still reaches it.
     /// </summary>
     private static readonly Dictionary<string, string[]> DefaultRolePermissions = new()
     {
@@ -77,9 +83,10 @@ public static class IdentitySeeder
     {
         foreach (var roleName in RoleNames.All)
         {
-            if (!await roleManager.RoleExistsAsync(roleName))
+            var role = await roleManager.FindByNameAsync(roleName);
+            if (role is null)
             {
-                var role = new IdentityRole<Guid>(roleName);
+                role = new IdentityRole<Guid>(roleName);
                 await roleManager.CreateAsync(role);
                 logger.LogInformation("Created role {RoleName}", roleName);
 
@@ -88,6 +95,26 @@ public static class IdentitySeeder
                     foreach (var permission in permissions)
                     {
                         await roleManager.AddClaimAsync(role, new Claim(Permissions.ClaimType, permission));
+                    }
+                }
+            }
+
+            // See DefaultRolePermissions's doc comment: Super Admin is never a user-editable
+            // customization surface, so (unlike every other role, seeded once above and left
+            // alone) its claims are always reconciled up to the full permission set here -
+            // additive only, so this is safe to run on every startup.
+            if (roleName == RoleNames.SuperAdmin)
+            {
+                var existingPermissions = (await roleManager.GetClaimsAsync(role))
+                    .Where(c => c.Type == Permissions.ClaimType)
+                    .Select(c => c.Value)
+                    .ToHashSet();
+                foreach (var permission in Permissions.All)
+                {
+                    if (!existingPermissions.Contains(permission))
+                    {
+                        await roleManager.AddClaimAsync(role, new Claim(Permissions.ClaimType, permission));
+                        logger.LogInformation("Granted missing permission {Permission} to {RoleName}", permission, roleName);
                     }
                 }
             }

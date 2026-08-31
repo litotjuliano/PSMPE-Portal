@@ -11,6 +11,7 @@ using PSMPE.Portal.Application.Members;
 using PSMPE.Portal.Application.Members.Dtos;
 using PSMPE.Portal.Domain.Entities;
 using PSMPE.Portal.Domain.Enums;
+using PSMPE.Portal.Infrastructure.Persistence.Seed;
 using PSMPE.Portal.WebAPI.Controllers;
 using Xunit;
 
@@ -731,5 +732,40 @@ public class AdminControllerTests : IClassFixture<CustomWebApplicationFactory>, 
         var result = await _controller.SendPasswordReset(user.Id);
 
         Assert.IsType<NoContentResult>(result);
+    }
+
+    [Fact]
+    public async Task IdentitySeeder_SuperAdminRoleMissingAPermission_ReSeedingGrantsIt()
+    {
+        // Reproduces a stale environment: Super Admin's role was created before a permission
+        // (e.g. Events.Manage) existed in Permissions.All, and - unlike every other role, which is
+        // deliberately left alone once seeded so an admin's own edits via /admin/roles are never
+        // clobbered - Super Admin isn't a customization surface at all (AdminController.GetRoles
+        // excludes it from that UI entirely), so re-running the seeder must still reach it.
+        var superAdminRole = await _roleManager.FindByNameAsync(RoleNames.SuperAdmin) ?? throw new InvalidOperationException("Super Admin role missing.");
+        var claims = await _roleManager.GetClaimsAsync(superAdminRole);
+        var eventsManageClaim = claims.Single(c => c.Type == Permissions.ClaimType && c.Value == Permissions.Events.Manage);
+        await _roleManager.RemoveClaimAsync(superAdminRole, eventsManageClaim);
+        Assert.DoesNotContain((await _roleManager.GetClaimsAsync(superAdminRole)), c => c.Value == Permissions.Events.Manage);
+
+        await IdentitySeeder.SeedAsync(_roleManager, _userManager, _configuration, NullLogger.Instance);
+
+        var restoredClaims = await _roleManager.GetClaimsAsync(superAdminRole);
+        Assert.Contains(restoredClaims, c => c.Type == Permissions.ClaimType && c.Value == Permissions.Events.Manage);
+    }
+
+    [Fact]
+    public async Task IdentitySeeder_OtherRoleMissingANonDefaultPermission_ReSeedingLeavesItAlone()
+    {
+        // The contrast case: Manager never had Events.Manage in its own defaults (only
+        // Events.View) - re-seeding must not grant it one, since Manager (unlike Super Admin) is a
+        // real /admin/roles customization surface and this would silently overrule an admin's own
+        // choice not to grant it.
+        var managerRole = await _roleManager.FindByNameAsync(RoleNames.Manager) ?? throw new InvalidOperationException("Manager role missing.");
+
+        await IdentitySeeder.SeedAsync(_roleManager, _userManager, _configuration, NullLogger.Instance);
+
+        var claims = await _roleManager.GetClaimsAsync(managerRole);
+        Assert.DoesNotContain(claims, c => c.Type == Permissions.ClaimType && c.Value == Permissions.Events.Manage);
     }
 }
