@@ -36,12 +36,12 @@ of any permission they hold.
 
 | Endpoint | Auth | Purpose | Errors |
 |---|---|---|---|
-| `GET /api/events` | Any authenticated | Paged event list — `search`, `chapter`, `upcomingOnly` filters | — |
-| `GET /api/events/{id}` | Any authenticated | One event's detail, including its sessions | `404` unknown event |
+| `GET /api/events` | Any authenticated; `[AllowExpiredMember]` | Paged event list — `search`, `chapter`, `upcomingOnly` filters | — |
+| `GET /api/events/{id}` | Any authenticated; `[AllowExpiredMember]` | One event's detail, including its sessions | `404` unknown event |
 | `POST /api/events` | `events:manage` | Create an event (`CpdUnitsOnsite`/`CpdUnitsOnline` start null) | `400` invalid (blank title, `EndsAt` before `StartsAt`); `403` without the permission |
 | `PUT /api/events/{id}` | `events:manage` | Edit event details, set/correct either CPD unit value, add/remove/reorder sessions | `404` unknown event; `400` invalid (no sessions left, `EndsAt` before `StartsAt`, a session id not belonging to this event); `409` removing a session that already has recorded attendance |
 | `POST /api/events/{id}/poster` | `events:manage` | Upload/replace the event's poster/banner image (multipart) | `404` unknown event; `400` not a JPG/PNG, over 8 MB, or unreadable; `403` without the permission |
-| `GET /api/events/{id}/poster` | Any authenticated | Stream the poster image | `404` unknown event or no poster uploaded yet |
+| `GET /api/events/{id}/poster` | Any authenticated; `[AllowExpiredMember]` | Stream the poster image | `404` unknown event or no poster uploaded yet |
 | `POST /api/events/{id}/register` | Any authenticated (Member) | Create an `EventRegistration` with a chosen `Mode` (→ `Registered`) | `404` unknown event; `400` unrecognized `Mode`; `409` already holds a non-cancelled registration for this event |
 | `POST /api/events/registrations/{id}/cancel` | Owner | Cancel own registration | `404` unknown registration; `403` not the owner; `400` can no longer be cancelled (payment already verified or beyond) |
 | `POST /api/events/registrations/{id}/payment` | Owner | Submit proof of payment (reuses the membership proof-submit pattern) | `404` unknown registration; `403` not the owner; `400` not awaiting payment, or invalid amount/date; `409` a payment is already awaiting verification |
@@ -56,6 +56,17 @@ of any permission they hold.
 the `members:view`/`members:manage` pattern in `roles.md` — editable afterward via `/admin/roles`
 like any other permission. Status codes above follow `EventsController.ToErrorActionResult`'s
 mapping: `NotFound` → `404`, `Forbidden` → `403`, `Conflict` → `409`, everything else → `400`.
+
+**Browsing is allowed regardless of membership restriction; registering is not.** `GetAll`/
+`GetById`/`GetPoster` carry `[AllowExpiredMember]` so any authenticated member can see the list and
+an event's detail/poster whether they're Expired, have no `Member` row yet, or lack the
+portal-access add-on — see `members.md`'s Authorization rules for the full
+`MembershipAccessMiddleware` mechanism this and every other `[AllowExpiredMember]` reference on this
+page follows. `Register` (and `SubmitPayment`, cancel, evaluation) carry no such attribute, so a
+restricted member still gets `403` from any of those. `EventRegisterModal.tsx` mirrors this
+client-side: the modal itself always opens, but the Onsite/Online picker and Register button are
+disabled with a message specific to the restriction reason (Expired, no application yet, or lacking
+portal access).
 
 ## The `Event` → `EventSession` → `EventAttendance` shape
 

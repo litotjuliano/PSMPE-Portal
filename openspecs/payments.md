@@ -364,9 +364,11 @@ by this feature. This also means a `Pending` applicant is caught by the same con
 construction — `HasPortalAccess` defaults to `false` and stays that way until their first payment is
 ever verified — which is harmless in practice, since a pending applicant only needs the same
 `[AllowExpiredMember]`-allowlisted self-service endpoints anyway while working through the
-registration wizard. The two checks run in a fixed order: the pre-existing `Status == Expired` check
-runs first, unchanged, so a member failing both conditions sees `MEMBERSHIP_EXPIRED`, never
-`PORTAL_ACCESS_REQUIRED`.
+registration wizard. These two checks (plus a third, `MEMBERSHIP_NOT_STARTED` for a Member-role
+account with no `Member` row at all yet) run in a fixed order — see `members.md`'s Authorization
+rules for the full three-condition ordering and allowlist. The pre-existing `Status == Expired`
+check runs first among all three, so a member failing more than one sees `MEMBERSHIP_EXPIRED`,
+never `PORTAL_ACCESS_REQUIRED`.
 
 ## Admin UI
 
