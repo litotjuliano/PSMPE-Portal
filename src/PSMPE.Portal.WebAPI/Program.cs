@@ -1,4 +1,5 @@
 using System.Net;
+using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
@@ -20,7 +21,18 @@ var builder = WebApplication.CreateBuilder(args);
 // >$1M-revenue company reselling the software) - see QuestPDF's license terms if that ever changes.
 QuestPDF.Settings.License = QuestPDF.Infrastructure.LicenseType.Community;
 
-builder.Services.AddControllers();
+builder.Services.AddControllers().AddJsonOptions(options =>
+{
+    // Default System.Text.Json behaviour serializes every enum (PaymentKind, PaymentStatus,
+    // MembershipStatus, ...) as its underlying integer, silently diverging from every frontend
+    // type that assumes the string name (e.g. PaymentKindValue = 'NewMembership' | 'Renewal' |
+    // 'EventRegistration'). That mismatch was never caught because it fails quietly on read
+    // (a lookup keyed by the wrong type just returns undefined/blank) and loudly but confusingly
+    // on write (PUT /api/members/{id} 400s on the Status field with a JSON-conversion error, not
+    // an obviously-enum-shaped message). This makes every enum round-trip as its name instead,
+    // matching what the frontend has assumed all along.
+    options.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter());
+});
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddPortalSwagger();
 builder.Services.AddPortalRateLimiting(builder.Configuration);
