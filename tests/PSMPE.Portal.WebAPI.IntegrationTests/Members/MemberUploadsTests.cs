@@ -42,39 +42,17 @@ public class MemberUploadsTests : IClassFixture<CustomWebApplicationFactory>, IA
         return Task.CompletedTask;
     }
 
-    private static byte[] BuildPng(int width, int height)
-    {
-        using var bitmap = new SKBitmap(width, height);
-        using var canvas = new SKCanvas(bitmap);
-        canvas.Clear(SKColors.CornflowerBlue);
-        using var image = SKImage.FromBitmap(bitmap);
-        using var data = image.Encode(SKEncodedImageFormat.Png, 100);
-        return data.ToArray();
-    }
-
     private Task<string> RegisterAndLoginAsync() => _client.RegisterAndLoginAsync("Upload Tester");
 
     private Task<(Guid UserId, string Token)> CreatePrivilegedUserAsync(string role) =>
         _client.CreatePrivilegedUserAsync(_userManager, role);
-
-    private static HttpRequestMessage BuildUploadRequest(string url, string token, byte[] bytes, string fileName, string contentType)
-    {
-        var request = new HttpRequestMessage(HttpMethod.Post, url);
-        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
-        var content = new MultipartFormDataContent();
-        var fileContent = new ByteArrayContent(bytes);
-        fileContent.Headers.ContentType = new MediaTypeHeaderValue(contentType);
-        content.Add(fileContent, "file", fileName);
-        request.Content = content;
-        return request;
-    }
 
     [Fact]
     public async Task UploadThenGetMyPhoto_RoundTrips()
     {
         var token = await RegisterAndLoginAsync();
 
-        var uploadResponse = await _client.SendAsync(BuildUploadRequest("/api/members/me/photo", token, BuildPng(100, 100), "photo.png", "image/png"));
+        var uploadResponse = await _client.SendAsync(UploadTestHelpers.BuildUploadRequest("/api/members/me/photo", token, UploadTestHelpers.BuildPng(100, 100), "photo.png", "image/png"));
         Assert.Equal(HttpStatusCode.NoContent, uploadResponse.StatusCode);
 
         var getRequest = new HttpRequestMessage(HttpMethod.Get, "/api/members/me/photo");
@@ -102,8 +80,8 @@ public class MemberUploadsTests : IClassFixture<CustomWebApplicationFactory>, IA
     {
         var token = await RegisterAndLoginAsync();
 
-        await _client.SendAsync(BuildUploadRequest("/api/members/me/photo", token, BuildPng(50, 50), "first.png", "image/png"));
-        await _client.SendAsync(BuildUploadRequest("/api/members/me/photo", token, BuildPng(300, 200), "second.png", "image/png"));
+        await _client.SendAsync(UploadTestHelpers.BuildUploadRequest("/api/members/me/photo", token, UploadTestHelpers.BuildPng(50, 50), "first.png", "image/png"));
+        await _client.SendAsync(UploadTestHelpers.BuildUploadRequest("/api/members/me/photo", token, UploadTestHelpers.BuildPng(300, 200), "second.png", "image/png"));
 
         var getRequest = new HttpRequestMessage(HttpMethod.Get, "/api/members/me/photo");
         getRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
@@ -120,7 +98,7 @@ public class MemberUploadsTests : IClassFixture<CustomWebApplicationFactory>, IA
     {
         var token = await RegisterAndLoginAsync();
 
-        await _client.SendAsync(BuildUploadRequest("/api/members/me/photo", token, BuildPng(2400, 1800), "big.png", "image/png"));
+        await _client.SendAsync(UploadTestHelpers.BuildUploadRequest("/api/members/me/photo", token, UploadTestHelpers.BuildPng(2400, 1800), "big.png", "image/png"));
 
         var getRequest = new HttpRequestMessage(HttpMethod.Get, "/api/members/me/photo");
         getRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
@@ -137,7 +115,7 @@ public class MemberUploadsTests : IClassFixture<CustomWebApplicationFactory>, IA
         var token = await RegisterAndLoginAsync();
 
         var response = await _client.SendAsync(
-            BuildUploadRequest("/api/members/me/photo", token, Encoding.UTF8.GetBytes("fake-pdf"), "doc.pdf", "application/pdf"));
+            UploadTestHelpers.BuildUploadRequest("/api/members/me/photo", token, Encoding.UTF8.GetBytes("fake-pdf"), "doc.pdf", "application/pdf"));
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
@@ -148,7 +126,7 @@ public class MemberUploadsTests : IClassFixture<CustomWebApplicationFactory>, IA
         var token = await RegisterAndLoginAsync();
 
         var response = await _client.SendAsync(
-            BuildUploadRequest("/api/members/me/prc-id", token, Encoding.UTF8.GetBytes("fake-pdf-bytes"), "id.pdf", "application/pdf"));
+            UploadTestHelpers.BuildUploadRequest("/api/members/me/prc-id", token, Encoding.UTF8.GetBytes("fake-pdf-bytes"), "id.pdf", "application/pdf"));
 
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
     }
@@ -160,7 +138,7 @@ public class MemberUploadsTests : IClassFixture<CustomWebApplicationFactory>, IA
         var oversized = new byte[3 * 1024 * 1024];
 
         var response = await _client.SendAsync(
-            BuildUploadRequest("/api/members/me/prc-id", token, oversized, "big.pdf", "application/pdf"));
+            UploadTestHelpers.BuildUploadRequest("/api/members/me/prc-id", token, oversized, "big.pdf", "application/pdf"));
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
@@ -169,7 +147,7 @@ public class MemberUploadsTests : IClassFixture<CustomWebApplicationFactory>, IA
     public async Task Upload_WithoutAuth_ReturnsUnauthorized()
     {
         var content = new MultipartFormDataContent();
-        var fileContent = new ByteArrayContent(BuildPng(10, 10));
+        var fileContent = new ByteArrayContent(UploadTestHelpers.BuildPng(10, 10));
         fileContent.Headers.ContentType = new MediaTypeHeaderValue("image/png");
         content.Add(fileContent, "file", "photo.png");
 
@@ -182,7 +160,7 @@ public class MemberUploadsTests : IClassFixture<CustomWebApplicationFactory>, IA
     public async Task Admin_CanViewAnotherMembersPhoto()
     {
         var memberToken = await RegisterAndLoginAsync();
-        await _client.SendAsync(BuildUploadRequest("/api/members/me/photo", memberToken, BuildPng(80, 80), "photo.png", "image/png"));
+        await _client.SendAsync(UploadTestHelpers.BuildUploadRequest("/api/members/me/photo", memberToken, UploadTestHelpers.BuildPng(80, 80), "photo.png", "image/png"));
 
         var profileRequest = new HttpRequestMessage(HttpMethod.Put, "/api/members/me");
         profileRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", memberToken);
@@ -216,7 +194,7 @@ public class MemberUploadsTests : IClassFixture<CustomWebApplicationFactory>, IA
     public async Task PlainMember_CannotViewAnotherMembersPhoto()
     {
         var memberToken = await RegisterAndLoginAsync();
-        await _client.SendAsync(BuildUploadRequest("/api/members/me/photo", memberToken, BuildPng(80, 80), "photo.png", "image/png"));
+        await _client.SendAsync(UploadTestHelpers.BuildUploadRequest("/api/members/me/photo", memberToken, UploadTestHelpers.BuildPng(80, 80), "photo.png", "image/png"));
 
         var profileRequest = new HttpRequestMessage(HttpMethod.Put, "/api/members/me");
         profileRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", memberToken);

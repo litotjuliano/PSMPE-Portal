@@ -29,7 +29,7 @@ type LayoutContextType = {
 const INIT_STATE: LayoutStateType = {
   sidenav: {
     size: 'default',
-    color: 'light',
+    color: 'dark',
   },
   theme: 'light',
   dir: 'ltr',
@@ -46,7 +46,9 @@ export const useLayoutContext = () => {
 }
 
 const LayoutProvider = ({ children }: { children: ReactNode }) => {
-  const [settings, setSettings] = useLocalStorage<LayoutStateType>('__PSMPE_LAYOUT_CONFIG__', INIT_STATE)
+  // Key bumped to _V2_ when the sidenav default changed to navy: a persisted entry always beats
+  // INIT_STATE, so without this nobody who had already loaded the portal would ever see the change.
+  const [settings, setSettings] = useLocalStorage<LayoutStateType>('__PSMPE_LAYOUT_CONFIG_V2__', INIT_STATE)
 
   const updateSettings = useCallback(
     (_newSettings: Partial<LayoutStateType>) => {

@@ -26,20 +26,27 @@ public static class IdentitySeeder
             Permissions.Layout.Create, Permissions.Layout.Delete,
             Permissions.Admin.ManageUsers,
             Permissions.Ai.UsePrompt,
-            Permissions.Members.View, Permissions.Members.Manage
+            Permissions.Members.View, Permissions.Members.Manage,
+            Permissions.Events.View, Permissions.Events.Manage
         ],
         [RoleNames.Manager] =
         [
             Permissions.Content.Create, Permissions.Content.Update, Permissions.Content.Delete,
             Permissions.Layout.Create,
             Permissions.Ai.UsePrompt,
-            Permissions.Members.View
+            Permissions.Members.View,
+            Permissions.Events.View
         ],
         [RoleNames.Accounts] =
         [
             Permissions.Content.Update,
             Permissions.Ai.UsePrompt,
             Permissions.Members.View
+        ],
+        [RoleNames.Approval] =
+        [
+            Permissions.Members.View,
+            Permissions.Members.Approve
         ],
         [RoleNames.Member] =
         [
@@ -58,6 +65,7 @@ public static class IdentitySeeder
         (RoleNames.Admin, "admin.user@psmpe.local", "Demo Admin"),
         (RoleNames.Manager, "manager@psmpe.local", "Demo Manager"),
         (RoleNames.Accounts, "accounts@psmpe.local", "Demo Accounts"),
+        (RoleNames.Approval, "approval@psmpe.local", "Demo Approval"),
         (RoleNames.Member, "member@psmpe.local", "Demo Member"),
     ];
 

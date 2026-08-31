@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using PSMPE.Portal.Application.Common.Configuration;
 using PSMPE.Portal.Application.Common.Models;
 using PSMPE.Portal.Application.Members;
 using PSMPE.Portal.Application.Members.Dtos;
@@ -15,16 +16,18 @@ public class MemberServiceTests
         string chapter = Chapters.Ncr, string memberType = MemberTypes.Regular,
         string? prcLicenseNo = null, DateOnly? prcRegistrationDate = null, DateOnly? prcValidUntilDate = null, bool prcIdReuploaded = false,
         string firstName = "Juan", string lastName = "Dela Cruz", string? address = "123 Main St",
-        string? company = null, string? website = null) => new(
+        string? company = null,
+        int? chapterYear = null, string? chapterPosition = null,
+        string? ptrPlaceIssued = null, DateOnly? ptrDateIssued = null) => new(
         FirstName: firstName, MiddleName: null, LastName: lastName, Suffix: null,
         Birthdate: new DateOnly(1990, 1, 1), Gender: "Male", CivilStatus: "Single",
         EducationLevel: null, SchoolName: null, CourseYearGraduated: null, SpecifiedProfession: null,
         MobileNumber: "09171234567",
-        HouseNo: null, Street: address, Barangay: null, CityMunicipality: null, Province: null, ZipCode: null,
-        MailingHouseNo: null, MailingStreet: null, MailingBarangay: null, MailingCityMunicipality: null, MailingProvince: null, MailingZipCode: null,
-        HousePhone: null, Website: website, FacebookUrl: null, LinkedInUrl: null, XUrl: null, InstagramUrl: null,
-        PrcLicenseNo: prcLicenseNo, PrcRegistrationDate: prcRegistrationDate, PrcValidUntilDate: prcValidUntilDate, PtrNumber: "PTR-0012345", Tin: null,
-        Chapter: chapter,
+        HouseNo: null, Street: address, Barangay: null, CityMunicipality: null, Province: null, ZipCode: null, Country: null,
+        MailingHouseNo: null, MailingStreet: null, MailingBarangay: null, MailingCityMunicipality: null, MailingProvince: null, MailingZipCode: null, MailingCountry: null,
+        HousePhone: null,
+        PrcLicenseNo: prcLicenseNo, PrcRegistrationDate: prcRegistrationDate, PrcValidUntilDate: prcValidUntilDate, PtrNumber: "PTR-0012345", PtrPlaceIssued: ptrPlaceIssued, PtrDateIssued: ptrDateIssued, Tin: null,
+        Chapter: chapter, ChapterYear: chapterYear, ChapterPosition: chapterPosition,
         EmploymentStatus: null, Company: company, Position: null, BusinessAddress: null, YearsOfPractice: null, Specialization: null, Skills: null,
         MemberType: memberType,
         PrcIdReuploaded: prcIdReuploaded);
@@ -121,11 +124,11 @@ public class MemberServiceTests
         Birthdate: new DateOnly(1990, 1, 1), Gender: "Male", CivilStatus: "Single",
         EducationLevel: null, SchoolName: null, CourseYearGraduated: null, SpecifiedProfession: null,
         MobileNumber: mobileNumber,
-        HouseNo: null, Street: "123 Main St", Barangay: null, CityMunicipality: null, Province: null, ZipCode: null,
-        MailingHouseNo: null, MailingStreet: null, MailingBarangay: null, MailingCityMunicipality: null, MailingProvince: null, MailingZipCode: null,
-        HousePhone: null, Website: null, FacebookUrl: null, LinkedInUrl: null, XUrl: null, InstagramUrl: null,
-        PrcLicenseNo: null, PrcRegistrationDate: null, PrcValidUntilDate: null, PtrNumber: "PTR-0012345", Tin: tin,
-        Chapter: Chapters.Ncr,
+        HouseNo: null, Street: "123 Main St", Barangay: null, CityMunicipality: null, Province: null, ZipCode: null, Country: null,
+        MailingHouseNo: null, MailingStreet: null, MailingBarangay: null, MailingCityMunicipality: null, MailingProvince: null, MailingZipCode: null, MailingCountry: null,
+        HousePhone: null,
+        PrcLicenseNo: null, PrcRegistrationDate: null, PrcValidUntilDate: null, PtrNumber: "PTR-0012345", PtrPlaceIssued: null, PtrDateIssued: null, Tin: tin,
+        Chapter: Chapters.Ncr, ChapterYear: null, ChapterPosition: null,
         EmploymentStatus: null, Company: null, Position: null, BusinessAddress: null, YearsOfPractice: null, Specialization: null, Skills: null,
         MemberType: MemberTypes.Regular);
 
@@ -358,6 +361,28 @@ public class MemberServiceTests
         Assert.DoesNotContain(result.Items, m => m.Id == verified.Id);
     }
 
+    /// <summary>
+    /// Backs the "Applied" column on the consolidated Members page's Pending Approval tab, which
+    /// defaults to oldest-first - the natural reading order for a work queue.
+    /// </summary>
+    [Fact]
+    public async Task GetAllAsync_SortedBySubmittedAt_OrdersOldestApplicationFirst()
+    {
+        using var db = TestDbContext.CreateInMemory();
+        var service = new MemberService(db);
+        var newest = await SeedSubmittedMemberAsync(db);
+        var oldest = await SeedSubmittedMemberAsync(db);
+        newest.SubmittedAt = DateTimeOffset.UtcNow.AddDays(-1);
+        oldest.SubmittedAt = DateTimeOffset.UtcNow.AddDays(-30);
+        await db.SaveChangesAsync();
+
+        var ascending = await service.GetAllAsync(1, 100, "submittedAt", "asc", status: null);
+        Assert.Equal(oldest.Id, ascending.Items[0].Id);
+
+        var descending = await service.GetAllAsync(1, 100, "submittedAt", "desc", status: null);
+        Assert.Equal(newest.Id, descending.Items[0].Id);
+    }
+
     [Fact]
     public async Task GetAllAsync_WithExcludeUserIds_ExcludesMatchingRowsFromItemsAndTotalCount()
     {
@@ -371,6 +396,51 @@ public class MemberServiceTests
         Assert.Contains(result.Items, m => m.Id == kept.Id);
         Assert.DoesNotContain(result.Items, m => m.Id == excluded.Id);
         Assert.Equal(1, result.TotalCount);
+    }
+
+    [Fact]
+    public async Task GetAllAsync_WithSearch_MatchesNameMembershipNoOrEmail_CaseInsensitively()
+    {
+        using var db = TestDbContext.CreateInMemory();
+        var service = new MemberService(db);
+        var match = new Member
+        {
+            UserId = Guid.NewGuid(),
+            User = new ApplicationUser { UserName = "maria.santos@example.com", Email = "maria.santos@example.com" },
+            MembershipNo = "000042",
+            FirstName = "Maria",
+            LastName = "Santos",
+            Chapter = Chapters.Ncr,
+            MemberType = MemberTypes.Regular,
+            Status = MembershipStatus.Active,
+            SubmittedAt = DateTimeOffset.UtcNow.AddDays(-1),
+        };
+        var nonMatch = new Member
+        {
+            UserId = Guid.NewGuid(),
+            User = new ApplicationUser { UserName = "pedro.reyes@example.com", Email = "pedro.reyes@example.com" },
+            MembershipNo = "000099",
+            FirstName = "Pedro",
+            LastName = "Reyes",
+            Chapter = Chapters.Cebu,
+            MemberType = MemberTypes.Regular,
+            Status = MembershipStatus.Active,
+            SubmittedAt = DateTimeOffset.UtcNow.AddDays(-1),
+        };
+        db.Members.AddRange(match, nonMatch);
+        await db.SaveChangesAsync();
+
+        var byName = await service.GetAllAsync(1, 100, "lastName", "asc", status: null, search: "SANTOS");
+        Assert.Single(byName.Items);
+        Assert.Equal(match.Id, byName.Items[0].Id);
+
+        var byMembershipNo = await service.GetAllAsync(1, 100, "lastName", "asc", status: null, search: "000042");
+        Assert.Single(byMembershipNo.Items);
+        Assert.Equal(match.Id, byMembershipNo.Items[0].Id);
+
+        var byEmail = await service.GetAllAsync(1, 100, "lastName", "asc", status: null, search: "maria.santos");
+        Assert.Single(byEmail.Items);
+        Assert.Equal(match.Id, byEmail.Items[0].Id);
     }
 
     [Theory]
@@ -420,18 +490,16 @@ public class MemberServiceTests
         Assert.Equal("MP-2", result.Value!.PrcLicenseNo);
     }
 
-    private static UpdateMyProfileRequest BuildRequestWithContactFields(
-        string? housePhone = null, string? website = null, string? facebookUrl = null,
-        string? linkedInUrl = null, string? xUrl = null, string? instagramUrl = null) => new(
+    private static UpdateMyProfileRequest BuildRequestWithContactFields(string? housePhone = null) => new(
         FirstName: "Juan", MiddleName: null, LastName: "Dela Cruz", Suffix: null,
         Birthdate: new DateOnly(1990, 1, 1), Gender: "Male", CivilStatus: "Single",
         EducationLevel: null, SchoolName: null, CourseYearGraduated: null, SpecifiedProfession: null,
         MobileNumber: "09171234567",
-        HouseNo: null, Street: "123 Main St", Barangay: null, CityMunicipality: null, Province: null, ZipCode: null,
-        MailingHouseNo: null, MailingStreet: null, MailingBarangay: null, MailingCityMunicipality: null, MailingProvince: null, MailingZipCode: null,
-        HousePhone: housePhone, Website: website, FacebookUrl: facebookUrl, LinkedInUrl: linkedInUrl, XUrl: xUrl, InstagramUrl: instagramUrl,
-        PrcLicenseNo: null, PrcRegistrationDate: null, PrcValidUntilDate: null, PtrNumber: "PTR-0012345", Tin: null,
-        Chapter: Chapters.Ncr,
+        HouseNo: null, Street: "123 Main St", Barangay: null, CityMunicipality: null, Province: null, ZipCode: null, Country: null,
+        MailingHouseNo: null, MailingStreet: null, MailingBarangay: null, MailingCityMunicipality: null, MailingProvince: null, MailingZipCode: null, MailingCountry: null,
+        HousePhone: housePhone,
+        PrcLicenseNo: null, PrcRegistrationDate: null, PrcValidUntilDate: null, PtrNumber: "PTR-0012345", PtrPlaceIssued: null, PtrDateIssued: null, Tin: null,
+        Chapter: Chapters.Ncr, ChapterYear: null, ChapterPosition: null,
         EmploymentStatus: null, Company: null, Position: null, BusinessAddress: null, YearsOfPractice: null, Specialization: null, Skills: null,
         MemberType: MemberTypes.Regular);
 
@@ -464,59 +532,19 @@ public class MemberServiceTests
         Assert.False(result.Succeeded);
     }
 
-    [Theory]
-    [InlineData("https://example.com")]
-    [InlineData("http://facebook.com/someone")]
-    [InlineData("")]
-    public async Task UpsertMyProfileAsync_WithValidOrEmptyWebsite_Succeeds(string website)
-    {
-        using var db = TestDbContext.CreateInMemory();
-        var service = new MemberService(db);
-        var member = await SeedDraftMemberAsync(db);
 
-        var result = await service.UpsertMyProfileAsync(member.UserId, BuildRequestWithContactFields(website: website));
 
-        Assert.True(result.Succeeded);
-    }
-
-    [Theory]
-    [InlineData("not-a-url")]
-    [InlineData("ftp://example.com")]
-    public async Task UpsertMyProfileAsync_WithInvalidWebsiteFormat_ReturnsFailure(string website)
-    {
-        using var db = TestDbContext.CreateInMemory();
-        var service = new MemberService(db);
-        var member = await SeedDraftMemberAsync(db);
-
-        var result = await service.UpsertMyProfileAsync(member.UserId, BuildRequestWithContactFields(website: website));
-
-        Assert.False(result.Succeeded);
-    }
-
-    [Theory]
-    [InlineData("not-a-url")]
-    [InlineData("ftp://facebook.com/someone")]
-    public async Task UpsertMyProfileAsync_WithInvalidSocialUrlFormat_ReturnsFailure(string url)
-    {
-        using var db = TestDbContext.CreateInMemory();
-        var service = new MemberService(db);
-        var member = await SeedDraftMemberAsync(db);
-
-        var result = await service.UpsertMyProfileAsync(member.UserId, BuildRequestWithContactFields(facebookUrl: url));
-
-        Assert.False(result.Succeeded);
-    }
 
     private static UpdateMyProfileRequest BuildRequestWithYearsOfPractice(int? yearsOfPractice) => new(
         FirstName: "Juan", MiddleName: null, LastName: "Dela Cruz", Suffix: null,
         Birthdate: new DateOnly(1990, 1, 1), Gender: "Male", CivilStatus: "Single",
         EducationLevel: null, SchoolName: null, CourseYearGraduated: null, SpecifiedProfession: null,
         MobileNumber: "09171234567",
-        HouseNo: null, Street: "123 Main St", Barangay: null, CityMunicipality: null, Province: null, ZipCode: null,
-        MailingHouseNo: null, MailingStreet: null, MailingBarangay: null, MailingCityMunicipality: null, MailingProvince: null, MailingZipCode: null,
-        HousePhone: null, Website: null, FacebookUrl: null, LinkedInUrl: null, XUrl: null, InstagramUrl: null,
-        PrcLicenseNo: null, PrcRegistrationDate: null, PrcValidUntilDate: null, PtrNumber: "PTR-0012345", Tin: null,
-        Chapter: Chapters.Ncr,
+        HouseNo: null, Street: "123 Main St", Barangay: null, CityMunicipality: null, Province: null, ZipCode: null, Country: null,
+        MailingHouseNo: null, MailingStreet: null, MailingBarangay: null, MailingCityMunicipality: null, MailingProvince: null, MailingZipCode: null, MailingCountry: null,
+        HousePhone: null,
+        PrcLicenseNo: null, PrcRegistrationDate: null, PrcValidUntilDate: null, PtrNumber: "PTR-0012345", PtrPlaceIssued: null, PtrDateIssued: null, Tin: null,
+        Chapter: Chapters.Ncr, ChapterYear: null, ChapterPosition: null,
         EmploymentStatus: null, Company: null, Position: null, BusinessAddress: null, YearsOfPractice: yearsOfPractice, Specialization: null, Skills: null,
         MemberType: MemberTypes.Regular);
 
@@ -545,6 +573,73 @@ public class MemberServiceTests
         Assert.Equal(0, result.Value!.YearsOfPractice);
     }
 
+    [Theory]
+    [InlineData(1899)]
+    [InlineData(2201)]
+    public async Task UpsertMyProfileAsync_WithChapterYearOutOfRange_ReturnsFailure(int chapterYear)
+    {
+        using var db = TestDbContext.CreateInMemory();
+        var service = new MemberService(db);
+        var member = await SeedDraftMemberAsync(db);
+
+        var result = await service.UpsertMyProfileAsync(member.UserId, BuildRequest(chapterYear: chapterYear));
+
+        Assert.False(result.Succeeded);
+    }
+
+    [Fact]
+    public async Task UpsertMyProfileAsync_WithChapterOfficerAndPtrIssuance_RoundTrips()
+    {
+        using var db = TestDbContext.CreateInMemory();
+        var service = new MemberService(db);
+        var member = await SeedDraftMemberAsync(db);
+
+        var result = await service.UpsertMyProfileAsync(member.UserId, BuildRequest(
+            chapterYear: 2024, chapterPosition: "Secretary",
+            ptrPlaceIssued: "Quezon City", ptrDateIssued: new DateOnly(2024, 1, 15)));
+
+        Assert.True(result.Succeeded);
+        Assert.Equal(2024, result.Value!.ChapterYear);
+        Assert.Equal("Secretary", result.Value.ChapterPosition);
+        Assert.Equal("Quezon City", result.Value.PtrPlaceIssued);
+        Assert.Equal(new DateOnly(2024, 1, 15), result.Value.PtrDateIssued);
+    }
+
+    [Fact]
+    public async Task UpsertMyProfileAsync_WithOverlongChapterPosition_ReturnsFailure()
+    {
+        using var db = TestDbContext.CreateInMemory();
+        var service = new MemberService(db);
+        var member = await SeedDraftMemberAsync(db);
+
+        var result = await service.UpsertMyProfileAsync(member.UserId, BuildRequest(chapterPosition: new string('a', 129)));
+
+        Assert.False(result.Succeeded);
+    }
+
+    /// <summary>
+    /// Chapter and MemberType are locked once an application is submitted; the officer post
+    /// deliberately is not, since it describes a role the member holds rather than their
+    /// eligibility. This guards that distinction against a future tightening of the lock.
+    /// </summary>
+    [Fact]
+    public async Task UpsertMyProfileAsync_ChapterOfficerEditableAfterSubmission()
+    {
+        using var db = TestDbContext.CreateInMemory();
+        var service = new MemberService(db);
+        var member = await SeedDraftMemberAsync(db);
+        member.SubmittedAt = DateTimeOffset.UtcNow;
+        await db.SaveChangesAsync();
+
+        var result = await service.UpsertMyProfileAsync(member.UserId, BuildRequest(
+            chapter: member.Chapter, memberType: member.MemberType,
+            chapterYear: 2025, chapterPosition: "Treasurer"));
+
+        Assert.True(result.Succeeded);
+        Assert.Equal(2025, result.Value!.ChapterYear);
+        Assert.Equal("Treasurer", result.Value.ChapterPosition);
+    }
+
     private static async Task<Member> SeedCompleteDraftAsync(TestDbContext db)
     {
         var member = new Member
@@ -571,6 +666,7 @@ public class MemberServiceTests
             CityMunicipality = "Sample City",
             Province = "Sample Province",
             ZipCode = "1000",
+            Country = "Philippines",
             MobileNumber = "09171234567",
             Birthdate = new DateOnly(1990, 1, 1),
             Status = MembershipStatus.Pending,
@@ -630,6 +726,133 @@ public class MemberServiceTests
         Assert.True(result.Succeeded);
         var updated = await service.GetByUserIdAsync(member.UserId);
         Assert.NotNull(updated!.SubmittedAt);
+    }
+
+    /// <summary>
+    /// Registration path: ticking the portal opt-in adds the resolved PortalFee on top of
+    /// MembershipFee+ShippingFee, and stamps the created Payment accordingly - no fee rows seeded,
+    /// so this exercises MembershipFeeKeys' shipped defaults (1500 + 200 + 900 = 2600).
+    /// </summary>
+    [Fact]
+    public async Task SubmitMyProfileAsync_WithIncludePortalAccessTrue_AddsPortalFeeToTheRegistrationPayment()
+    {
+        using var db = TestDbContext.CreateInMemory();
+        var service = new MemberService(db);
+        var member = await SeedCompleteDraftAsync(db);
+        db.MemberUploads.AddRange(
+            new MemberUpload { UserId = member.UserId, Kind = UploadKind.PrcId, StorageKey = $"{member.UserId}/prc-id.pdf", ContentType = "application/pdf" },
+            new MemberUpload { UserId = member.UserId, Kind = UploadKind.Photo, StorageKey = $"{member.UserId}/photo.jpg", ContentType = "image/jpeg" },
+            new MemberUpload { UserId = member.UserId, Kind = UploadKind.ProofOfPayment, StorageKey = $"{member.UserId}/proof-of-payment.jpg", ContentType = "image/jpeg" });
+        await db.SaveChangesAsync();
+
+        var result = await service.SubmitMyProfileAsync(member.UserId, includePortalAccess: true);
+
+        Assert.True(result.Succeeded);
+        var payment = await db.Payments.SingleAsync(p => p.MemberId == member.Id && p.Kind == PaymentKind.NewMembership);
+        Assert.True(payment.IncludesPortalAccess);
+        Assert.Equal(
+            MembershipFeeKeys.DefaultMembershipFee + MembershipFeeKeys.DefaultShippingFee + MembershipFeeKeys.DefaultPortalFee,
+            payment.Amount);
+        // Captured independently of Amount, from the same resolved value used to size it - so a
+        // later fee edit can never retroactively change this payment's own portal-revenue figure.
+        Assert.Equal(MembershipFeeKeys.DefaultPortalFee, payment.PortalFeeAmount);
+    }
+
+    [Fact]
+    public async Task SubmitMyProfileAsync_WithoutIncludePortalAccess_LeavesPortalFeeOutOfTheRegistrationPayment()
+    {
+        using var db = TestDbContext.CreateInMemory();
+        var service = new MemberService(db);
+        var member = await SeedCompleteDraftAsync(db);
+        db.MemberUploads.AddRange(
+            new MemberUpload { UserId = member.UserId, Kind = UploadKind.PrcId, StorageKey = $"{member.UserId}/prc-id.pdf", ContentType = "application/pdf" },
+            new MemberUpload { UserId = member.UserId, Kind = UploadKind.Photo, StorageKey = $"{member.UserId}/photo.jpg", ContentType = "image/jpeg" },
+            new MemberUpload { UserId = member.UserId, Kind = UploadKind.ProofOfPayment, StorageKey = $"{member.UserId}/proof-of-payment.jpg", ContentType = "image/jpeg" });
+        await db.SaveChangesAsync();
+
+        var result = await service.SubmitMyProfileAsync(member.UserId);
+
+        Assert.True(result.Succeeded);
+        var payment = await db.Payments.SingleAsync(p => p.MemberId == member.Id && p.Kind == PaymentKind.NewMembership);
+        Assert.False(payment.IncludesPortalAccess);
+        Assert.Equal(MembershipFeeKeys.DefaultMembershipFee + MembershipFeeKeys.DefaultShippingFee, payment.Amount);
+        Assert.Equal(0m, payment.PortalFeeAmount);
+    }
+
+    /// <summary>Admin walk-in path: RecordPaymentRequest.IncludePortalAccess flows onto the Payment
+    /// ResolveRegistrationPaymentAsync creates, and PaymentVerification.Apply (run by ApproveAsync
+    /// in the same transaction) grants Member.HasPortalAccess from it.</summary>
+    [Fact]
+    public async Task ApproveAsync_WithIncludePortalAccessTrue_SetsIncludesPortalAccessOnTheCreatedPayment()
+    {
+        using var db = TestDbContext.CreateInMemory();
+        var member = await SeedSubmittedMemberAsync(db);
+        member.PrcIdVerified = true;
+        await db.SaveChangesAsync();
+        var service = new MemberService(db);
+        var payment = new RecordPaymentRequest(
+            2600m, "REF-001", DateOnly.FromDateTime(DateTime.UtcNow), "uploads/proof.jpg", IncludePortalAccess: true);
+
+        var result = await service.ApproveAsync(member.Id, new ApproveMemberRequest("000123", payment), Guid.NewGuid(), CancellationToken.None);
+
+        Assert.True(result.Succeeded);
+        Assert.True(member.HasPortalAccess);
+        var created = await db.Payments.SingleAsync(p => p.MemberId == member.Id);
+        Assert.True(created.IncludesPortalAccess);
+        // Resolved independently of the admin-typed Amount (2600m here) - this stamps "what
+        // PortalFee was configured," not "what was actually collected," mirroring how Amount
+        // itself is never validated against configured fees.
+        Assert.Equal(MembershipFeeKeys.DefaultPortalFee, created.PortalFeeAmount);
+    }
+
+    /// <summary>Confirms the admin-typed Amount is irrelevant to PortalFeeAmount - it's resolved
+    /// from the currently-configured/promoted PortalFee, not derived from what the admin typed.</summary>
+    [Fact]
+    public async Task ApproveAsync_WithIncludePortalAccessTrue_StampsPortalFeeAmountFromAnActivePromotion_RegardlessOfTypedAmount()
+    {
+        using var db = TestDbContext.CreateInMemory();
+        var member = await SeedSubmittedMemberAsync(db);
+        member.PrcIdVerified = true;
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        db.FeePromotions.Add(new FeePromotion
+        {
+            FeeKey = MembershipFeeKeys.PortalFee,
+            PromoAmount = 350m,
+            StartDate = today,
+            EndDate = today.AddDays(1),
+            CreatedByUserId = Guid.NewGuid(),
+        });
+        await db.SaveChangesAsync();
+        var service = new MemberService(db);
+        // Amount typed by the admin doesn't match the resolved 350m promo at all - by design,
+        // Amount is never validated against configured fees.
+        var payment = new RecordPaymentRequest(9999m, "REF-001", today, "uploads/proof.jpg", IncludePortalAccess: true);
+
+        var result = await service.ApproveAsync(member.Id, new ApproveMemberRequest("000123", payment), Guid.NewGuid(), CancellationToken.None);
+
+        Assert.True(result.Succeeded);
+        var created = await db.Payments.SingleAsync(p => p.MemberId == member.Id);
+        Assert.Equal(9999m, created.Amount);
+        Assert.Equal(350m, created.PortalFeeAmount);
+    }
+
+    [Fact]
+    public async Task ApproveAsync_WithoutIncludePortalAccess_LeavesPortalAccessFalseOnMemberAndPayment()
+    {
+        using var db = TestDbContext.CreateInMemory();
+        var member = await SeedSubmittedMemberAsync(db);
+        member.PrcIdVerified = true;
+        await db.SaveChangesAsync();
+        var service = new MemberService(db);
+        var payment = new RecordPaymentRequest(500m, "REF-001", DateOnly.FromDateTime(DateTime.UtcNow), "uploads/proof.jpg");
+
+        var result = await service.ApproveAsync(member.Id, new ApproveMemberRequest("000123", payment), Guid.NewGuid(), CancellationToken.None);
+
+        Assert.True(result.Succeeded);
+        Assert.False(member.HasPortalAccess);
+        var created = await db.Payments.SingleAsync(p => p.MemberId == member.Id);
+        Assert.False(created.IncludesPortalAccess);
+        Assert.Equal(0m, created.PortalFeeAmount);
     }
 
     [Fact]
@@ -739,17 +962,6 @@ public class MemberServiceTests
         Assert.False(result.Succeeded);
     }
 
-    [Fact]
-    public async Task UpsertMyProfileAsync_OverlongWebsite_ReturnsFailure()
-    {
-        using var db = TestDbContext.CreateInMemory();
-        var service = new MemberService(db);
-        var member = await SeedDraftMemberAsync(db);
-
-        var result = await service.UpsertMyProfileAsync(member.UserId, BuildRequest(website: "https://example.com/" + new string('a', 250)));
-
-        Assert.False(result.Succeeded);
-    }
 
     [Fact]
     public async Task UpsertMyProfileAsync_EmptyFirstName_StillSucceeds_DraftAutosaveTolerance()
@@ -773,18 +985,39 @@ public class MemberServiceTests
         return user.Id;
     }
 
-    private static CreateMemberRequest BuildCreateRequest(Guid userId, string firstName = "Juan", string? address = "123 Main St") => new(
+    private static CreateMemberRequest BuildCreateRequest(
+        Guid userId, string firstName = "Juan", string? address = "123 Main St", string? prcLicenseNo = "MP-99") => new(
         UserId: userId, MembershipNo: "000099", FirstName: firstName, MiddleName: null, LastName: "Dela Cruz", Suffix: null,
         Birthdate: new DateOnly(1990, 1, 1), Gender: "Male", CivilStatus: "Single",
         EducationLevel: null, SchoolName: null, CourseYearGraduated: null, SpecifiedProfession: null,
         MobileNumber: "09171234567",
-        HouseNo: null, Street: address, Barangay: null, CityMunicipality: null, Province: null, ZipCode: null,
-        MailingHouseNo: null, MailingStreet: null, MailingBarangay: null, MailingCityMunicipality: null, MailingProvince: null, MailingZipCode: null,
-        HousePhone: null, Website: null, FacebookUrl: null, LinkedInUrl: null, XUrl: null, InstagramUrl: null,
-        PrcLicenseNo: null, PrcRegistrationDate: null, PrcValidUntilDate: null, PtrNumber: null, Tin: null,
-        Chapter: Chapters.Ncr,
+        HouseNo: null, Street: address, Barangay: null, CityMunicipality: null, Province: null, ZipCode: null, Country: null,
+        MailingHouseNo: null, MailingStreet: null, MailingBarangay: null, MailingCityMunicipality: null, MailingProvince: null, MailingZipCode: null, MailingCountry: null,
+        HousePhone: null,
+        PrcLicenseNo: prcLicenseNo, PrcRegistrationDate: null, PrcValidUntilDate: null, PtrNumber: null, PtrPlaceIssued: null, PtrDateIssued: null, Tin: null,
+        Chapter: Chapters.Ncr, ChapterYear: null, ChapterPosition: null,
         EmploymentStatus: null, Company: null, Position: null, BusinessAddress: null, YearsOfPractice: null, Specialization: null, Skills: null,
         MemberType: MemberTypes.Regular, RenewalDueDate: null, NationalDuesReferenceNo: null);
+
+    /// <summary>
+    /// Without a licence number a member never enters the verification queue, and approval now
+    /// requires verification - so creating one would produce a permanently unapprovable record.
+    /// </summary>
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    public async Task CreateAsync_WithoutAPrcLicenseNo_ReturnsFailure_WithoutPersisting(string? prcLicenseNo)
+    {
+        using var db = TestDbContext.CreateInMemory();
+        var service = new MemberService(db);
+        var userId = await SeedApplicationUserAsync(db);
+
+        var result = await service.CreateAsync(BuildCreateRequest(userId, prcLicenseNo: prcLicenseNo));
+
+        Assert.False(result.Succeeded);
+        Assert.Empty(db.Members);
+    }
 
     [Fact]
     public async Task CreateAsync_OverlongFirstName_ReturnsFailure_WithoutPersisting()
@@ -817,11 +1050,11 @@ public class MemberServiceTests
         Birthdate: new DateOnly(1990, 1, 1), Gender: "Male", CivilStatus: "Single",
         EducationLevel: null, SchoolName: null, CourseYearGraduated: null, SpecifiedProfession: null,
         MobileNumber: "09171234567",
-        HouseNo: null, Street: address, Barangay: null, CityMunicipality: null, Province: null, ZipCode: null,
-        MailingHouseNo: null, MailingStreet: null, MailingBarangay: null, MailingCityMunicipality: null, MailingProvince: null, MailingZipCode: null,
-        HousePhone: null, Website: null, FacebookUrl: null, LinkedInUrl: null, XUrl: null, InstagramUrl: null,
-        PrcLicenseNo: null, PrcRegistrationDate: null, PrcValidUntilDate: null, PtrNumber: null, Tin: null,
-        Chapter: Chapters.Ncr,
+        HouseNo: null, Street: address, Barangay: null, CityMunicipality: null, Province: null, ZipCode: null, Country: null,
+        MailingHouseNo: null, MailingStreet: null, MailingBarangay: null, MailingCityMunicipality: null, MailingProvince: null, MailingZipCode: null, MailingCountry: null,
+        HousePhone: null,
+        PrcLicenseNo: null, PrcRegistrationDate: null, PrcValidUntilDate: null, PtrNumber: null, PtrPlaceIssued: null, PtrDateIssued: null, Tin: null,
+        Chapter: Chapters.Ncr, ChapterYear: null, ChapterPosition: null,
         EmploymentStatus: null, Company: null, Position: null, BusinessAddress: null, YearsOfPractice: null, Specialization: null, Skills: null,
         MemberType: MemberTypes.Regular, Status: MembershipStatus.Pending, RenewalDueDate: null, NationalDuesReferenceNo: null);
 
@@ -894,5 +1127,58 @@ public class MemberServiceTests
         var service = new MemberService(db);
 
         Assert.False(await service.HasPrcVerificationHistoryAsync(Guid.NewGuid()));
+    }
+
+    [Fact]
+    public async Task ApproveAsync_WritesAuditLogRow()
+    {
+        using var db = TestDbContext.CreateInMemory();
+        var member = await SeedSubmittedMemberAsync(db);
+        member.PrcIdVerified = true;
+        await db.SaveChangesAsync();
+        var service = new MemberService(db);
+        var adminId = Guid.NewGuid();
+        var payment = new RecordPaymentRequest(500m, "REF-001", DateOnly.FromDateTime(DateTime.UtcNow), "uploads/proof.jpg");
+
+        await service.ApproveAsync(member.Id, new ApproveMemberRequest("000123", payment), adminId, CancellationToken.None);
+
+        var row = Assert.Single(db.AuditLogs);
+        Assert.Equal("membership.approved", row.EventType);
+        Assert.Equal(adminId, row.ActorUserId);
+        Assert.Equal("Member", row.TargetType);
+        Assert.Equal(member.Id, row.TargetId);
+        Assert.Contains("000123", row.Metadata);
+    }
+
+    [Fact]
+    public async Task ApproveAsync_ReApprovingAlreadyApprovedMember_WritesNoAdditionalAuditLogRow()
+    {
+        using var db = TestDbContext.CreateInMemory();
+        var member = await SeedSubmittedMemberAsync(db);
+        member.PrcIdVerified = true;
+        await db.SaveChangesAsync();
+        var service = new MemberService(db);
+        var adminId = Guid.NewGuid();
+        var payment = new RecordPaymentRequest(500m, "REF-001", DateOnly.FromDateTime(DateTime.UtcNow), "uploads/proof.jpg");
+        await service.ApproveAsync(member.Id, new ApproveMemberRequest("000123", payment), adminId, CancellationToken.None);
+
+        // Second call: the member now has an existing (accepted) payment, so pass Payment: null -
+        // ApproveAsync's short-circuit on an already-approved member returns before that matters.
+        await service.ApproveAsync(member.Id, new ApproveMemberRequest("000123", null), adminId, CancellationToken.None);
+
+        Assert.Single(db.AuditLogs);
+    }
+
+    [Fact]
+    public async Task ApproveAsync_FailedValidation_WritesNoAuditLogRow()
+    {
+        using var db = TestDbContext.CreateInMemory();
+        var member = await SeedSubmittedMemberAsync(db); // PrcIdVerified left false
+        var service = new MemberService(db);
+        var payment = new RecordPaymentRequest(500m, "REF-001", DateOnly.FromDateTime(DateTime.UtcNow), "uploads/proof.jpg");
+
+        await service.ApproveAsync(member.Id, new ApproveMemberRequest("000123", payment), Guid.NewGuid(), CancellationToken.None);
+
+        Assert.Empty(db.AuditLogs);
     }
 }

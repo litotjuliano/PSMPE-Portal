@@ -1,0 +1,25 @@
+{
+  "name": "psmpe-portal",
+  "version": "1.0.0",
+  "description": "An enterprise Portal/CMS starter: a .NET 8 Clean Architecture backend (ASP.NET Core\r Identity + JWT auth, role- and ownership-based authorization, PostgreSQL/EF Core, an\r OpenAI SDK stub) paired with a React + Vite + TypeScript + Tailwind CSS frontend,\r Dockerized for local dev and for deployment via Docker Compose over SSH.",
+  "main": "index.js",
+  "directories": {
+    "doc": "docs",
+    "test": "tests"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/litotjuliano/PSMPE-Portal.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/litotjuliano/PSMPE-Portal/issues"
+  },
+  "homepage": "https://github.com/litotjuliano/PSMPE-Portal#readme"
+}

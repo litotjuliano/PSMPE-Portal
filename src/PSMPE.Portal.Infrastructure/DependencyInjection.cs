@@ -76,6 +76,8 @@ public static class DependencyInjection
         services.AddAuthorizationBuilder()
             .AddPolicy(PolicyNames.RequireAdmin, policy =>
                 policy.RequireRole(Domain.Enums.RoleNames.Admin, Domain.Enums.RoleNames.SuperAdmin))
+            .AddPolicy(PolicyNames.RequireAdminOrApproval, policy =>
+                policy.RequireRole(Domain.Enums.RoleNames.Admin, Domain.Enums.RoleNames.SuperAdmin, Domain.Enums.RoleNames.Approval))
             .AddPolicy(PolicyNames.RequireSuperAdmin, policy =>
                 policy.RequireRole(Domain.Enums.RoleNames.SuperAdmin))
             .AddPolicy(PolicyNames.ContentOwnerOrAdmin, policy =>
@@ -97,6 +99,12 @@ public static class DependencyInjection
         services.AddMemoryCache();
         services.AddSingleton<ICacheService, MemoryCacheService>();
         services.AddSingleton<IEmailSendThrottle, MemoryCacheEmailSendThrottle>();
+        services.AddScoped<IAuditLogService, AuditLogService>();
+        services.AddScoped<IErrorLogService, ErrorLogService>();
+        services.AddScoped<ILogRetentionService, LogRetentionService>();
+        services.AddHostedService<LogRetentionBackgroundService>();
+        services.AddScoped<IMembershipLifecycleService, MembershipLifecycleService>();
+        services.AddHostedService<MembershipLifecycleBackgroundService>();
 
         // Falls back to logging-only when no real SMTP host is configured, so local dev keeps
         // working without real credentials - see ConsoleEmailSender / SmtpEmailSender.

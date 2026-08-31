@@ -8,8 +8,17 @@ _card.css
   .card {
     @apply relative rounded-[0.3rem] bg-card flex flex-col break-words bg-clip-border h-fit shadow-sm dark:bg-default-100;
 
+    /* Filled brand bar. rounded-t here rather than overflow-hidden on .card - the latter would
+       clip the hs-dropdown popovers that open out of four dashboard card headers. No bottom
+       border: a grey hairline under a filled bar reads as a seam. */
     .card-header {
-      @apply flex justify-between items-center gap-3 min-h-14 px-5 border-b border-default-200;
+      @apply flex justify-between items-center gap-3 min-h-14 px-5 bg-primary rounded-t-[0.3rem];
+
+      /* text-sm rather than .card-title's base text-base: at 18px an uppercase, tracked title
+         overpowers the card it labels. */
+      .card-title {
+        @apply text-sm font-semibold uppercase tracking-wide text-white;
+      }
     }
 
     .card-footer {

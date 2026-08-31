@@ -12,6 +12,11 @@ export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://localho
 
 export const apiClient = axios.create({
   baseURL: API_BASE_URL,
+  // Axios's default array serialization is `key[]=a&key[]=b`, which ASP.NET Core's default
+  // query-string collection binder (used by e.g. AdminController.GetUsers's `roles` parameter)
+  // does not understand - it only binds the repeated bare-key form `key=a&key=b`. `indexes: null`
+  // produces that form instead.
+  paramsSerializer: { indexes: null },
 })
 
 apiClient.interceptors.request.use((config) => {

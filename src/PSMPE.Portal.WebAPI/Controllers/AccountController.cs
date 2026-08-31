@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using PSMPE.Portal.Application.Account;
 using PSMPE.Portal.Domain.Entities;
+using PSMPE.Portal.Infrastructure.Authorization;
 
 namespace PSMPE.Portal.WebAPI.Controllers;
 
@@ -37,6 +38,7 @@ public class AccountController(UserManager<ApplicationUser> userManager) : Contr
     ];
 
     [HttpPut("me")]
+    [AllowExpiredMember]
     public async Task<ActionResult<AccountDto>> UpdateMyAccount(UpdateAccountRequest request)
     {
         var user = await userManager.GetUserAsync(User);
@@ -69,6 +71,7 @@ public class AccountController(UserManager<ApplicationUser> userManager) : Contr
     }
 
     [HttpPost("me/password")]
+    [AllowExpiredMember]
     public async Task<IActionResult> ChangeMyPassword(ChangePasswordRequest request)
     {
         var user = await userManager.GetUserAsync(User);

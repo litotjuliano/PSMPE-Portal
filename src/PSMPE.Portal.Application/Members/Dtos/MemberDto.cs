@@ -24,23 +24,22 @@ public record MemberDto(
     string? CityMunicipality,
     string? Province,
     string? ZipCode,
+    string? Country,
     string? MailingHouseNo,
     string? MailingStreet,
     string? MailingBarangay,
     string? MailingCityMunicipality,
     string? MailingProvince,
     string? MailingZipCode,
+    string? MailingCountry,
     string? HousePhone,
-    string? Website,
-    string? FacebookUrl,
-    string? LinkedInUrl,
-    string? XUrl,
-    string? InstagramUrl,
-    string MembershipNo,
+    string? MembershipNo,
     string? PrcLicenseNo,
     DateOnly? PrcRegistrationDate,
     DateOnly? PrcValidUntilDate,
     string? PtrNumber,
+    string? PtrPlaceIssued,
+    DateOnly? PtrDateIssued,
     string? Tin,
     bool PrcIdVerified,
     string? PendingPrcLicenseNo,
@@ -48,6 +47,8 @@ public record MemberDto(
     DateOnly? PendingPrcValidUntilDate,
     string? PrcVerificationRejectedReason,
     string Chapter,
+    int? ChapterYear,
+    string? ChapterPosition,
     string? EmploymentStatus,
     string? Company,
     string? Position,
@@ -58,17 +59,30 @@ public record MemberDto(
     string MemberType,
     MembershipStatus Status,
     DateOnly? RenewalDueDate,
+    /// <summary>Whether the member currently has portal access. Read directly off
+    /// Member.HasPortalAccess - written exclusively by PaymentVerification.Apply, never a direct
+    /// admin toggle. See Member.HasPortalAccess's doc comment.</summary>
+    bool HasPortalAccess,
     string? NationalDuesReferenceNo,
     DateTimeOffset? ApprovedAt,
     DateTimeOffset? SubmittedAt,
     bool IsInGracePeriod,
+    /// <summary>Past the renewal date and past the grace period. Status auto-transitions to Expired
+    /// once a day via MembershipLifecycleService; this flag is still derived from RenewalDueDate
+    /// rather than trusted from Status alone so it stays same-day-accurate in the hours between
+    /// ticks. See MemberService.ComputeIsExpired.</summary>
+    bool IsExpired,
     DateTimeOffset CreatedAt,
     DateTimeOffset? UpdatedAt);
 
-/// <summary>Admin-only: creates a Member profile for an existing user, with an explicitly assigned MembershipNo.</summary>
+/// <summary>
+/// Admin-only: creates a Member profile for an existing user. MembershipNo is optional - PSMPE
+/// assigns its own control number, and an admin creating a profile may not have it yet. It can be
+/// supplied later on the edit form, and is mandatory at approval.
+/// </summary>
 public record CreateMemberRequest(
     Guid UserId,
-    string MembershipNo,
+    string? MembershipNo,
     string FirstName,
     string? MiddleName,
     string LastName,
@@ -87,24 +101,25 @@ public record CreateMemberRequest(
     string? CityMunicipality,
     string? Province,
     string? ZipCode,
+    string? Country,
     string? MailingHouseNo,
     string? MailingStreet,
     string? MailingBarangay,
     string? MailingCityMunicipality,
     string? MailingProvince,
     string? MailingZipCode,
+    string? MailingCountry,
     string? HousePhone,
-    string? Website,
-    string? FacebookUrl,
-    string? LinkedInUrl,
-    string? XUrl,
-    string? InstagramUrl,
     string? PrcLicenseNo,
     DateOnly? PrcRegistrationDate,
     DateOnly? PrcValidUntilDate,
     string? PtrNumber,
+    string? PtrPlaceIssued,
+    DateOnly? PtrDateIssued,
     string? Tin,
     string Chapter,
+    int? ChapterYear,
+    string? ChapterPosition,
     string? EmploymentStatus,
     string? Company,
     string? Position,
@@ -141,24 +156,25 @@ public record UpdateMemberRequest(
     string? CityMunicipality,
     string? Province,
     string? ZipCode,
+    string? Country,
     string? MailingHouseNo,
     string? MailingStreet,
     string? MailingBarangay,
     string? MailingCityMunicipality,
     string? MailingProvince,
     string? MailingZipCode,
+    string? MailingCountry,
     string? HousePhone,
-    string? Website,
-    string? FacebookUrl,
-    string? LinkedInUrl,
-    string? XUrl,
-    string? InstagramUrl,
     string? PrcLicenseNo,
     DateOnly? PrcRegistrationDate,
     DateOnly? PrcValidUntilDate,
     string? PtrNumber,
+    string? PtrPlaceIssued,
+    DateOnly? PtrDateIssued,
     string? Tin,
     string Chapter,
+    int? ChapterYear,
+    string? ChapterPosition,
     string? EmploymentStatus,
     string? Company,
     string? Position,
@@ -169,7 +185,11 @@ public record UpdateMemberRequest(
     string MemberType,
     MembershipStatus Status,
     DateOnly? RenewalDueDate,
-    string? NationalDuesReferenceNo);
+    string? NationalDuesReferenceNo,
+    /// <summary>The correction path for a control number mistyped at approval. Null or blank means
+    /// "not supplied" and leaves the stored value alone - it is deliberately NOT a way to clear an
+    /// approved member's number, and the default keeps every existing caller compiling.</summary>
+    string? MembershipNo = null);
 
 /// <summary>
 /// Self-service: no Status or MembershipNo - both are admin/business-controlled, not editable by
@@ -198,24 +218,25 @@ public record UpdateMyProfileRequest(
     string? CityMunicipality,
     string? Province,
     string? ZipCode,
+    string? Country,
     string? MailingHouseNo,
     string? MailingStreet,
     string? MailingBarangay,
     string? MailingCityMunicipality,
     string? MailingProvince,
     string? MailingZipCode,
+    string? MailingCountry,
     string? HousePhone,
-    string? Website,
-    string? FacebookUrl,
-    string? LinkedInUrl,
-    string? XUrl,
-    string? InstagramUrl,
     string? PrcLicenseNo,
     DateOnly? PrcRegistrationDate,
     DateOnly? PrcValidUntilDate,
     string? PtrNumber,
+    string? PtrPlaceIssued,
+    DateOnly? PtrDateIssued,
     string? Tin,
     string Chapter,
+    int? ChapterYear,
+    string? ChapterPosition,
     string? EmploymentStatus,
     string? Company,
     string? Position,
@@ -237,3 +258,41 @@ public record PrcVerificationHistoryDto(
     string? Reason,
     Guid DecidedByUserId,
     DateTimeOffset CreatedAt);
+
+/// <summary>
+/// Admin-only: approving an application requires PSMPE's own membership control number, which the
+/// portal never generates. Free text (trimmed, max 32 chars) so the society's numbering scheme
+/// isn't second-guessed, but it must not already belong to another member.
+/// </summary>
+/// <summary>
+/// Admits an application. Approval and payment are now one indivisible act: a member is never
+/// admitted without their registration payment being accepted in the same transaction, so nobody
+/// ends up approved-but-unpaid.
+///
+/// <para><paramref name="Payment"/> is only needed when the member has no payment on record - an
+/// admin-created profile, or a walk-in paying at the office. A self-service applicant already has
+/// one (created at submit), and the admin is reviewing rather than entering it, so this stays null.
+/// Supplying it when a payment already exists is rejected rather than silently ignored.</para>
+/// </summary>
+public record ApproveMemberRequest(string MembershipNo, RecordPaymentRequest? Payment = null);
+
+/// <summary>Payment details entered by an admin on a member's behalf - the walk-in path, which is
+/// also the paper-form-intake path.</summary>
+public record RecordPaymentRequest(
+    decimal Amount, string? ReferenceNo, DateOnly PaidOn, string ProofStorageKey,
+    /// <summary>Whether the amount the admin typed included the portal-access add-on. The admin
+    /// walk-in form auto-syncs this from the typed Amount by default, with manual override - see
+    /// proposal.md's mismatch-guarding decision. No server-side validation against Amount either
+    /// way.</summary>
+    bool IncludePortalAccess = false);
+
+/// <summary>POST /api/members/me/submit's optional body - a submission with no body at all (older
+/// clients) defaults to no portal access, same as before this field existed.</summary>
+public record SubmitMyProfileRequest(bool IncludePortalAccess = false);
+
+/// <summary>
+/// Advisory answer for the approve dialog's live duplicate check. Echoes the trimmed value back so
+/// the caller can discard a response that arrived after the admin typed on (the request is fired
+/// per keystroke, debounced, and responses can land out of order).
+/// </summary>
+public record MembershipNoAvailabilityDto(string MembershipNo, bool IsAvailable);

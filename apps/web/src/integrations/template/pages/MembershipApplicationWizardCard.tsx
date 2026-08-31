@@ -1,11 +1,36 @@
 import { useEffect, useRef, useState, type ChangeEvent, type FormEvent } from 'react'
 import { LuEye, LuUpload, LuUserRound } from 'react-icons/lu'
 import { Chapters, CivilStatuses, EducationLevels, MemberTypes, SpecifiedProfessions } from '../../../core/types/member'
+import {
+  CHAPTER_YEAR_ERROR,
+  CHAPTER_YEAR_MAX,
+  CHAPTER_YEAR_MIN,
+  deriveRmpValidUntil,
+  formatPhLandline,
+  formatPhMobile,
+  isValidChapterYear,
+  shouldDeriveValidUntil,
+} from '../../../core/utils/memberFields'
 import { uploadApi } from '../../../core/api/endpoints/uploadApi'
+import { paymentApi, type MembershipFees } from '../../../core/api/endpoints/paymentApi'
 import { describeError } from '../../../core/utils/apiError'
 import { MAX_IMAGE_BYTES, MAX_PDF_BYTES, MAX_PROOF_OF_PAYMENT_BYTES } from '../../../core/constants/uploadLimits'
 import { PipeStepper } from '../components/shared/PipeStepper'
 import { FilePreviewModal } from '../components/shared/FilePreviewModal'
+import { PhilippineAddressFields, type AddressValue } from '../components/shared/PhilippineAddressFields'
+
+/** The address component speaks generic field names; mailing state keys are prefixed. */
+const MAILING_FIELD = {
+  houseNo: 'mailingHouseNo',
+  street: 'mailingStreet',
+  barangay: 'mailingBarangay',
+  cityMunicipality: 'mailingCityMunicipality',
+  province: 'mailingProvince',
+  zipCode: 'mailingZipCode',
+  country: 'mailingCountry',
+} as const satisfies Record<keyof AddressValue, keyof MembershipApplicationState>
+
+const peso = new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' })
 
 // Mirrors MemberService's server-side checks - purely for fast client-side feedback, the server
 // is still the source of truth (MemberService.UpsertMyProfileAsync/SubmitMyProfileAsync).
@@ -22,15 +47,6 @@ function isValidHousePhone(value: string): boolean {
   if (!/^[\d\s\-()]+$/.test(value)) return false
   const digits = value.replace(/\D/g, '')
   return digits.length >= 7 && digits.length <= 11
-}
-
-function isValidUrl(value: string): boolean {
-  try {
-    const url = new URL(value)
-    return url.protocol === 'http:' || url.protocol === 'https:'
-  } catch {
-    return false
-  }
 }
 
 function isAtLeast18(birthdate: string): boolean {
@@ -68,6 +84,10 @@ export interface MembershipApplicationState {
   gender: string
   civilStatus: string
   chapter: string
+  /** Held as a string like every other input; converted to a number (or null) at payload time,
+   *  same as yearsOfPractice elsewhere. */
+  chapterYear: string
+  chapterPosition: string
   memberType: string
   educationLevel: string
   schoolName: string
@@ -77,6 +97,8 @@ export interface MembershipApplicationState {
   prcRegistrationDate: string
   prcValidUntilDate: string
   ptrNumber: string
+  ptrPlaceIssued: string
+  ptrDateIssued: string
   tin: string
   company: string
   mobileNumber: string
@@ -86,6 +108,7 @@ export interface MembershipApplicationState {
   cityMunicipality: string
   province: string
   zipCode: string
+  country: string
   /** Client-only convenience - never sent as its own field; when true, the mailing address
    *  inputs are hidden and the residence values are copied into the mailing fields at save time
    *  (see MyProfilePage.saveDraft). */
@@ -96,29 +119,22 @@ export interface MembershipApplicationState {
   mailingCityMunicipality: string
   mailingProvince: string
   mailingZipCode: string
+  mailingCountry: string
   housePhone: string
-  website: string
-  facebookUrl: string
-  linkedInUrl: string
-  xUrl: string
-  instagramUrl: string
   agreedToTerms: boolean
   dataPrivacyConsent: boolean
+  includePortalAccess: boolean
 }
 
 interface WizardFieldErrors {
   birthdate?: string
+  chapterYear?: string
   photo?: string
   prcId?: string
   prcRegistrationDate?: string
   prcValidUntilDate?: string
   housePhone?: string
   mobileNumber?: string
-  website?: string
-  facebookUrl?: string
-  linkedInUrl?: string
-  xUrl?: string
-  instagramUrl?: string
   tin?: string
   proofOfPayment?: string
   terms?: string
@@ -171,6 +187,12 @@ export const MembershipApplicationWizardCard = ({
   const [hasProofOfPayment, setHasProofOfPayment] = useState(false)
   const [fieldErrors, setFieldErrors] = useState<WizardFieldErrors>({})
   const [previewOpen, setPreviewOpen] = useState<'prcId' | 'proofOfPayment' | null>(null)
+  const [fees, setFees] = useState<MembershipFees | null>(null)
+
+  useEffect(() => {
+    // Falls back to showing an ellipsis rather than a wrong number if this fails.
+    paymentApi.getFees().then(setFees).catch(() => {})
+  }, [])
 
   // Restore previews for an in-progress draft (files already uploaded in an earlier session) -
   // fetched via apiClient (carries the auth header), not a plain <img src>/URL string, since
@@ -302,27 +324,15 @@ export const MembershipApplicationWizardCard = ({
       if (!state.prcValidUntilDate) {
         errors.prcValidUntilDate = 'Please enter your RMP Valid Until date.'
       }
+      if (state.chapterYear && !isValidChapterYear(state.chapterYear)) {
+        errors.chapterYear = CHAPTER_YEAR_ERROR
+      }
     } else if (step === 1) {
       if (state.housePhone && !isValidHousePhone(state.housePhone)) {
         errors.housePhone = 'House phone must be a valid landline number.'
       }
       if (state.mobileNumber && !isValidPhMobile(state.mobileNumber)) {
         errors.mobileNumber = 'Mobile number must be in the format +639XXXXXXXXX, 639XXXXXXXXX, or 09XXXXXXXXX.'
-      }
-      if (state.website && !isValidUrl(state.website)) {
-        errors.website = 'Website must be a valid URL, e.g. https://example.com.'
-      }
-      if (state.facebookUrl && !isValidUrl(state.facebookUrl)) {
-        errors.facebookUrl = 'Facebook must be a valid profile URL.'
-      }
-      if (state.linkedInUrl && !isValidUrl(state.linkedInUrl)) {
-        errors.linkedInUrl = 'LinkedIn must be a valid profile URL.'
-      }
-      if (state.xUrl && !isValidUrl(state.xUrl)) {
-        errors.xUrl = 'X (Twitter) must be a valid profile URL.'
-      }
-      if (state.instagramUrl && !isValidUrl(state.instagramUrl)) {
-        errors.instagramUrl = 'Instagram must be a valid profile URL.'
       }
     } else if (step === 2) {
       if (state.tin && !/^[\d-]{9,12}$/.test(state.tin)) {
@@ -392,31 +402,55 @@ export const MembershipApplicationWizardCard = ({
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 flex-1">
                 {uploadError && <p className="md:col-span-2 text-sm text-danger">{uploadError}</p>}
-                <div className="md:col-span-2">
-                  <span className="block font-medium text-default-900 text-sm mb-2">Email</span>
-                  <span className="text-sm font-semibold text-default-800">{accountEmail}</span>
-                </div>
-                <div>
-                  <label className="block font-medium text-default-900 text-sm mb-2">Member Type</label>
-                  <select className="form-input" required value={state.memberType} onChange={(e) => onChange('memberType', e.target.value)}>
-                    <option value="">Select a member type…</option>
-                    {Object.values(MemberTypes).map((t) => (
-                      <option key={t} value={t}>
-                        {t}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="block font-medium text-default-900 text-sm mb-2">Chapter</label>
-                  <select className="form-input" required value={state.chapter} onChange={(e) => onChange('chapter', e.target.value)}>
-                    <option value="">Select a chapter…</option>
-                    {Object.values(Chapters).map((c) => (
-                      <option key={c} value={c}>
-                        {c}
-                      </option>
-                    ))}
-                  </select>
+                {/* Membership + chapter form one row on desktop: 1-up on phones, 2x2 on tablets,
+                    4 across from xl. Nested inside the step's own 2-column grid via col-span-2,
+                    the same way the Surname/Given/Middle/Suffix row below does it. */}
+                <div className="md:col-span-2 grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+                  <div>
+                    <label className="block font-medium text-default-900 text-sm mb-2">Member Type</label>
+                    <select className="form-input" required value={state.memberType} onChange={(e) => onChange('memberType', e.target.value)}>
+                      <option value="">Select a member type…</option>
+                      {Object.values(MemberTypes).map((t) => (
+                        <option key={t} value={t}>
+                          {t}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block font-medium text-default-900 text-sm mb-2">Chapter</label>
+                    <select className="form-input" required value={state.chapter} onChange={(e) => onChange('chapter', e.target.value)}>
+                      <option value="">Select a chapter…</option>
+                      {Object.values(Chapters).map((c) => (
+                        <option key={c} value={c}>
+                          {c}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  {/* Chapter officer post - optional, and shown for every chapter, not just NCR. */}
+                  <div>
+                    <label className="block font-medium text-default-900 text-sm mb-2">Chapter Officer Year (optional)</label>
+                    <input
+                      className="form-input"
+                      type="number"
+                      min={CHAPTER_YEAR_MIN}
+                      max={CHAPTER_YEAR_MAX}
+                      placeholder="e.g. 2024"
+                      value={state.chapterYear}
+                      onChange={(e) => onChange('chapterYear', e.target.value)}
+                    />
+                    {fieldErrors.chapterYear && <p className="text-xs text-danger mt-1">{fieldErrors.chapterYear}</p>}
+                  </div>
+                  <div>
+                    <label className="block font-medium text-default-900 text-sm mb-2">Chapter Position (optional)</label>
+                    <input
+                      className="form-input"
+                      placeholder="e.g. Secretary"
+                      value={state.chapterPosition}
+                      onChange={(e) => onChange('chapterPosition', e.target.value)}
+                    />
+                  </div>
                 </div>
                 <div className="md:col-span-2 grid grid-cols-2 sm:grid-cols-4 gap-4">
                   <div>
@@ -442,6 +476,7 @@ export const MembershipApplicationWizardCard = ({
                     <input
                       type="date"
                       className="form-input"
+                      required
                       max={maxBirthdate}
                       value={state.birthdate}
                       onChange={(e) => onChange('birthdate', e.target.value)}
@@ -460,6 +495,7 @@ export const MembershipApplicationWizardCard = ({
                           type="radio"
                           name="gender"
                           className="form-radio"
+                          required
                           checked={state.gender === 'Male'}
                           onChange={() => onChange('gender', 'Male')}
                         />
@@ -479,7 +515,7 @@ export const MembershipApplicationWizardCard = ({
                   </div>
                   <div>
                     <label className="block font-medium text-default-900 text-sm mb-2">Civil Status</label>
-                    <select className="form-input" value={state.civilStatus} onChange={(e) => onChange('civilStatus', e.target.value)}>
+                    <select className="form-input" required value={state.civilStatus} onChange={(e) => onChange('civilStatus', e.target.value)}>
                       <option value="">Select civil status…</option>
                       {Object.values(CivilStatuses).map((c) => (
                         <option key={c} value={c}>
@@ -500,6 +536,7 @@ export const MembershipApplicationWizardCard = ({
                             type="radio"
                             name="educationLevel"
                             className="form-radio"
+                            required
                             checked={state.educationLevel === level}
                             onChange={() => onChange('educationLevel', level)}
                           />
@@ -510,12 +547,13 @@ export const MembershipApplicationWizardCard = ({
                   </div>
                   <div>
                     <label className="block font-medium text-default-900 text-sm mb-2">Name of School/Institution</label>
-                    <input className="form-input" value={state.schoolName} onChange={(e) => onChange('schoolName', e.target.value)} />
+                    <input className="form-input" required value={state.schoolName} onChange={(e) => onChange('schoolName', e.target.value)} />
                   </div>
                   <div>
                     <label className="block font-medium text-default-900 text-sm mb-2">Course &amp; Year Graduated</label>
                     <input
                       className="form-input"
+                      required
                       placeholder="e.g. BSCE 2023"
                       value={state.courseYearGraduated}
                       onChange={(e) => onChange('courseYearGraduated', e.target.value)}
@@ -530,6 +568,7 @@ export const MembershipApplicationWizardCard = ({
                             type="radio"
                             name="specifiedProfession"
                             className="form-radio"
+                            required
                             checked={state.specifiedProfession === profession}
                             onChange={() => onChange('specifiedProfession', profession)}
                           />
@@ -557,7 +596,14 @@ export const MembershipApplicationWizardCard = ({
                       className="form-input"
                       required
                       value={state.prcRegistrationDate}
-                      onChange={(e) => onChange('prcRegistrationDate', e.target.value)}
+                      onChange={(e) => {
+                        // Valid Until follows the registration date by a year, unless the applicant
+                        // has already typed their own - see shouldDeriveValidUntil.
+                        if (shouldDeriveValidUntil(state.prcValidUntilDate, state.prcRegistrationDate)) {
+                          onChange('prcValidUntilDate', deriveRmpValidUntil(e.target.value))
+                        }
+                        onChange('prcRegistrationDate', e.target.value)
+                      }}
                     />
                     {fieldErrors.prcRegistrationDate && <p className="text-xs text-danger mt-1">{fieldErrors.prcRegistrationDate}</p>}
                   </div>
@@ -570,6 +616,7 @@ export const MembershipApplicationWizardCard = ({
                       value={state.prcValidUntilDate}
                       onChange={(e) => onChange('prcValidUntilDate', e.target.value)}
                     />
+                    <p className="text-xs text-default-500 mt-1">Defaults to one year after the registration date. Change it if your card says otherwise.</p>
                     {fieldErrors.prcValidUntilDate && <p className="text-xs text-danger mt-1">{fieldErrors.prcValidUntilDate}</p>}
                   </div>
                 </div>
@@ -614,13 +661,20 @@ export const MembershipApplicationWizardCard = ({
 
           {step === 1 && (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {/* Read-only - the account email is set at sign-up and changed from Account &
+                  Security, not here. It sits with the other ways to reach the member. */}
+              <div className="md:col-span-2">
+                <span className="block font-medium text-default-900 text-sm mb-2">Email</span>
+                <span className="text-sm font-semibold text-default-800">{accountEmail}</span>
+              </div>
               <div>
                 <label className="block font-medium text-default-900 text-sm mb-2">House Phone (optional)</label>
                 <input
                   className="form-input"
+                  inputMode="tel"
                   placeholder="e.g. (02) 8123 4567"
                   value={state.housePhone}
-                  onChange={(e) => onChange('housePhone', e.target.value)}
+                  onChange={(e) => onChange('housePhone', formatPhLandline(e.target.value))}
                 />
                 {fieldErrors.housePhone && <p className="text-xs text-danger mt-1">{fieldErrors.housePhone}</p>}
               </div>
@@ -629,95 +683,34 @@ export const MembershipApplicationWizardCard = ({
                 <input
                   className="form-input"
                   required
+                  inputMode="tel"
                   placeholder="09XXXXXXXXX"
                   value={state.mobileNumber}
-                  onChange={(e) => onChange('mobileNumber', e.target.value)}
+                  onChange={(e) => onChange('mobileNumber', formatPhMobile(e.target.value))}
                 />
                 {fieldErrors.mobileNumber && <p className="text-xs text-danger mt-1">{fieldErrors.mobileNumber}</p>}
-              </div>
-              <div className="md:col-span-2">
-                <label className="block font-medium text-default-900 text-sm mb-2">Website (optional)</label>
-                <input
-                  className="form-input"
-                  placeholder="https://example.com"
-                  value={state.website}
-                  onChange={(e) => onChange('website', e.target.value)}
-                />
-                {fieldErrors.website && <p className="text-xs text-danger mt-1">{fieldErrors.website}</p>}
-              </div>
-              <div>
-                <label className="block font-medium text-default-900 text-sm mb-2">Facebook (optional)</label>
-                <input
-                  className="form-input"
-                  placeholder="https://facebook.com/yourprofile"
-                  value={state.facebookUrl}
-                  onChange={(e) => onChange('facebookUrl', e.target.value)}
-                />
-                {fieldErrors.facebookUrl && <p className="text-xs text-danger mt-1">{fieldErrors.facebookUrl}</p>}
-              </div>
-              <div>
-                <label className="block font-medium text-default-900 text-sm mb-2">LinkedIn (optional)</label>
-                <input
-                  className="form-input"
-                  placeholder="https://linkedin.com/in/yourprofile"
-                  value={state.linkedInUrl}
-                  onChange={(e) => onChange('linkedInUrl', e.target.value)}
-                />
-                {fieldErrors.linkedInUrl && <p className="text-xs text-danger mt-1">{fieldErrors.linkedInUrl}</p>}
-              </div>
-              <div>
-                <label className="block font-medium text-default-900 text-sm mb-2">X (optional)</label>
-                <input
-                  className="form-input"
-                  placeholder="https://x.com/yourprofile"
-                  value={state.xUrl}
-                  onChange={(e) => onChange('xUrl', e.target.value)}
-                />
-                {fieldErrors.xUrl && <p className="text-xs text-danger mt-1">{fieldErrors.xUrl}</p>}
-              </div>
-              <div>
-                <label className="block font-medium text-default-900 text-sm mb-2">Instagram (optional)</label>
-                <input
-                  className="form-input"
-                  placeholder="https://instagram.com/yourprofile"
-                  value={state.instagramUrl}
-                  onChange={(e) => onChange('instagramUrl', e.target.value)}
-                />
-                {fieldErrors.instagramUrl && <p className="text-xs text-danger mt-1">{fieldErrors.instagramUrl}</p>}
               </div>
 
               <div className="md:col-span-2 border-t border-default-200 pt-4">
                 <h6 className="font-semibold text-default-800">Residence Address</h6>
               </div>
-              <div>
-                <label className="block font-medium text-default-900 text-sm mb-2">House No. (optional)</label>
-                <input className="form-input" value={state.houseNo} onChange={(e) => onChange('houseNo', e.target.value)} />
-              </div>
-              <div>
-                <label className="block font-medium text-default-900 text-sm mb-2">Street</label>
-                <input className="form-input" required value={state.street} onChange={(e) => onChange('street', e.target.value)} />
-              </div>
-              <div>
-                <label className="block font-medium text-default-900 text-sm mb-2">Barangay</label>
-                <input className="form-input" required value={state.barangay} onChange={(e) => onChange('barangay', e.target.value)} />
-              </div>
-              <div>
-                <label className="block font-medium text-default-900 text-sm mb-2">City or Municipality</label>
-                <input
-                  className="form-input"
-                  required
-                  value={state.cityMunicipality}
-                  onChange={(e) => onChange('cityMunicipality', e.target.value)}
-                />
-              </div>
-              <div>
-                <label className="block font-medium text-default-900 text-sm mb-2">Province</label>
-                <input className="form-input" required value={state.province} onChange={(e) => onChange('province', e.target.value)} />
-              </div>
-              <div>
-                <label className="block font-medium text-default-900 text-sm mb-2">Zip Code</label>
-                <input className="form-input" required value={state.zipCode} onChange={(e) => onChange('zipCode', e.target.value)} />
-              </div>
+              {/* `contents` so the component's fields become direct children of this step's own
+                  grid rather than nesting a second one inside a cell. */}
+              <PhilippineAddressFields
+                idPrefix="wizard-residence"
+                required
+                gridClassName="contents"
+                value={{
+                  houseNo: state.houseNo,
+                  street: state.street,
+                  barangay: state.barangay,
+                  cityMunicipality: state.cityMunicipality,
+                  province: state.province,
+                  zipCode: state.zipCode,
+                  country: state.country,
+                }}
+                onChange={onChange}
+              />
 
               <div className="md:col-span-2 border-t border-default-200 pt-4 flex items-center justify-between">
                 <h6 className="font-semibold text-default-800">Mailing Address</h6>
@@ -732,52 +725,20 @@ export const MembershipApplicationWizardCard = ({
                 </label>
               </div>
               {!state.mailingSameAsResidence && (
-                <>
-                  <div>
-                    <label className="block font-medium text-default-900 text-sm mb-2">House No. (optional)</label>
-                    <input
-                      className="form-input"
-                      value={state.mailingHouseNo}
-                      onChange={(e) => onChange('mailingHouseNo', e.target.value)}
-                    />
-                  </div>
-                  <div>
-                    <label className="block font-medium text-default-900 text-sm mb-2">Street</label>
-                    <input className="form-input" value={state.mailingStreet} onChange={(e) => onChange('mailingStreet', e.target.value)} />
-                  </div>
-                  <div>
-                    <label className="block font-medium text-default-900 text-sm mb-2">Barangay</label>
-                    <input
-                      className="form-input"
-                      value={state.mailingBarangay}
-                      onChange={(e) => onChange('mailingBarangay', e.target.value)}
-                    />
-                  </div>
-                  <div>
-                    <label className="block font-medium text-default-900 text-sm mb-2">City or Municipality</label>
-                    <input
-                      className="form-input"
-                      value={state.mailingCityMunicipality}
-                      onChange={(e) => onChange('mailingCityMunicipality', e.target.value)}
-                    />
-                  </div>
-                  <div>
-                    <label className="block font-medium text-default-900 text-sm mb-2">Province</label>
-                    <input
-                      className="form-input"
-                      value={state.mailingProvince}
-                      onChange={(e) => onChange('mailingProvince', e.target.value)}
-                    />
-                  </div>
-                  <div>
-                    <label className="block font-medium text-default-900 text-sm mb-2">Zip Code</label>
-                    <input
-                      className="form-input"
-                      value={state.mailingZipCode}
-                      onChange={(e) => onChange('mailingZipCode', e.target.value)}
-                    />
-                  </div>
-                </>
+                <PhilippineAddressFields
+                  idPrefix="wizard-mailing"
+                  gridClassName="contents"
+                  value={{
+                    houseNo: state.mailingHouseNo,
+                    street: state.mailingStreet,
+                    barangay: state.mailingBarangay,
+                    cityMunicipality: state.mailingCityMunicipality,
+                    province: state.mailingProvince,
+                    zipCode: state.mailingZipCode,
+                    country: state.mailingCountry,
+                  }}
+                  onChange={(field, next) => onChange(MAILING_FIELD[field], next)}
+                />
               )}
             </div>
           )}
@@ -785,8 +746,27 @@ export const MembershipApplicationWizardCard = ({
           {step === 2 && (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <label className="block font-medium text-default-900 text-sm mb-2">PTR Number</label>
-                <input className="form-input" required value={state.ptrNumber} onChange={(e) => onChange('ptrNumber', e.target.value)} />
+                <label className="block font-medium text-default-900 text-sm mb-2">PTR Number (optional)</label>
+                <input className="form-input" value={state.ptrNumber} onChange={(e) => onChange('ptrNumber', e.target.value)} />
+              </div>
+              {/* Nothing on this step is required - see MemberService.SubmitMyProfileAsync. */}
+              <div>
+                <label className="block font-medium text-default-900 text-sm mb-2">PTR Place Issued (optional)</label>
+                <input
+                  className="form-input"
+                  placeholder="e.g. Quezon City"
+                  value={state.ptrPlaceIssued}
+                  onChange={(e) => onChange('ptrPlaceIssued', e.target.value)}
+                />
+              </div>
+              <div>
+                <label className="block font-medium text-default-900 text-sm mb-2">PTR Date Issued (optional)</label>
+                <input
+                  className="form-input"
+                  type="date"
+                  value={state.ptrDateIssued}
+                  onChange={(e) => onChange('ptrDateIssued', e.target.value)}
+                />
               </div>
               <div>
                 <label className="block font-medium text-default-900 text-sm mb-2">TIN (optional)</label>
@@ -809,13 +789,33 @@ export const MembershipApplicationWizardCard = ({
             <div className="flex flex-col gap-6">
               <div>
                 <h6 className="font-semibold text-default-800 mb-3">Payment Details</h6>
+                {/* Read from SystemConfig, not hardcoded - the same figures the receipt uses,
+                    so the two can no longer drift apart. */}
                 <div className="text-sm text-default-700 flex flex-col gap-1">
-                  <p className="font-semibold text-default-800">TOTAL: ₱1,700.00</p>
-                  <p>Membership Fee: ₱1,500.00</p>
-                  <p>Annual Dues: ₱600.00 (payable one year after registration)</p>
+                  <p className="font-semibold text-default-800">
+                    TOTAL:{' '}
+                    {fees
+                      ? peso.format(state.includePortalAccess ? fees.registrationTotalWithPortal : fees.registrationTotalWithoutPortal)
+                      : '…'}
+                  </p>
+                  <p>Membership Fee: {fees ? peso.format(fees.membershipFee) : '…'}</p>
+                  <p>Annual Dues: {fees ? peso.format(fees.annualDues) : '…'} (payable one year after registration)</p>
                   <p>PVC ID: Included</p>
-                  <p>Shipping Fee (delivery option only): ₱200.00</p>
+                  <p>Shipping Fee (delivery option only): {fees ? peso.format(fees.shippingFee) : '…'}</p>
+                  <p>
+                    Portal Access:{' '}
+                    {state.includePortalAccess ? `Included (+${fees ? peso.format(fees.portalFee) : '…'})` : 'Not included'}
+                  </p>
                 </div>
+                <label className="flex items-center gap-2 text-sm text-default-800 mt-3">
+                  <input
+                    type="checkbox"
+                    className="form-checkbox"
+                    checked={state.includePortalAccess}
+                    onChange={(e) => onChange('includePortalAccess', e.target.checked)}
+                  />
+                  Include Portal Access {fees ? `(+${peso.format(fees.portalFee)})` : ''}
+                </label>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-3 text-sm">
                   <div className="border border-default-200 rounded-lg p-3">
                     <p className="font-semibold text-default-800 mb-1">Bank Deposit</p>
@@ -893,7 +893,7 @@ export const MembershipApplicationWizardCard = ({
                   <div className="md:col-span-2">
                     <span className="text-default-500">Residence Address</span>{' '}
                     <span className="font-semibold text-default-800">
-                      {[state.houseNo, state.street, state.barangay, state.cityMunicipality, state.province, state.zipCode]
+                      {[state.houseNo, state.street, state.barangay, state.cityMunicipality, state.province, state.zipCode, state.country]
                         .filter(Boolean)
                         .join(', ') || '-'}
                     </span>

@@ -1,5 +1,16 @@
 import type { IconType } from 'react-icons/lib'
-import { LuBadgeCheck, LuBellRing, LuFileText, LuMonitorDot, LuShieldCheck, LuSquareUserRound, LuUserCheck, LuUserRound, LuUsers } from 'react-icons/lu'
+import {
+  LuBanknote,
+  LuBellRing,
+  LuCalendarClock,
+  LuFileClock,
+  LuFileText,
+  LuMonitorDot,
+  LuShieldCheck,
+  LuSquareUserRound,
+  LuUserRound,
+  LuUsers,
+} from 'react-icons/lu'
 
 export type MenuItemType = {
   key: string
@@ -47,32 +58,41 @@ export const menuItemsData: MenuItemType[] = [
     requiredRoles: ['Member'],
   },
   {
+    key: 'MyCpd',
+    label: 'My CPD',
+    icon: LuCalendarClock,
+    href: '/my-cpd',
+    requiredRoles: ['Member'],
+  },
+  {
     key: 'Members',
     label: 'Members',
     icon: LuUsers,
     href: '/members',
-    requiredRoles: ['Admin', 'Super Admin'],
+    requiredRoles: ['Admin', 'Super Admin', 'Approval'],
   },
   {
-    key: 'MembershipApprovals',
-    label: 'Membership Approvals',
-    icon: LuUserCheck,
-    href: '/membership-approvals',
-    requiredRoles: ['Admin', 'Super Admin'],
+    key: 'Events',
+    label: 'Events',
+    icon: LuCalendarClock,
+    href: '/events',
   },
+  // Membership Approvals and RMP Verifications used to sit here. Both were the same
+  // GET /api/members query with a different filter, so they are now tabs on Members. The topbar
+  // notification bell is what surfaces "work is waiting" now that the nav no longer does.
   {
-    key: 'PrcVerifications',
-    label: 'RMP Verifications',
-    icon: LuBadgeCheck,
-    href: '/prc-verifications',
-    requiredRoles: ['Admin', 'Super Admin'],
+    key: 'MembershipFees',
+    label: 'Membership Fees',
+    icon: LuBanknote,
+    href: '/membership-fees',
+    requiredRoles: ['Admin', 'Super Admin', 'Approval'],
   },
   {
     key: 'Notifications',
     label: 'Notifications',
     icon: LuBellRing,
     href: '/notifications',
-    requiredRoles: ['Admin', 'Super Admin'],
+    requiredRoles: ['Admin', 'Super Admin', 'Approval'],
   },
   {
     key: 'CMS',
@@ -90,13 +110,20 @@ export const menuItemsData: MenuItemType[] = [
     label: 'Users',
     icon: LuSquareUserRound,
     href: '/admin/users',
-    requiredRoles: ['Admin', 'Super Admin'],
+    requiredRoles: ['Admin', 'Super Admin', 'Approval'],
   },
   {
     key: 'Roles',
     label: 'Roles & Permissions',
     icon: LuShieldCheck,
     href: '/admin/roles',
-    requiredRoles: ['Admin', 'Super Admin'],
+    requiredRoles: ['Admin', 'Super Admin', 'Approval'],
+  },
+  {
+    key: 'SystemLogs',
+    label: 'System Logs',
+    icon: LuFileClock,
+    href: '/admin/system-logs',
+    requiredRoles: ['Super Admin'],
   },
 ]

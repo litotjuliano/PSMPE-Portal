@@ -106,8 +106,12 @@ if errorlevel 1 (
 
 echo.
 echo ============================================
-echo  Building frontend
+echo  Installing frontend dependencies
 echo ============================================
+REM No "npm run build" here - the dev server started below (npm run dev) serves from
+REM source with hot reload and never reads apps/web/dist, so a production build here was
+REM pure wasted time on every launch, and it wrote/deleted the same dist/ folder a build
+REM run elsewhere (e.g. CI, or another terminal) could be touching at the same moment.
 pushd "%ROOT%apps\web"
 call npm install
 if errorlevel 1 (
@@ -115,17 +119,11 @@ if errorlevel 1 (
     popd
     exit /b 1
 )
-call npm run build
-if errorlevel 1 (
-    echo Frontend build FAILED. Aborting.
-    popd
-    exit /b 1
-)
 popd
 
 echo.
 echo ============================================
-echo  Builds OK - launching dev servers
+echo  Ready - launching dev servers
 echo ============================================
 
 start "PSMPE Backend (:5000)" cmd /k "cd /d "%ROOT%src\PSMPE.Portal.WebAPI" && dotnet run --urls http://localhost:5000"

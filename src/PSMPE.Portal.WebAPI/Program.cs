@@ -1,9 +1,12 @@
 using System.Net;
+using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using PSMPE.Portal.Application;
+using PSMPE.Portal.Application.Members;
+using PSMPE.Portal.Application.Payments;
 using PSMPE.Portal.Domain.Entities;
 using PSMPE.Portal.Infrastructure;
 using PSMPE.Portal.Infrastructure.Persistence;
@@ -13,7 +16,23 @@ using PSMPE.Portal.WebAPI.Middleware;
 
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddControllers();
+// Required by QuestPDF as of its Community-license versions - without this, every PDF generation
+// call throws at runtime. Community is free for PSMPE's use (a single small organization, not a
+// >$1M-revenue company reselling the software) - see QuestPDF's license terms if that ever changes.
+QuestPDF.Settings.License = QuestPDF.Infrastructure.LicenseType.Community;
+
+builder.Services.AddControllers().AddJsonOptions(options =>
+{
+    // Default System.Text.Json behaviour serializes every enum (PaymentKind, PaymentStatus,
+    // MembershipStatus, ...) as its underlying integer, silently diverging from every frontend
+    // type that assumes the string name (e.g. PaymentKindValue = 'NewMembership' | 'Renewal' |
+    // 'EventRegistration'). That mismatch was never caught because it fails quietly on read
+    // (a lookup keyed by the wrong type just returns undefined/blank) and loudly but confusingly
+    // on write (PUT /api/members/{id} 400s on the Status field with a JSON-conversion error, not
+    // an obviously-enum-shaped message). This makes every enum round-trip as its name instead,
+    // matching what the frontend has assumed all along.
+    options.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter());
+});
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddPortalSwagger();
 builder.Services.AddPortalRateLimiting(builder.Configuration);
@@ -113,6 +132,8 @@ app.UseRateLimiter();
 app.UseAuthentication();
 app.UseAuthorization();
 
+app.UseMiddleware<MembershipAccessMiddleware>();
+
 app.MapControllers();
 
 // Unauthenticated liveness probe used by the DigitalOcean App Platform health check
@@ -139,7 +160,11 @@ if (builder.Configuration.GetValue<bool>("Seed:Enabled"))
     var userManager = services.GetRequiredService<UserManager<ApplicationUser>>();
     await IdentitySeeder.SeedAsync(roleManager, userManager, builder.Configuration, logger);
     await SystemConfigSeeder.SeedAsync(db, logger);
-    await MemberSeeder.SeedAsync(db, userManager, builder.Configuration, logger);
+
+    var memberService = services.GetRequiredService<IMemberService>();
+    var memberUploadService = services.GetRequiredService<IMemberUploadService>();
+    var paymentService = services.GetRequiredService<IPaymentService>();
+    await MemberSeeder.SeedAsync(db, userManager, memberService, memberUploadService, paymentService, builder.Configuration, logger);
 }
 
 // Unconditional (not gated by Seed:Enabled) - fixes real corrupted data (administrative accounts

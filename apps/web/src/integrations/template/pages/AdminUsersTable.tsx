@@ -14,6 +14,15 @@ interface AdminUsersTableProps {
   /** Edit/Delete are Super-Admin-only - hidden entirely (not just disabled) for a regular Admin,
    *  who's left with only the Email Verification action on this page. */
   isSuperAdmin: boolean
+  /** Gates "New user" and per-row email verification - both are Admin/Super-Admin-only server
+   *  side (admin:manage-users permission / RequireAdmin policy respectively), so an Approval
+   *  user (view-only here) must not see either. */
+  canManageUsers: boolean
+  /** The raw, un-debounced input value - AdminUsersPage owns the debounce timer. */
+  searchInput?: string
+  onSearchInputChange?: (value: string) => void
+  roleFilter?: Role[]
+  onRoleFilterToggle?: (role: Role) => void
   onToggleRole: (userId: string, role: Role, hasRole: boolean) => void
   onDelete: (id: string) => void
   onVerifyEmail: (userId: string) => void
@@ -68,6 +77,11 @@ export const AdminUsersTable = ({
   users,
   canManageRoles,
   isSuperAdmin,
+  canManageUsers,
+  searchInput,
+  onSearchInputChange,
+  roleFilter,
+  onRoleFilterToggle,
   onToggleRole,
   onDelete,
   onVerifyEmail,
@@ -91,10 +105,54 @@ export const AdminUsersTable = ({
     <div className="card">
       <div className="card-header flex justify-between items-center">
         <h6 className="card-title">Users</h6>
-        <Link to="/admin/users/new" className="btn btn-sm bg-primary text-white">
-          <LuPlus className="size-4 me-1" />
-          New user
-        </Link>
+        {canManageUsers && (
+          <StandardButton to="/admin/users/new" size="sm" variant="on-primary" icon={LuPlus}>
+            New user
+          </StandardButton>
+        )}
+      </div>
+
+      {/* A plain toolbar, deliberately NOT a second .card-header - that class is bg-primary (navy),
+          and these controls are styled for a light surface, so the active chip (bg-primary) was
+          navy-on-navy and the inactive ones were dark grey on navy. Both were invisible, which also
+          made filtering look broken: you couldn't see which filters were on. */}
+      <div className="flex flex-wrap items-center gap-3 px-5 py-3 border-b border-default-200 bg-default-50">
+        <input
+          type="text"
+          className="form-input max-w-xs"
+          placeholder="Search by name or email…"
+          value={searchInput ?? ''}
+          onChange={(e) => onSearchInputChange?.(e.target.value)}
+        />
+        <div className="flex flex-wrap items-center gap-2">
+          {AssignableRoles.map((role) => {
+            const active = roleFilter?.includes(role) ?? false
+            return (
+              <button
+                key={role}
+                type="button"
+                aria-pressed={active}
+                onClick={() => onRoleFilterToggle?.(role)}
+                className={`btn btn-sm whitespace-nowrap ${
+                  active
+                    ? 'bg-primary text-white border border-primary'
+                    : 'border border-default-300 text-default-700 bg-white hover:bg-default-100'
+                }`}
+              >
+                {role}
+              </button>
+            )
+          })}
+          {(roleFilter?.length ?? 0) > 0 && (
+            <button
+              type="button"
+              onClick={() => roleFilter?.forEach((role) => onRoleFilterToggle?.(role))}
+              className="btn btn-sm text-default-600 hover:text-default-900 underline underline-offset-2"
+            >
+              Clear
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="flex flex-col">
@@ -164,10 +222,14 @@ export const AdminUsersTable = ({
                           <span className="py-0.5 px-2.5 inline-flex items-center text-xs font-medium rounded bg-success/10 text-success">
                             Verified
                           </span>
-                        ) : (
+                        ) : canManageUsers ? (
                           <StandardButton variant="warning" size="sm" icon={LuCheck} onClick={() => setVerifyingUser(user)}>
                             Verify
                           </StandardButton>
+                        ) : (
+                          <span className="py-0.5 px-2.5 inline-flex items-center text-xs font-medium rounded bg-default-150 text-default-600">
+                            Unverified
+                          </span>
                         )}
                       </td>
                       <td className="py-3 px-3.5">
@@ -246,7 +308,19 @@ export const AdminUsersTable = ({
                   {users.length === 0 && (
                     <tr>
                       <td colSpan={6} className="py-6 px-3.5 text-center text-default-500">
-                        No users yet.
+                        {/* Selecting two roles means "holds both". Most users hold exactly one, so
+                            this is the expected result rather than a fault - say so, or it reads as
+                            a broken filter. */}
+                        {(roleFilter?.length ?? 0) > 1 ? (
+                          <>
+                            No user holds all of {roleFilter!.join(' + ')}. Role filters narrow the list — select
+                            one at a time to see everyone with that role.
+                          </>
+                        ) : (roleFilter?.length ?? 0) === 1 || searchInput ? (
+                          <>No users match this filter.</>
+                        ) : (
+                          <>No users yet.</>
+                        )}
                       </td>
                     </tr>
                   )}

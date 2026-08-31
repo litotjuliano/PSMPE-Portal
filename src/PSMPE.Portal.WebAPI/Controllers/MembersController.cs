@@ -4,8 +4,11 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using PSMPE.Portal.Application.Common.Interfaces;
 using PSMPE.Portal.Application.Common.Models;
+using PSMPE.Portal.Application.Events;
+using PSMPE.Portal.Application.Events.Dtos;
 using PSMPE.Portal.Application.Members;
 using PSMPE.Portal.Application.Members.Dtos;
+using PSMPE.Portal.Application.Payments;
 using PSMPE.Portal.Domain.Entities;
 using PSMPE.Portal.Domain.Enums;
 using PSMPE.Portal.Infrastructure.Authorization;
@@ -23,18 +26,26 @@ namespace PSMPE.Portal.WebAPI.Controllers;
 public class MembersController(
     IMemberService memberService, IMemberUploadService memberUploadService,
     IMemberCertificateService memberCertificateService, UserManager<ApplicationUser> userManager,
-    IEmailSender emailSender) : ControllerBase
+    IEmailSender emailSender, IPaymentService paymentService, IEventService eventService) : ControllerBase
 {
     [HttpGet]
     [RequirePermission(Permissions.Members.View)]
     public async Task<ActionResult<PagedResult<MemberDto>>> GetAll(
         int page = 1, int pageSize = 20, string sortBy = "lastName", string sortDir = "asc",
         MembershipStatus? status = null, bool? pendingApprovalOnly = null, bool? pendingPrcVerificationOnly = null,
-        CancellationToken cancellationToken = default)
+        string? search = null, CancellationToken cancellationToken = default)
     {
         var excludeUserIds = await GetSystemAccountUserIdsAsync();
         return Ok(await memberService.GetAllAsync(
-            page, pageSize, sortBy, sortDir, status, pendingApprovalOnly, pendingPrcVerificationOnly, excludeUserIds, cancellationToken));
+            page, pageSize, sortBy, sortDir, status, pendingApprovalOnly, pendingPrcVerificationOnly, search, excludeUserIds, cancellationToken));
+    }
+
+    [HttpGet("stats")]
+    [RequirePermission(Permissions.Members.View)]
+    public async Task<ActionResult<MemberStatsDto>> GetStats(CancellationToken cancellationToken)
+    {
+        var excludeUserIds = await GetSystemAccountUserIdsAsync();
+        return Ok(await memberService.GetStatsAsync(excludeUserIds, cancellationToken));
     }
 
     [HttpGet("{id:guid}")]
@@ -51,6 +62,7 @@ public class MembersController(
     }
 
     [HttpGet("me")]
+    [AllowExpiredMember]
     public async Task<ActionResult<MemberDto>> GetMyProfile(CancellationToken cancellationToken)
     {
         var userId = CurrentUserId;
@@ -61,6 +73,21 @@ public class MembersController(
 
         var member = await memberService.GetByUserIdAsync(userId.Value, cancellationToken);
         return member is null ? NotFound() : Ok(member);
+    }
+
+    /// <summary>Own registrations plus computed, prorated credit total - see
+    /// EventService.GetMyCpdAsync. Reachable even while Expired, same as the other me/* reads.</summary>
+    [HttpGet("me/cpd")]
+    [AllowExpiredMember]
+    public async Task<ActionResult<MyCpdSummaryDto>> GetMyCpd(CancellationToken cancellationToken)
+    {
+        var userId = CurrentUserId;
+        if (userId is null)
+        {
+            return Unauthorized();
+        }
+
+        return Ok(await eventService.GetMyCpdAsync(userId.Value, cancellationToken));
     }
 
     [HttpPost]
@@ -78,9 +105,12 @@ public class MembersController(
             return Conflict(new { message = "This user already has a Member profile." });
         }
 
-        if (await memberService.MembershipNoExistsAsync(request.MembershipNo, cancellationToken))
+        // Optional at create - PSMPE assigns its own control number and an admin may not have it
+        // yet. It's mandatory at approval instead.
+        if (!string.IsNullOrWhiteSpace(request.MembershipNo)
+            && await memberService.MembershipNoExistsAsync(request.MembershipNo.Trim(), cancellationToken: cancellationToken))
         {
-            return Conflict(new { message = $"Membership No. '{request.MembershipNo}' is already in use." });
+            return Conflict(new { message = $"Membership ID '{request.MembershipNo.Trim()}' is already in use." });
         }
 
         var result = await memberService.CreateAsync(request, cancellationToken);
@@ -101,6 +131,7 @@ public class MembersController(
     }
 
     [HttpPut("me")]
+    [AllowExpiredMember]
     public async Task<ActionResult<MemberDto>> UpdateMyProfile(UpdateMyProfileRequest request, CancellationToken cancellationToken)
     {
         var userId = CurrentUserId;
@@ -132,7 +163,8 @@ public class MembersController(
     }
 
     [HttpPost("me/submit")]
-    public async Task<IActionResult> SubmitMyProfile(CancellationToken cancellationToken)
+    [AllowExpiredMember]
+    public async Task<IActionResult> SubmitMyProfile(CancellationToken cancellationToken, SubmitMyProfileRequest? request = null)
     {
         var userId = CurrentUserId;
         if (userId is null)
@@ -140,7 +172,9 @@ public class MembersController(
             return Unauthorized();
         }
 
-        var result = await memberService.SubmitMyProfileAsync(userId.Value, cancellationToken);
+        // No body at all (older clients) is the same as an unticked checkbox - see
+        // SubmitMyProfileRequest's doc comment.
+        var result = await memberService.SubmitMyProfileAsync(userId.Value, request?.IncludePortalAccess ?? false, cancellationToken);
         return ToActionResult(result);
     }
 
@@ -157,9 +191,35 @@ public class MembersController(
         return ToActionResult(result);
     }
 
+    /// <summary>
+    /// Whether a Membership ID is free, so the approve dialog can say so before an admin commits
+    /// rather than after a rejected submit. Advisory only - it can always lose a race with a
+    /// concurrent approval, which is why ApproveAsync re-checks and the database holds a
+    /// case-insensitive unique index behind both.
+    ///
+    /// Same Manage permission as approving: it reports whether a control number is taken, which is
+    /// not something an unprivileged caller should be able to probe.
+    /// </summary>
+    [HttpGet("membership-no/availability")]
+    [RequirePermission(Permissions.Members.Manage, Permissions.Members.Approve)]
+    public async Task<ActionResult<MembershipNoAvailabilityDto>> CheckMembershipNoAvailability(
+        string value, Guid? excludeMemberId = null, CancellationToken cancellationToken = default)
+    {
+        var trimmed = value?.Trim() ?? string.Empty;
+        if (trimmed.Length == 0 || trimmed.Length > 32)
+        {
+            // Nothing to look up - the form reports blank/over-length on its own, and querying for
+            // them would only produce a misleading "available".
+            return Ok(new MembershipNoAvailabilityDto(trimmed, false));
+        }
+
+        var taken = await memberService.MembershipNoExistsAsync(trimmed, excludeMemberId, cancellationToken);
+        return Ok(new MembershipNoAvailabilityDto(trimmed, !taken));
+    }
+
     [HttpPost("{id:guid}/approve")]
-    [RequirePermission(Permissions.Members.Manage)]
-    public async Task<IActionResult> Approve(Guid id, CancellationToken cancellationToken)
+    [RequirePermission(Permissions.Members.Manage, Permissions.Members.Approve)]
+    public async Task<IActionResult> Approve(Guid id, ApproveMemberRequest request, CancellationToken cancellationToken)
     {
         if (await IsHiddenMemberAsync(id, cancellationToken))
         {
@@ -171,7 +231,13 @@ public class MembersController(
         // an already-approved member), which would otherwise regenerate/resend on every repeat call.
         var wasAlreadyApproved = (await memberService.GetByIdAsync(id, cancellationToken))?.ApprovedAt is not null;
 
-        var result = await memberService.ApproveAsync(id, cancellationToken);
+        var decidedBy = CurrentUserId;
+        if (decidedBy is null)
+        {
+            return Unauthorized();
+        }
+
+        var result = await memberService.ApproveAsync(id, request, decidedBy.Value, cancellationToken);
         if (result.Succeeded && !wasAlreadyApproved)
         {
             var approvedMember = await memberService.GetByIdAsync(id, cancellationToken);
@@ -194,7 +260,9 @@ public class MembersController(
     /// </summary>
     private async Task IssueApprovalReceiptAsync(MemberDto member, CancellationToken cancellationToken)
     {
-        var receiptBytes = ReceiptGenerator.Generate(member);
+        // Fees come from SystemConfig now, so a receipt always shows what PSMPE currently charges.
+        var fees = await paymentService.GetFeesAsync(cancellationToken);
+        var receiptBytes = ReceiptGenerator.Generate(member, fees);
         await using (var stream = new MemoryStream(receiptBytes))
         {
             await memberUploadService.UploadAsync(member.UserId, UploadKind.Receipt, stream, "receipt.jpg", receiptBytes.Length, cancellationToken);
@@ -203,7 +271,7 @@ public class MembersController(
         var htmlBody =
             $"<p>Hi {member.FirstName},</p>" +
             "<p>Congratulations - your PSMPE membership application has been approved.</p>" +
-            $"<p>Your Membership No. is <strong>{member.MembershipNo}</strong>. Your official receipt is attached, " +
+            $"<p>Your Membership No. is <strong>{member.MembershipNo ?? "-"}</strong>. Your official receipt is attached, " +
             "and is also always available for download from your Dashboard.</p>";
 
         await emailSender.SendEmailAsync(
@@ -215,7 +283,7 @@ public class MembersController(
     }
 
     [HttpPost("{id:guid}/prc-verification/approve")]
-    [RequirePermission(Permissions.Members.Manage)]
+    [RequirePermission(Permissions.Members.Manage, Permissions.Members.Approve)]
     public async Task<IActionResult> ApprovePrcVerification(Guid id, CancellationToken cancellationToken)
     {
         var decidedByUserId = CurrentUserId;
@@ -234,7 +302,7 @@ public class MembersController(
     }
 
     [HttpPost("{id:guid}/prc-verification/reject")]
-    [RequirePermission(Permissions.Members.Manage)]
+    [RequirePermission(Permissions.Members.Manage, Permissions.Members.Approve)]
     public async Task<IActionResult> RejectPrcVerification(Guid id, RejectPrcVerificationRequest request, CancellationToken cancellationToken)
     {
         var decidedByUserId = CurrentUserId;
@@ -253,43 +321,54 @@ public class MembersController(
     }
 
     [HttpPost("me/photo")]
+    [AllowExpiredMember]
     public Task<IActionResult> UploadMyPhoto(IFormFile file, CancellationToken cancellationToken) =>
         UploadMyFileAsync(UploadKind.Photo, file, cancellationToken);
 
     [HttpPost("me/prc-id")]
+    [AllowExpiredMember]
     public Task<IActionResult> UploadMyPrcId(IFormFile file, CancellationToken cancellationToken) =>
         UploadMyFileAsync(UploadKind.PrcId, file, cancellationToken);
 
     [HttpPost("me/valid-government-id")]
+    [AllowExpiredMember]
     public Task<IActionResult> UploadMyValidGovernmentId(IFormFile file, CancellationToken cancellationToken) =>
         UploadMyFileAsync(UploadKind.ValidGovernmentId, file, cancellationToken);
 
     [HttpPost("me/signature")]
+    [AllowExpiredMember]
     public Task<IActionResult> UploadMySignature(IFormFile file, CancellationToken cancellationToken) =>
         UploadMyFileAsync(UploadKind.Signature, file, cancellationToken);
 
     [HttpPost("me/proof-of-payment")]
+    [AllowExpiredMember]
     public Task<IActionResult> UploadMyProofOfPayment(IFormFile file, CancellationToken cancellationToken) =>
         UploadMyFileAsync(UploadKind.ProofOfPayment, file, cancellationToken);
 
     [HttpGet("me/photo")]
+    [AllowExpiredMember]
     public Task<IActionResult> GetMyPhoto(CancellationToken cancellationToken) => GetMyFileAsync(UploadKind.Photo, cancellationToken);
 
     [HttpGet("me/prc-id")]
+    [AllowExpiredMember]
     public Task<IActionResult> GetMyPrcId(CancellationToken cancellationToken) => GetMyFileAsync(UploadKind.PrcId, cancellationToken);
 
     [HttpGet("me/valid-government-id")]
+    [AllowExpiredMember]
     public Task<IActionResult> GetMyValidGovernmentId(CancellationToken cancellationToken) => GetMyFileAsync(UploadKind.ValidGovernmentId, cancellationToken);
 
     [HttpGet("me/signature")]
+    [AllowExpiredMember]
     public Task<IActionResult> GetMySignature(CancellationToken cancellationToken) => GetMyFileAsync(UploadKind.Signature, cancellationToken);
 
     [HttpGet("me/proof-of-payment")]
+    [AllowExpiredMember]
     public Task<IActionResult> GetMyProofOfPayment(CancellationToken cancellationToken) => GetMyFileAsync(UploadKind.ProofOfPayment, cancellationToken);
 
     /// <summary>System-generated on approval (see Approve/IssueApprovalReceiptAsync) - there is no
     /// corresponding POST endpoint, members never upload this themselves.</summary>
     [HttpGet("me/receipt")]
+    [AllowExpiredMember]
     public Task<IActionResult> GetMyReceipt(CancellationToken cancellationToken) => GetMyFileAsync(UploadKind.Receipt, cancellationToken);
 
     [HttpGet("{id:guid}/photo")]
@@ -316,6 +395,7 @@ public class MembersController(
         GetMemberFileAsync(id, UploadKind.ProofOfPayment, cancellationToken);
 
     [HttpPost("me/certificates")]
+    [AllowExpiredMember]
     public async Task<IActionResult> UploadMyCertificate(IFormFile file, CancellationToken cancellationToken)
     {
         var userId = CurrentUserId;
@@ -330,6 +410,7 @@ public class MembersController(
     }
 
     [HttpGet("me/certificates")]
+    [AllowExpiredMember]
     public async Task<ActionResult<IReadOnlyList<MemberCertificateDto>>> GetMyCertificates(CancellationToken cancellationToken)
     {
         var userId = CurrentUserId;
@@ -342,6 +423,7 @@ public class MembersController(
     }
 
     [HttpGet("me/certificates/{certificateId:guid}")]
+    [AllowExpiredMember]
     public async Task<IActionResult> GetMyCertificate(Guid certificateId, CancellationToken cancellationToken)
     {
         var userId = CurrentUserId;
@@ -355,6 +437,7 @@ public class MembersController(
     }
 
     [HttpDelete("me/certificates/{certificateId:guid}")]
+    [AllowExpiredMember]
     public async Task<IActionResult> DeleteMyCertificate(Guid certificateId, CancellationToken cancellationToken)
     {
         var userId = CurrentUserId;
@@ -381,6 +464,7 @@ public class MembersController(
     }
 
     [HttpGet("me/completeness")]
+    [AllowExpiredMember]
     public async Task<ActionResult<ProfileCompletenessDto>> GetMyProfileCompleteness(CancellationToken cancellationToken)
     {
         var userId = CurrentUserId;
@@ -504,6 +588,7 @@ public class MembersController(
         {
             ResultErrorType.NotFound => NotFound(new { message = result.Error }),
             ResultErrorType.Forbidden => Forbid(),
+            ResultErrorType.Conflict => Conflict(new { message = result.Error }),
             _ => BadRequest(new { message = result.Error })
         };
     }
@@ -519,6 +604,7 @@ public class MembersController(
         {
             ResultErrorType.NotFound => NotFound(new { message = result.Error }),
             ResultErrorType.Forbidden => Forbid(),
+            ResultErrorType.Conflict => Conflict(new { message = result.Error }),
             _ => BadRequest(new { message = result.Error })
         };
     }

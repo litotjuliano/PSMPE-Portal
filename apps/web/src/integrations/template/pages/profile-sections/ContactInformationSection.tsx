@@ -3,7 +3,21 @@ import { LuSquarePen, LuTriangleAlert } from 'react-icons/lu'
 import type { Member } from '../../../../core/types/member'
 import { memberApi } from '../../../../core/api/endpoints/memberApi'
 import { StandardButton } from '../../components/shared/StandardButton'
+import { PhilippineAddressFields, type AddressValue } from '../../components/shared/PhilippineAddressFields'
+import { formatPhLandline, formatPhMobile, mailingMirrorsResidence } from '../../../../core/utils/memberFields'
 import { buildFullProfileRequest, describeError } from './shared'
+
+/** The address component speaks generic field names; mailing state keys are prefixed. `as const`
+ *  keeps the literal key types so handleChange still type-checks its value against the right field. */
+const MAILING_FIELD = {
+  houseNo: 'mailingHouseNo',
+  street: 'mailingStreet',
+  barangay: 'mailingBarangay',
+  cityMunicipality: 'mailingCityMunicipality',
+  province: 'mailingProvince',
+  zipCode: 'mailingZipCode',
+  country: 'mailingCountry',
+} as const satisfies Record<keyof AddressValue, keyof FormState>
 
 // Mirrors MemberService's server-side checks - purely for fast client-side feedback, the server
 // is still the source of truth (MemberService.UpsertMyProfileAsync).
@@ -15,15 +29,6 @@ function isValidHousePhone(value: string): boolean {
   return digits.length >= 7 && digits.length <= 11
 }
 
-function isValidUrl(value: string): boolean {
-  try {
-    const url = new URL(value)
-    return url.protocol === 'http:' || url.protocol === 'https:'
-  } catch {
-    return false
-  }
-}
-
 interface ContactInformationSectionProps {
   member: Member
   onUpdated: (member: Member) => void
@@ -32,20 +37,16 @@ interface ContactInformationSectionProps {
 interface FormState {
   housePhone: string
   mobileNumber: string
-  website: string
-  facebookUrl: string
-  linkedInUrl: string
-  xUrl: string
-  instagramUrl: string
   houseNo: string
   street: string
   barangay: string
   cityMunicipality: string
   province: string
   zipCode: string
+  country: string
   /** Client-only convenience - when true, the mailing inputs are hidden and residence values are
    *  copied into the mailing fields at save time. There's no stored flag; a returning edit infers
-   *  false whenever the two addresses don't already match exactly. */
+   *  the initial state via mailingMirrorsResidence. */
   mailingSameAsResidence: boolean
   mailingHouseNo: string
   mailingStreet: string
@@ -53,39 +54,28 @@ interface FormState {
   mailingCityMunicipality: string
   mailingProvince: string
   mailingZipCode: string
+  mailingCountry: string
 }
 
 function toFormState(member: Member): FormState {
-  const mailingSameAsResidence =
-    (member.mailingHouseNo ?? '') === (member.houseNo ?? '') &&
-    (member.mailingStreet ?? '') === (member.street ?? '') &&
-    (member.mailingBarangay ?? '') === (member.barangay ?? '') &&
-    (member.mailingCityMunicipality ?? '') === (member.cityMunicipality ?? '') &&
-    (member.mailingProvince ?? '') === (member.province ?? '') &&
-    (member.mailingZipCode ?? '') === (member.zipCode ?? '') &&
-    Boolean(member.street || member.barangay || member.cityMunicipality || member.province || member.zipCode)
-
   return {
     housePhone: member.housePhone ?? '',
     mobileNumber: member.mobileNumber ?? '',
-    website: member.website ?? '',
-    facebookUrl: member.facebookUrl ?? '',
-    linkedInUrl: member.linkedInUrl ?? '',
-    xUrl: member.xUrl ?? '',
-    instagramUrl: member.instagramUrl ?? '',
     houseNo: member.houseNo ?? '',
     street: member.street ?? '',
     barangay: member.barangay ?? '',
     cityMunicipality: member.cityMunicipality ?? '',
     province: member.province ?? '',
     zipCode: member.zipCode ?? '',
-    mailingSameAsResidence,
+    country: member.country ?? 'Philippines',
+    mailingSameAsResidence: mailingMirrorsResidence(member),
     mailingHouseNo: member.mailingHouseNo ?? '',
     mailingStreet: member.mailingStreet ?? '',
     mailingBarangay: member.mailingBarangay ?? '',
     mailingCityMunicipality: member.mailingCityMunicipality ?? '',
     mailingProvince: member.mailingProvince ?? '',
     mailingZipCode: member.mailingZipCode ?? '',
+    mailingCountry: member.mailingCountry ?? 'Philippines',
   }
 }
 
@@ -132,26 +122,6 @@ export const ContactInformationSection = ({ member, onUpdated }: ContactInformat
       setError('Mobile number must be in the format +639XXXXXXXXX, 639XXXXXXXXX, or 09XXXXXXXXX.')
       return
     }
-    if (form.website && !isValidUrl(form.website)) {
-      setError('Website must be a valid URL, e.g. https://example.com.')
-      return
-    }
-    if (form.facebookUrl && !isValidUrl(form.facebookUrl)) {
-      setError('Facebook must be a valid profile URL.')
-      return
-    }
-    if (form.linkedInUrl && !isValidUrl(form.linkedInUrl)) {
-      setError('LinkedIn must be a valid profile URL.')
-      return
-    }
-    if (form.xUrl && !isValidUrl(form.xUrl)) {
-      setError('X (Twitter) must be a valid profile URL.')
-      return
-    }
-    if (form.instagramUrl && !isValidUrl(form.instagramUrl)) {
-      setError('Instagram must be a valid profile URL.')
-      return
-    }
 
     const mailing = form.mailingSameAsResidence
       ? {
@@ -161,6 +131,7 @@ export const ContactInformationSection = ({ member, onUpdated }: ContactInformat
           mailingCityMunicipality: form.cityMunicipality || null,
           mailingProvince: form.province || null,
           mailingZipCode: form.zipCode || null,
+          mailingCountry: form.country || null,
         }
       : {
           mailingHouseNo: form.mailingHouseNo || null,
@@ -169,6 +140,7 @@ export const ContactInformationSection = ({ member, onUpdated }: ContactInformat
           mailingCityMunicipality: form.mailingCityMunicipality || null,
           mailingProvince: form.mailingProvince || null,
           mailingZipCode: form.mailingZipCode || null,
+          mailingCountry: form.mailingCountry || null,
         }
 
     setSaving(true)
@@ -177,17 +149,13 @@ export const ContactInformationSection = ({ member, onUpdated }: ContactInformat
         buildFullProfileRequest(member, {
           housePhone: form.housePhone || null,
           mobileNumber: form.mobileNumber || null,
-          website: form.website || null,
-          facebookUrl: form.facebookUrl || null,
-          linkedInUrl: form.linkedInUrl || null,
-          xUrl: form.xUrl || null,
-          instagramUrl: form.instagramUrl || null,
           houseNo: form.houseNo || null,
           street: form.street || null,
           barangay: form.barangay || null,
           cityMunicipality: form.cityMunicipality || null,
           province: form.province || null,
           zipCode: form.zipCode || null,
+          country: form.country || null,
           ...mailing,
         }),
       )
@@ -222,7 +190,7 @@ export const ContactInformationSection = ({ member, onUpdated }: ContactInformat
         </p>
       )}
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+      <div className="grid grid-cols-1 md:grid-cols-2 2xl:grid-cols-3 min-[1800px]:grid-cols-4 gap-4 text-sm">
         <div>
           <span className="block font-medium text-default-900 text-sm mb-2">House Phone</span>
           {editing ? (
@@ -230,7 +198,7 @@ export const ContactInformationSection = ({ member, onUpdated }: ContactInformat
               className="form-input"
               placeholder="e.g. (02) 8123 4567"
               value={form.housePhone}
-              onChange={(e) => handleChange('housePhone', e.target.value)}
+              onChange={(e) => handleChange('housePhone', formatPhLandline(e.target.value))}
             />
           ) : (
             <span className="font-semibold text-default-800">{member.housePhone || '-'}</span>
@@ -243,7 +211,7 @@ export const ContactInformationSection = ({ member, onUpdated }: ContactInformat
               className="form-input"
               placeholder="09XXXXXXXXX"
               value={form.mobileNumber}
-              onChange={(e) => handleChange('mobileNumber', e.target.value)}
+              onChange={(e) => handleChange('mobileNumber', formatPhMobile(e.target.value))}
             />
           ) : (
             <span className="font-semibold text-default-800">{member.mobileNumber || '-'}</span>
@@ -253,129 +221,24 @@ export const ContactInformationSection = ({ member, onUpdated }: ContactInformat
           <span className="block font-medium text-default-900 text-sm mb-2">Email Address</span>
           <span className="font-semibold text-default-800">{member.email}</span>
         </div>
-        <div className="md:col-span-2">
-          <span className="block font-medium text-default-900 text-sm mb-2">Website</span>
-          {editing ? (
-            <input
-              className="form-input"
-              placeholder="https://example.com"
-              value={form.website}
-              onChange={(e) => handleChange('website', e.target.value)}
-            />
-          ) : (
-            <span className="font-semibold text-default-800">{member.website || '-'}</span>
-          )}
-        </div>
-        <div>
-          <span className="block font-medium text-default-900 text-sm mb-2">Facebook</span>
-          {editing ? (
-            <input
-              className="form-input"
-              placeholder="https://facebook.com/yourprofile"
-              value={form.facebookUrl}
-              onChange={(e) => handleChange('facebookUrl', e.target.value)}
-            />
-          ) : (
-            <span className="font-semibold text-default-800">{member.facebookUrl || '-'}</span>
-          )}
-        </div>
-        <div>
-          <span className="block font-medium text-default-900 text-sm mb-2">LinkedIn</span>
-          {editing ? (
-            <input
-              className="form-input"
-              placeholder="https://linkedin.com/in/yourprofile"
-              value={form.linkedInUrl}
-              onChange={(e) => handleChange('linkedInUrl', e.target.value)}
-            />
-          ) : (
-            <span className="font-semibold text-default-800">{member.linkedInUrl || '-'}</span>
-          )}
-        </div>
-        <div>
-          <span className="block font-medium text-default-900 text-sm mb-2">X</span>
-          {editing ? (
-            <input
-              className="form-input"
-              placeholder="https://x.com/yourprofile"
-              value={form.xUrl}
-              onChange={(e) => handleChange('xUrl', e.target.value)}
-            />
-          ) : (
-            <span className="font-semibold text-default-800">{member.xUrl || '-'}</span>
-          )}
-        </div>
-        <div>
-          <span className="block font-medium text-default-900 text-sm mb-2">Instagram</span>
-          {editing ? (
-            <input
-              className="form-input"
-              placeholder="https://instagram.com/yourprofile"
-              value={form.instagramUrl}
-              onChange={(e) => handleChange('instagramUrl', e.target.value)}
-            />
-          ) : (
-            <span className="font-semibold text-default-800">{member.instagramUrl || '-'}</span>
-          )}
-        </div>
       </div>
 
       <div className="border-t border-default-200 pt-4">
         <h6 className="font-semibold text-default-800 mb-3">Residence Address</h6>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
-          <div>
-            <span className="block font-medium text-default-900 text-sm mb-2">House No.</span>
-            {editing ? (
-              <input className="form-input" value={form.houseNo} onChange={(e) => handleChange('houseNo', e.target.value)} />
-            ) : (
-              <span className="font-semibold text-default-800">{member.houseNo || '-'}</span>
-            )}
-          </div>
-          <div>
-            <span className="block font-medium text-default-900 text-sm mb-2">Street</span>
-            {editing ? (
-              <input className="form-input" value={form.street} onChange={(e) => handleChange('street', e.target.value)} />
-            ) : (
-              <span className="font-semibold text-default-800">{member.street || '-'}</span>
-            )}
-          </div>
-          <div>
-            <span className="block font-medium text-default-900 text-sm mb-2">Barangay</span>
-            {editing ? (
-              <input className="form-input" value={form.barangay} onChange={(e) => handleChange('barangay', e.target.value)} />
-            ) : (
-              <span className="font-semibold text-default-800">{member.barangay || '-'}</span>
-            )}
-          </div>
-          <div>
-            <span className="block font-medium text-default-900 text-sm mb-2">City or Municipality</span>
-            {editing ? (
-              <input
-                className="form-input"
-                value={form.cityMunicipality}
-                onChange={(e) => handleChange('cityMunicipality', e.target.value)}
-              />
-            ) : (
-              <span className="font-semibold text-default-800">{member.cityMunicipality || '-'}</span>
-            )}
-          </div>
-          <div>
-            <span className="block font-medium text-default-900 text-sm mb-2">Province</span>
-            {editing ? (
-              <input className="form-input" value={form.province} onChange={(e) => handleChange('province', e.target.value)} />
-            ) : (
-              <span className="font-semibold text-default-800">{member.province || '-'}</span>
-            )}
-          </div>
-          <div>
-            <span className="block font-medium text-default-900 text-sm mb-2">Zip Code</span>
-            {editing ? (
-              <input className="form-input" value={form.zipCode} onChange={(e) => handleChange('zipCode', e.target.value)} />
-            ) : (
-              <span className="font-semibold text-default-800">{member.zipCode || '-'}</span>
-            )}
-          </div>
-        </div>
+        <PhilippineAddressFields
+          idPrefix="residence"
+          editing={editing}
+          value={{
+            houseNo: editing ? form.houseNo : member.houseNo ?? '',
+            street: editing ? form.street : member.street ?? '',
+            barangay: editing ? form.barangay : member.barangay ?? '',
+            cityMunicipality: editing ? form.cityMunicipality : member.cityMunicipality ?? '',
+            province: editing ? form.province : member.province ?? '',
+            zipCode: editing ? form.zipCode : member.zipCode ?? '',
+            country: editing ? form.country : member.country ?? '',
+          }}
+          onChange={handleChange}
+        />
       </div>
 
       <div className="border-t border-default-200 pt-4">
@@ -394,83 +257,34 @@ export const ContactInformationSection = ({ member, onUpdated }: ContactInformat
           )}
         </div>
         {editing && !form.mailingSameAsResidence ? (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
-            <div>
-              <span className="block font-medium text-default-900 text-sm mb-2">House No.</span>
-              <input
-                className="form-input"
-                value={form.mailingHouseNo}
-                onChange={(e) => handleChange('mailingHouseNo', e.target.value)}
-              />
-            </div>
-            <div>
-              <span className="block font-medium text-default-900 text-sm mb-2">Street</span>
-              <input
-                className="form-input"
-                value={form.mailingStreet}
-                onChange={(e) => handleChange('mailingStreet', e.target.value)}
-              />
-            </div>
-            <div>
-              <span className="block font-medium text-default-900 text-sm mb-2">Barangay</span>
-              <input
-                className="form-input"
-                value={form.mailingBarangay}
-                onChange={(e) => handleChange('mailingBarangay', e.target.value)}
-              />
-            </div>
-            <div>
-              <span className="block font-medium text-default-900 text-sm mb-2">City or Municipality</span>
-              <input
-                className="form-input"
-                value={form.mailingCityMunicipality}
-                onChange={(e) => handleChange('mailingCityMunicipality', e.target.value)}
-              />
-            </div>
-            <div>
-              <span className="block font-medium text-default-900 text-sm mb-2">Province</span>
-              <input
-                className="form-input"
-                value={form.mailingProvince}
-                onChange={(e) => handleChange('mailingProvince', e.target.value)}
-              />
-            </div>
-            <div>
-              <span className="block font-medium text-default-900 text-sm mb-2">Zip Code</span>
-              <input
-                className="form-input"
-                value={form.mailingZipCode}
-                onChange={(e) => handleChange('mailingZipCode', e.target.value)}
-              />
-            </div>
-          </div>
+          <PhilippineAddressFields
+            idPrefix="mailing"
+            value={{
+              houseNo: form.mailingHouseNo,
+              street: form.mailingStreet,
+              barangay: form.mailingBarangay,
+              cityMunicipality: form.mailingCityMunicipality,
+              province: form.mailingProvince,
+              zipCode: form.mailingZipCode,
+              country: form.mailingCountry,
+            }}
+            onChange={(field, next) => handleChange(MAILING_FIELD[field], next)}
+          />
         ) : !editing ? (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
-            <div>
-              <span className="block font-medium text-default-900 text-sm mb-2">House No.</span>
-              <span className="font-semibold text-default-800">{member.mailingHouseNo || '-'}</span>
-            </div>
-            <div>
-              <span className="block font-medium text-default-900 text-sm mb-2">Street</span>
-              <span className="font-semibold text-default-800">{member.mailingStreet || '-'}</span>
-            </div>
-            <div>
-              <span className="block font-medium text-default-900 text-sm mb-2">Barangay</span>
-              <span className="font-semibold text-default-800">{member.mailingBarangay || '-'}</span>
-            </div>
-            <div>
-              <span className="block font-medium text-default-900 text-sm mb-2">City or Municipality</span>
-              <span className="font-semibold text-default-800">{member.mailingCityMunicipality || '-'}</span>
-            </div>
-            <div>
-              <span className="block font-medium text-default-900 text-sm mb-2">Province</span>
-              <span className="font-semibold text-default-800">{member.mailingProvince || '-'}</span>
-            </div>
-            <div>
-              <span className="block font-medium text-default-900 text-sm mb-2">Zip Code</span>
-              <span className="font-semibold text-default-800">{member.mailingZipCode || '-'}</span>
-            </div>
-          </div>
+          <PhilippineAddressFields
+            idPrefix="mailing"
+            editing={false}
+            value={{
+              houseNo: member.mailingHouseNo ?? '',
+              street: member.mailingStreet ?? '',
+              barangay: member.mailingBarangay ?? '',
+              cityMunicipality: member.mailingCityMunicipality ?? '',
+              province: member.mailingProvince ?? '',
+              zipCode: member.mailingZipCode ?? '',
+              country: member.mailingCountry ?? '',
+            }}
+            onChange={() => {}}
+          />
         ) : null}
       </div>
 
