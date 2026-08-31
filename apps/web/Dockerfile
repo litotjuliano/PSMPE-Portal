@@ -12,6 +12,12 @@ COPY . .
 ARG VITE_API_BASE_URL=http://localhost:5000
 ENV VITE_API_BASE_URL=$VITE_API_BASE_URL
 
+# Set by the deploy scripts from `git describe --tags --always` on whatever commit was just
+# checked out - see openspec/changes/add-release-versioning/proposal.md. Defaults to "dev" for a
+# local build with no tags.
+ARG VITE_APP_VERSION=dev
+ENV VITE_APP_VERSION=$VITE_APP_VERSION
+
 RUN npm run build
 
 FROM nginx:1.27-alpine AS final

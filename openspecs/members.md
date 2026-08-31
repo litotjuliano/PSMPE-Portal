@@ -534,24 +534,39 @@ repeat call doesn't regenerate/resend):
 - Self-service (`/me` endpoints) requires no permission claim, only authentication — anyone can
   view/edit their *own* profile once linked, roles/permissions only gate viewing/editing *other*
   people's profiles.
-- **A fully Expired member is restricted to an explicit allowlist of self-service endpoints** —
-  `MembershipAccessMiddleware` (`PSMPE.Portal.WebAPI`) blocks every other endpoint with `403
-  MEMBERSHIP_EXPIRED` once `Status == Expired`. The allowlist is every `/me`-prefixed action on this
-  controller, plus `AccountController`'s two self-service actions and `PaymentsController`'s
-  `me`/`fees`/`proof` endpoints (see `payments.md`), plus one endpoint on another controller
-  (see below) — together, what a member needs to view their profile, pay their way back to
-  `Active`, and retrieve records tied to credit already earned. Marked with `[AllowExpiredMember]`, a plain marker
-  attribute the middleware reads off endpoint metadata (not an authorization policy). Staff/admin
-  roles (any role other than exactly `Member`) are never gated, and Active/grace-period members are
-  unaffected. The frontend (`ExpiredMembershipGate`) mirrors this by redirecting an Expired member
-  to `/profile` and hiding the rest of the nav, but that is UX only — the middleware is the actual
-  enforcement.
-  - Also on the allowlist, outside this controller entirely:
-    `GET /api/events/registrations/{id}/certificate` (`EventsController`, see `openspecs/events.md`)
-    — a member should still be able to retrieve proof of CPD credit already earned even after their
-    membership lapses, the same reasoning that keeps the payment endpoints above reachable.
-    (`GET /api/members/me/cpd` is already covered above — it's a `/me`-prefixed action on *this*
-    controller, `MembersController`.)
+- **A restricted member is blocked from every endpoint except an explicit allowlist** —
+  `MembershipAccessMiddleware` (`PSMPE.Portal.WebAPI`) enforces three independent conditions, in
+  this fixed order (a member failing more than one sees whichever runs first):
+  1. **`MEMBERSHIP_EXPIRED`** — `Status == Expired` (past the grace period).
+  2. **`MEMBERSHIP_NOT_STARTED`** — the `Member`-role account has no `Member` row at all yet:
+     registered but never submitted an application (`AuthController.Register` only ever creates the
+     account/role; the `Member` row comes later, from `MemberService.SubmitMyProfileAsync`). Without
+     this check a brand-new, never-applied account had *unrestricted* portal access — a real
+     security gap, since `member is not null && ...` on the other two checks is trivially false for
+     a null `member`.
+  3. **`PORTAL_ACCESS_REQUIRED`** — `!HasPortalAccess` (`Deactivated` excepted) — see `payments.md`.
+
+  The allowlist (endpoints carrying `[AllowExpiredMember]`, a plain marker attribute the middleware
+  reads off endpoint metadata, not an authorization policy) is every `/me`-prefixed action on this
+  controller, plus `AccountController`'s two self-service actions, `PaymentsController`'s
+  `me`/`fees`/`proof` endpoints (see `payments.md`), `AuthController`'s data-privacy-consent pair
+  (reachable before a profile can exist), and — outside any of those controllers —
+  `EventsController.GetAll`/`GetById`/`GetPoster` and `GET .../certificate` (see
+  `openspecs/events.md`). Together: what any restricted member needs to view/complete their profile,
+  pay their way back to full access, retrieve records tied to credit already earned, and *browse*
+  events. Staff/admin roles (any role other than exactly `Member`) are never gated, and
+  Active/grace-period members with portal access are unaffected.
+
+  **Browsing is intentionally more permissive than acting.** Events is reachable and visible
+  (`GetAll`/`GetById`/`GetPoster`) for any restricted member, but the actions that change state
+  (`Register`, `SubmitPayment`, etc.) are not on the allowlist and still 403 — the frontend
+  (`EventRegisterModal.tsx`) mirrors this by disabling the Register button with a message specific
+  to the reason, rather than hiding the page. The frontend's `ExpiredMembershipGate` does not
+  redirect or hide navigation for a restricted member at all (it did, once — that turned out to be
+  confusing UX when a fully-visible page bounced back to `/profile` on click, so it was removed);
+  `AppMenu`'s sidebar is role-filtered only. All of this is UX only — the middleware above is the
+  actual enforcement, so a request slipping past any frontend affordance still gets a 403 from the
+  API.
 
 ## Open questions / TODO
 
