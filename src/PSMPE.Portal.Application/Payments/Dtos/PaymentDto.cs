@@ -26,7 +26,11 @@ public record PaymentDto(
     /// <summary>Set only when Kind is EventRegistration - "Event registration" alone doesn't tell
     /// an admin working the queue which event, and it's a fair question with several events running
     /// at once. Null for NewMembership/Renewal, which have nothing else to name.</summary>
-    string? EventTitle = null);
+    string? EventTitle = null,
+    /// <summary>Set only when Kind is EventRegistration - lets the member's own Events/register
+    /// modal find "the payment for this registration" out of their full payment history (via
+    /// GET /api/payments/me) without a dedicated lookup endpoint. Null for NewMembership/Renewal.</summary>
+    Guid? EventRegistrationId = null);
 
 /// <summary>
 /// Self-service: the member declares what they paid. No Kind - the server decides whether this is

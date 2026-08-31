@@ -3,7 +3,14 @@ import { LuTriangleAlert, LuUpload } from 'react-icons/lu'
 import { paymentApi, type MembershipFees, type Payment } from '../../../../core/api/endpoints/paymentApi'
 import type { Member } from '../../../../core/types/member'
 import { describeError } from '../../../../core/utils/apiError'
+import { ProofOfPaymentControl } from '../../components/shared/ProofOfPaymentControl'
 import { StandardButton } from '../../components/shared/StandardButton'
+
+const PAYMENT_KIND_LABELS: Record<Payment['kind'], string> = {
+  NewMembership: 'New membership',
+  Renewal: 'Renewal',
+  EventRegistration: 'Event registration',
+}
 
 interface RenewalPaymentCardProps {
   member: Member
@@ -249,13 +256,18 @@ export const RenewalPaymentCard = ({ member, onSubmitted }: RenewalPaymentCardPr
                     <th className="py-2 pe-4 text-start font-medium">For</th>
                     <th className="py-2 pe-4 text-start font-medium">Amount</th>
                     <th className="py-2 pe-4 text-start font-medium">Status</th>
+                    <th className="py-2 pe-4 text-start font-medium">Proof</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-default-200">
                   {payments.map((payment) => (
                     <tr key={payment.id}>
                       <td className="py-2 pe-4">{new Date(payment.paidOn).toLocaleDateString()}</td>
-                      <td className="py-2 pe-4">{payment.kind === 'Renewal' ? 'Renewal' : 'New membership'}</td>
+                      <td className="py-2 pe-4">
+                        {payment.kind === 'EventRegistration' && payment.eventTitle
+                          ? `${PAYMENT_KIND_LABELS[payment.kind]} — ${payment.eventTitle}`
+                          : PAYMENT_KIND_LABELS[payment.kind]}
+                      </td>
                       <td className="py-2 pe-4">{peso.format(payment.amount)}</td>
                       <td className="py-2 pe-4">
                         <span
@@ -271,6 +283,22 @@ export const RenewalPaymentCard = ({ member, onSubmitted }: RenewalPaymentCardPr
                         </span>
                         {payment.status === 'Rejected' && payment.rejectedReason && (
                           <span className="block text-xs text-default-500">{payment.rejectedReason}</span>
+                        )}
+                      </td>
+                      <td className="py-2 pe-4">
+                        {payment.hasProof ? (
+                          <ProofOfPaymentControl
+                            fetchProof={async () => {
+                              const file = await paymentApi.fetchProofUrl(payment.id)
+                              if (!file) throw new Error('Proof not found.')
+                              return file
+                            }}
+                            uploadProof={(file) => paymentApi.uploadProof(payment.id, file)}
+                            onUploaded={() => load(includePortalAccess)}
+                            allowResubmit={payment.status === 'Submitted'}
+                          />
+                        ) : (
+                          <span className="text-xs text-default-400">None</span>
                         )}
                       </td>
                     </tr>

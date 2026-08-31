@@ -14,7 +14,8 @@ public class EventServiceTests
 {
     private static CreateEventRequest ValidCreateRequest(string title = "Water Sanitation Workshop") =>
         new(title, "Cross-connection control", Chapters.Ncr, "PICC", DateTimeOffset.UtcNow.AddDays(10),
-            DateTimeOffset.UtcNow.AddDays(10).AddHours(4), Capacity: 100, FeeOnsite: 500m, FeeOnline: 200m);
+            DateTimeOffset.UtcNow.AddDays(10).AddHours(4), Capacity: 100, FeeOnsite: 500m, FeeOnline: 200m,
+            Status: EventStatus.Published);
 
     [Fact]
     public async Task CreateAsync_ValidRequest_StartsWithBothCpdUnitsNull()
@@ -219,10 +220,176 @@ public class EventServiceTests
         Assert.Equal(["Plumbing Code Seminar"], page.Items.Select(e => e.Title));
     }
 
+    [Fact]
+    public async Task CreateAsync_RespectsRequestedStatus()
+    {
+        using var db = TestDbContext.CreateInMemory();
+        var service = new EventService(db);
+
+        var result = await service.CreateAsync(ValidCreateRequest() with { Status = EventStatus.Draft });
+
+        Assert.Equal(EventStatus.Draft, result.Value!.Status);
+    }
+
+    [Fact]
+    public async Task GetAllAsync_ExcludesDraftEventsByDefault()
+    {
+        using var db = TestDbContext.CreateInMemory();
+        var service = new EventService(db);
+        await service.CreateAsync(ValidCreateRequest("Draft Event") with { Status = EventStatus.Draft });
+        await service.CreateAsync(ValidCreateRequest("Published Event"));
+
+        var page = await service.GetAllAsync(1, 20, search: null, chapter: null, upcomingOnly: false);
+
+        Assert.Equal(["Published Event"], page.Items.Select(e => e.Title));
+    }
+
+    [Fact]
+    public async Task GetAllAsync_IncludesDraftEventsWhenRequested()
+    {
+        using var db = TestDbContext.CreateInMemory();
+        var service = new EventService(db);
+        await service.CreateAsync(ValidCreateRequest("Draft Event") with { Status = EventStatus.Draft });
+        await service.CreateAsync(ValidCreateRequest("Published Event"));
+
+        var page = await service.GetAllAsync(1, 20, search: null, chapter: null, upcomingOnly: false, includeDrafts: true);
+
+        Assert.Equal(2, page.TotalCount);
+    }
+
+    [Fact]
+    public async Task GetByIdAsync_DraftEvent_ReturnsNullForNonStaffCaller()
+    {
+        using var db = TestDbContext.CreateInMemory();
+        var service = new EventService(db);
+        var created = (await service.CreateAsync(ValidCreateRequest() with { Status = EventStatus.Draft })).Value!;
+
+        var dto = await service.GetByIdAsync(created.Id);
+
+        Assert.Null(dto);
+    }
+
+    [Fact]
+    public async Task GetByIdAsync_DraftEvent_ReturnsItForStaffCaller()
+    {
+        using var db = TestDbContext.CreateInMemory();
+        var service = new EventService(db);
+        var created = (await service.CreateAsync(ValidCreateRequest() with { Status = EventStatus.Draft })).Value!;
+
+        var dto = await service.GetByIdAsync(created.Id, includeDrafts: true);
+
+        Assert.NotNull(dto);
+    }
+
+    [Fact]
+    public async Task RegisterAsync_DraftEvent_IsRefused()
+    {
+        using var db = TestDbContext.CreateInMemory();
+        var service = new EventService(db);
+        var created = (await service.CreateAsync(ValidCreateRequest() with { Status = EventStatus.Draft })).Value!;
+        var member = await SeedMemberForEventTestsAsync(db);
+
+        var result = await service.RegisterAsync(member.UserId, created.Id, "Onsite");
+
+        Assert.False(result.Succeeded);
+    }
+
+    [Fact]
+    public async Task GetAllAsync_MemberHasRegistered_ReturnsTheirOwnModeAndStatus()
+    {
+        using var db = TestDbContext.CreateInMemory();
+        var service = new EventService(db);
+        var created = (await service.CreateAsync(ValidCreateRequest())).Value!;
+        var member = await SeedMemberForEventTestsAsync(db);
+        var registration = new EventRegistration
+        {
+            EventId = created.Id, MemberId = member.Id, Mode = EventMode.Online,
+            Status = EventRegistrationStatus.PaymentSubmitted,
+        };
+        db.EventRegistrations.Add(registration);
+        await db.SaveChangesAsync();
+
+        var page = await service.GetAllAsync(1, 20, search: null, chapter: null, upcomingOnly: false, currentUserId: member.UserId);
+
+        var dto = page.Items.Single();
+        Assert.Equal(registration.Id, dto.MyRegistrationId);
+        Assert.Equal("Online", dto.MyMode);
+        Assert.Equal("PaymentSubmitted", dto.MyRegistrationStatus);
+    }
+
+    [Fact]
+    public async Task GetAllAsync_MemberHasNotRegistered_MyRegistrationFieldsAreNull()
+    {
+        using var db = TestDbContext.CreateInMemory();
+        var service = new EventService(db);
+        await service.CreateAsync(ValidCreateRequest());
+        var member = await SeedMemberForEventTestsAsync(db);
+
+        var page = await service.GetAllAsync(1, 20, search: null, chapter: null, upcomingOnly: false, currentUserId: member.UserId);
+
+        var dto = page.Items.Single();
+        Assert.Null(dto.MyRegistrationId);
+        Assert.Null(dto.MyMode);
+        Assert.Null(dto.MyRegistrationStatus);
+    }
+
+    [Fact]
+    public async Task GetAllAsync_MemberCancelledTheirRegistration_MyRegistrationFieldsAreNull()
+    {
+        using var db = TestDbContext.CreateInMemory();
+        var service = new EventService(db);
+        var created = (await service.CreateAsync(ValidCreateRequest())).Value!;
+        var member = await SeedMemberForEventTestsAsync(db);
+        db.EventRegistrations.Add(new EventRegistration
+        {
+            EventId = created.Id, MemberId = member.Id, Mode = EventMode.Onsite,
+            Status = EventRegistrationStatus.Cancelled,
+        });
+        await db.SaveChangesAsync();
+
+        var page = await service.GetAllAsync(1, 20, search: null, chapter: null, upcomingOnly: false, currentUserId: member.UserId);
+
+        Assert.Null(page.Items.Single().MyMode);
+    }
+
+    [Fact]
+    public async Task GetAllAsync_NoCurrentUser_MyRegistrationFieldsAreNull()
+    {
+        using var db = TestDbContext.CreateInMemory();
+        var service = new EventService(db);
+        var created = (await service.CreateAsync(ValidCreateRequest())).Value!;
+        var member = await SeedMemberForEventTestsAsync(db);
+        db.EventRegistrations.Add(new EventRegistration { EventId = created.Id, MemberId = member.Id, Mode = EventMode.Onsite });
+        await db.SaveChangesAsync();
+
+        var page = await service.GetAllAsync(1, 20, search: null, chapter: null, upcomingOnly: false);
+
+        Assert.Null(page.Items.Single().MyMode);
+    }
+
+    [Fact]
+    public async Task GetByIdAsync_MemberHasRegistered_ReturnsTheirOwnModeAndStatus()
+    {
+        using var db = TestDbContext.CreateInMemory();
+        var service = new EventService(db);
+        var created = (await service.CreateAsync(ValidCreateRequest())).Value!;
+        var member = await SeedMemberForEventTestsAsync(db);
+        var registration = new EventRegistration { EventId = created.Id, MemberId = member.Id, Mode = EventMode.Onsite };
+        db.EventRegistrations.Add(registration);
+        await db.SaveChangesAsync();
+
+        var dto = await service.GetByIdAsync(created.Id, currentUserId: member.UserId);
+
+        Assert.Equal(registration.Id, dto!.MyRegistrationId);
+        Assert.Equal("Onsite", dto.MyMode);
+        Assert.Equal("Registered", dto.MyRegistrationStatus);
+    }
+
     private static UpdateEventRequest ToUpdateRequest(EventDto e) =>
         new(e.Title, e.Description, e.Chapter, e.Venue, e.StartsAt, e.EndsAt, e.Capacity, e.FeeOnsite, e.FeeOnline,
             e.CpdUnitsOnsite, e.CpdUnitsOnline,
-            e.Sessions.Select(s => new EventSessionRequest(s.Id, s.Title, s.StartsAt, s.EndsAt, s.Order, s.Venue)).ToList());
+            e.Sessions.Select(s => new EventSessionRequest(s.Id, s.Title, s.StartsAt, s.EndsAt, s.Order, s.Venue)).ToList(),
+            Status: e.Status);
 
     [Fact]
     public async Task CreateAsync_UnrecognizedType_Fails()

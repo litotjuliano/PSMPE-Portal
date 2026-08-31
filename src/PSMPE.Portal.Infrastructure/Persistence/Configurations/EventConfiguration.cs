@@ -23,7 +23,14 @@ public class EventConfiguration : IEntityTypeConfiguration<Event>
         builder.Property(e => e.CpdCodeOnline).HasMaxLength(64);
         builder.Property(e => e.PosterImageStorageKey).HasMaxLength(512);
 
+        // Stored as text, same reasoning as PaymentConfiguration's Kind/Status - an int ordinal
+        // would silently remap every existing row if a value is ever inserted into the middle of
+        // the enum.
+        builder.Property(e => e.Status).HasConversion<string>().HasMaxLength(32);
+
         // The events list filters/sorts on StartsAt; the admin roster looks events up by id only.
         builder.HasIndex(e => e.StartsAt);
+        // The events list filters non-staff callers down to Published only.
+        builder.HasIndex(e => e.Status);
     }
 }

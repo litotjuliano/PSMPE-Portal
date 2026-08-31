@@ -1,3 +1,5 @@
+using PSMPE.Portal.Domain.Enums;
+
 namespace PSMPE.Portal.Domain.Entities;
 
 /// <summary>
@@ -61,4 +63,9 @@ public class Event : BaseEntity
     /// are tracked per session, never per event, so there is no special case for a single-session
     /// event anywhere else in the model.</summary>
     public ICollection<EventSession> Sessions { get; set; } = new List<EventSession>();
+
+    /// <summary>Draft events are invisible to anyone without Events.View/Events.Manage - see
+    /// EventStatus's own doc comment. Set directly from CreateEventRequest/UpdateEventRequest,
+    /// same as every other admin-editable field - no separate publish endpoint.</summary>
+    public EventStatus Status { get; set; } = EventStatus.Draft;
 }

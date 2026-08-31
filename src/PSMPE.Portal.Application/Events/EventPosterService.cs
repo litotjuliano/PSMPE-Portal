@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using PSMPE.Portal.Application.Common.Interfaces;
 using PSMPE.Portal.Application.Common.Models;
+using PSMPE.Portal.Domain.Enums;
 using SkiaSharp;
 
 namespace PSMPE.Portal.Application.Events;
@@ -66,16 +67,20 @@ public class EventPosterService(IApplicationDbContext db, IFileStorageService st
         return Result.Success();
     }
 
-    public async Task<(Stream Content, string ContentType)?> GetAsync(Guid eventId, CancellationToken cancellationToken = default)
+    public async Task<(Stream Content, string ContentType)?> GetAsync(
+        Guid eventId, bool includeDrafts = false, CancellationToken cancellationToken = default)
     {
-        var storageKey = await db.Events.AsNoTracking()
+        var @event = await db.Events.AsNoTracking()
             .Where(e => e.Id == eventId)
-            .Select(e => e.PosterImageStorageKey)
+            .Select(e => new { e.PosterImageStorageKey, e.Status })
             .FirstOrDefaultAsync(cancellationToken);
-        if (storageKey is null)
+        // A Draft event's poster is invisible to non-staff too - same "acts like it doesn't exist"
+        // treatment as EventService.GetByIdAsync/RegisterAsync.
+        if (@event is null || @event.PosterImageStorageKey is null || (!includeDrafts && @event.Status != EventStatus.Published))
         {
             return null;
         }
+        var storageKey = @event.PosterImageStorageKey;
 
         var stream = await storage.OpenReadAsync(storageKey, cancellationToken);
         return stream is null ? null : (stream, "image/jpeg");

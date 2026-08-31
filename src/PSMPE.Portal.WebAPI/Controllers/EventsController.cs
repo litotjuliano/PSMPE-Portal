@@ -28,12 +28,12 @@ public class EventsController(IEventService eventService, IPaymentService paymen
     public async Task<ActionResult<PagedResult<EventDto>>> GetAll(
         int page = 1, int pageSize = 20, string? search = null, string? chapter = null, bool upcomingOnly = false,
         CancellationToken cancellationToken = default) =>
-        Ok(await eventService.GetAllAsync(page, pageSize, search, chapter, upcomingOnly, cancellationToken));
+        Ok(await eventService.GetAllAsync(page, pageSize, search, chapter, upcomingOnly, CurrentUserId, IsEventsStaff, cancellationToken));
 
     [HttpGet("{id:guid}")]
     public async Task<ActionResult<EventDto>> GetById(Guid id, CancellationToken cancellationToken)
     {
-        var @event = await eventService.GetByIdAsync(id, cancellationToken);
+        var @event = await eventService.GetByIdAsync(id, CurrentUserId, IsEventsStaff, cancellationToken);
         return @event is null ? NotFound() : Ok(@event);
     }
 
@@ -65,11 +65,12 @@ public class EventsController(IEventService eventService, IPaymentService paymen
     }
 
     /// <summary>Any authenticated caller - same auth level as GetById, since the poster is shown on
-    /// the member-facing events list/register views, not just to staff.</summary>
+    /// the member-facing events list/register views, not just to staff. A Draft event's poster is
+    /// still gated to staff only, same as GetById.</summary>
     [HttpGet("{id:guid}/poster")]
     public async Task<IActionResult> GetPoster(Guid id, CancellationToken cancellationToken)
     {
-        var file = await eventPosterService.GetAsync(id, cancellationToken);
+        var file = await eventPosterService.GetAsync(id, IsEventsStaff, cancellationToken);
         return file is null ? NotFound() : File(file.Value.Content, file.Value.ContentType);
     }
 
@@ -180,9 +181,7 @@ public class EventsController(IEventService eventService, IPaymentService paymen
             return Unauthorized();
         }
 
-        var isAdmin = User.HasClaim(Permissions.ClaimType, Permissions.Events.View) ||
-                      User.HasClaim(Permissions.ClaimType, Permissions.Events.Manage);
-        var result = await eventService.GetCertificateDataAsync(userId.Value, id, isAdmin, cancellationToken);
+        var result = await eventService.GetCertificateDataAsync(userId.Value, id, IsEventsStaff, cancellationToken);
         if (!result.Succeeded)
         {
             return ToErrorActionResult(result);
@@ -194,6 +193,14 @@ public class EventsController(IEventService eventService, IPaymentService paymen
 
     private Guid? CurrentUserId =>
         Guid.TryParse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value, out var id) ? id : null;
+
+    /// <summary>Same check already used by GetCertificate below - true for Admin/Manager (holders
+    /// of Events.Manage or Events.View), false for Member/Accounts/Approval. Drives whether Draft
+    /// events are visible at all (GetAll/GetById/GetPoster) or registrable (enforced separately in
+    /// EventService.RegisterAsync, which has no caller-role concept - it simply refuses any Draft).</summary>
+    private bool IsEventsStaff =>
+        User.HasClaim(Permissions.ClaimType, Permissions.Events.View) ||
+        User.HasClaim(Permissions.ClaimType, Permissions.Events.Manage);
 
     private IActionResult ToActionResult(Result result)
     {

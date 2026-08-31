@@ -23,8 +23,11 @@ public partial class EventService
         }
 
         var @event = await db.Events.Include(e => e.Sessions).FirstOrDefaultAsync(e => e.Id == eventId, cancellationToken);
-        if (@event is null)
+        if (@event is null || @event.Status != EventStatus.Published)
         {
+            // A Draft event isn't open for registration yet - treated as "doesn't exist", same as
+            // EventService.GetByIdAsync's non-staff behavior, so a guessed/leaked id can't be used
+            // to register before the event is actually published.
             return Result<EventRegistrationDto>.NotFound($"Event '{eventId}' was not found.");
         }
 

@@ -18,6 +18,14 @@ export const EventRegistrationStatus = {
 } as const
 export type EventRegistrationStatusValue = (typeof EventRegistrationStatus)[keyof typeof EventRegistrationStatus]
 
+/** Draft events are invisible to anyone without Events.View/Events.Manage - see EventStatus.cs's
+ *  doc comment on the backend. Just these two - no Archived/Cancelled, not requested. */
+export const EventStatus = {
+  Draft: 'Draft',
+  Published: 'Published',
+} as const
+export type EventStatusValue = (typeof EventStatus)[keyof typeof EventStatus]
+
 /** Mirrors EventTypes.cs. Free text against this list, not a validated backend enum - see
  *  Event.Type's backend doc comment. */
 export const EventTypes = {
@@ -72,6 +80,12 @@ export interface Event {
   cpdCodeOnline: string | null
   hasPoster: boolean
   sessions: EventSession[]
+  /** The calling member's own non-cancelled registration for this event, if any - null for a
+   *  non-member caller or a member who hasn't registered (or cancelled). See EventDto.cs. */
+  myRegistrationId: string | null
+  myMode: EventModeValue | null
+  myRegistrationStatus: EventRegistrationStatusValue | null
+  status: EventStatusValue
 }
 
 export interface CreateEventRequest {
@@ -84,6 +98,7 @@ export interface CreateEventRequest {
   capacity: number | null
   feeOnsite: number
   feeOnline: number
+  status: EventStatusValue
   type: string | null
   hours: number | null
   objectives: string | null

@@ -1,3 +1,4 @@
+import { isAxiosError } from 'axios'
 import { apiClient } from '../apiClient'
 import type { PagedResult } from './adminApi'
 
@@ -40,6 +41,9 @@ export interface Payment {
   /** Set only when kind is EventRegistration - which event, since "Event registration" alone
    *  doesn't say which one. Null for NewMembership/Renewal. */
   eventTitle: string | null
+  /** Set only when kind is EventRegistration - lets the Events page's register modal find "the
+   *  payment for this registration" by matching against Event.myRegistrationId. */
+  eventRegistrationId: string | null
 }
 
 export interface SubmitPaymentRequest {
@@ -121,8 +125,15 @@ export const paymentApi = {
     try {
       const response = await apiClient.get(`/api/payments/${paymentId}/proof`, { responseType: 'blob' })
       return { url: URL.createObjectURL(response.data), contentType: response.data.type }
-    } catch {
-      return null
+    } catch (err) {
+      // 404 means nothing was ever submitted - the caller's "No file has been uploaded yet."
+      // message. Anything else (410 = recorded but missing from storage, network error, etc.)
+      // rethrows so FilePreviewModal's distinct genericErrorMessage branch shows instead, rather
+      // than silently claiming no proof exists at all.
+      if (isAxiosError(err) && err.response?.status === 404) {
+        return null
+      }
+      throw err
     }
   },
 

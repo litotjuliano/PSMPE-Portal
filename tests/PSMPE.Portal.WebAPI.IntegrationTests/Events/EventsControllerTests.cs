@@ -105,6 +105,7 @@ public class EventsControllerTests : IClassFixture<CustomWebApplicationFactory>,
         capacity = 100,
         feeOnsite = 500m,
         feeOnline = 200m,
+        status = "Published",
     };
 
     [Fact]
@@ -171,6 +172,7 @@ public class EventsControllerTests : IClassFixture<CustomWebApplicationFactory>,
                 cpdUnitsOnsite = 8m,
                 cpdUnitsOnline = (decimal?)null,
                 sessions = new[] { new { id = sessionId, title = "Full Event", startsAt = created.GetProperty("startsAt").GetDateTimeOffset(), endsAt = created.GetProperty("endsAt").GetDateTimeOffset(), order = 1 } },
+                status = "Published",
             }),
         }.WithBearer(adminToken));
         Assert.Equal(HttpStatusCode.OK, setUnits.StatusCode);
@@ -235,6 +237,7 @@ public class EventsControllerTests : IClassFixture<CustomWebApplicationFactory>,
                 cpdUnitsOnsite = 8m,
                 cpdUnitsOnline = (decimal?)null,
                 sessions = new[] { new { id = sessionId, title = "Full Event", startsAt = created.GetProperty("startsAt").GetDateTimeOffset(), endsAt = created.GetProperty("endsAt").GetDateTimeOffset(), order = 1 } },
+                status = "Published",
             }),
         }.WithBearer(adminToken));
         Assert.Equal(HttpStatusCode.OK, setUnits.StatusCode);

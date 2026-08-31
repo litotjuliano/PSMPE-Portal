@@ -28,7 +28,7 @@ public class PaymentService(IApplicationDbContext db, ICacheService? cache = nul
         p.Kind, p.Amount, p.IncludesPortalAccess, p.ReferenceNo, p.PaidOn,
         p.ProofStorageKey is not null,
         p.Status, p.RejectedReason, p.DecidedAt, p.CoversUntil, p.CreatedAt,
-        p.EventRegistration?.Event.Title);
+        p.EventRegistration?.Event.Title, p.EventRegistrationId);
 
     public async Task<PagedResult<PaymentDto>> GetAllAsync(
         int page, int pageSize, PaymentStatus? status = null, CancellationToken cancellationToken = default)

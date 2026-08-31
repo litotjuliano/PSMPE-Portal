@@ -161,7 +161,17 @@ public class PaymentsController(
         // surname, first name and birthdate, which has no business being in an API response.
         var key = await paymentService.GetProofKeyAsync(id, cancellationToken);
         var file = key is null ? null : await memberUploadService.OpenByKeyAsync(key, cancellationToken);
-        return file is null ? NotFound() : File(file.Value.Content, file.Value.ContentType);
+        if (file is not null)
+        {
+            return File(file.Value.Content, file.Value.ContentType);
+        }
+
+        // payment.HasProof was true (checked above) yet the file can't be opened - the database
+        // still has a key, but the physical file is gone from local disk storage (a non-durable
+        // dev-only setup - see LocalDiskFileStorageService's doc comment). Distinct from the 404
+        // above (nothing was ever submitted) so the frontend can tell the two apart instead of
+        // both looking like "no proof exists."
+        return StatusCode(StatusCodes.Status410Gone);
     }
 
     [HttpPost("{id:guid}/verify")]

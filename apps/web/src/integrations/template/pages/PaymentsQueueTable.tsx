@@ -25,6 +25,9 @@ const KIND_LABELS: Record<Payment['kind'], string> = {
   EventRegistration: 'Event registration',
 }
 
+const PROOF_MISSING_MESSAGE =
+  "This file was recorded but could not be found in storage. It may have been lost — ask the member to resubmit their proof."
+
 const peso = new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' })
 
 /**
@@ -211,6 +214,7 @@ export const PaymentsQueueTable = ({
           title="Proof of Payment"
           fetchFile={() => paymentApi.fetchProofUrl(previewingId)}
           onClose={() => setPreviewingId(null)}
+          genericErrorMessage={PROOF_MISSING_MESSAGE}
         />
       )}
     </div>
