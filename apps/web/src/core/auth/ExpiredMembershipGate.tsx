@@ -1,5 +1,6 @@
+import { isAxiosError } from 'axios'
 import { createContext, useContext, useEffect, useState } from 'react'
-import { Navigate, Outlet, useLocation } from 'react-router-dom'
+import { Outlet } from 'react-router-dom'
 import { memberApi } from '../api/endpoints/memberApi'
 import { useAuth } from './useAuth'
 import { Roles } from '../types/auth'
@@ -10,14 +11,19 @@ interface MembershipAccessState {
   isExpired: boolean
   /** The member's most recently verified payment didn't include the portal-access add-on. */
   lacksPortalAccess: boolean
-  /** Either condition above - used by AppMenu to hide everything but Profile. Always all-false for
-   *  administrative accounts. */
+  /** Registered but never submitted a membership application - no Member row exists at all yet
+   *  (getMyProfile() 404s). See MembershipAccessMiddleware's MEMBERSHIP_NOT_STARTED check. */
+  hasNoProfile: boolean
+  /** Any condition above. Doesn't gate navigation (see this file's doc comment) - consumers use it
+   *  to disable a specific action (e.g. EventRegisterModal's Register button) and show a message
+   *  explaining why. Always all-false for administrative accounts. */
   isRestricted: boolean
 }
 
 const defaultMembershipAccessState: MembershipAccessState = {
   isExpired: false,
   lacksPortalAccess: false,
+  hasNoProfile: false,
   isRestricted: false,
 }
 
@@ -28,23 +34,26 @@ const MembershipAccessContext = createContext<MembershipAccessState>(defaultMemb
 export const useMembershipAccess = () => useContext(MembershipAccessContext)
 
 /**
- * Redirects a restricted member to /profile from any other route, mirroring
- * DataPrivacyConsentGate's effect-fetch/fail-open shape as its own layout route. A member is
- * restricted when fully Expired (past the grace period) OR lacking portal access (their most
- * recently verified payment omitted the add-on) - either condition alone is enough. Grace-period
- * members (Status still Active) with portal access are unaffected.
+ * Resolves the signed-in member's restriction state and makes it available to descendants via
+ * useMembershipAccess - fully Expired (past the grace period), lacking portal access (their most
+ * recently verified payment omitted the add-on), or no Member profile at all yet (registered but
+ * never submitted an application - getMyProfile() 404s). Grace-period members (Status still
+ * Active) with portal access are unaffected.
  *
- * This is UX only, not the security boundary: MembershipAccessMiddleware on the backend is what
- * actually enforces both restrictions, so a request slipping past this redirect (e.g. during the
- * brief window before the fetch resolves) still gets a 403 from the API.
+ * Deliberately does NOT redirect or hide navigation for a restricted member - every page stays
+ * reachable and every nav item stays visible (see AppMenu.tsx, which is role-filtered only).
+ * Restriction shows up at the point of a specific gated action instead (e.g.
+ * EventRegisterModal disabling Register with a message using this state), matching whatever the
+ * backend's MembershipAccessMiddleware allowlist (`[AllowExpiredMember]`) actually permits for
+ * that action - browsing is intentionally more permissive than acting.
  *
- * Fails open on fetch error / while loading - same trade-off DataPrivacyConsentGate already makes,
- * since briefly showing a page to someone whose status hasn't loaded yet is far better than locking
- * everyone out on a transient 500.
+ * Fails open on any fetch error other than a 404 / while loading - same trade-off
+ * DataPrivacyConsentGate already makes, since briefly showing a page to someone whose status
+ * hasn't loaded yet is far better than treating everyone as restricted on a transient 500. A 404
+ * specifically means "no Member row" and is treated as the real, meaningful hasNoProfile state.
  */
 export function ExpiredMembershipGate() {
   const { user } = useAuth()
-  const location = useLocation()
   const [state, setState] = useState<MembershipAccessState>(defaultMembershipAccessState)
 
   // Mirrors MyProfilePage.tsx's isAdministrativeAccount check: staff/admin roles never have a
@@ -64,10 +73,16 @@ export function ExpiredMembershipGate() {
         if (cancelled) return
         const isExpired = member.status === MembershipStatus.Expired
         const lacksPortalAccess = !member.hasPortalAccess
-        setState({ isExpired, lacksPortalAccess, isRestricted: isExpired || lacksPortalAccess })
+        setState({ isExpired, lacksPortalAccess, hasNoProfile: false, isRestricted: isExpired || lacksPortalAccess })
       })
-      .catch(() => {
-        if (!cancelled) setState(defaultMembershipAccessState)
+      .catch((err) => {
+        if (cancelled) return
+        // A 404 here means this Member-role account has no Member row at all yet - registered but
+        // never submitted an application (see MembershipAccessMiddleware's MEMBERSHIP_NOT_STARTED
+        // check, which enforces this as a real restriction on gated actions, not just this state).
+        // Anything else (network error, 500) keeps failing open as before.
+        const hasNoProfile = isAxiosError(err) && err.response?.status === 404
+        setState(hasNoProfile ? { ...defaultMembershipAccessState, hasNoProfile: true, isRestricted: true } : defaultMembershipAccessState)
       })
     return () => {
       cancelled = true
@@ -76,7 +91,7 @@ export function ExpiredMembershipGate() {
 
   return (
     <MembershipAccessContext.Provider value={state}>
-      {state.isRestricted && location.pathname !== '/profile' ? <Navigate to="/profile" replace /> : <Outlet />}
+      <Outlet />
     </MembershipAccessContext.Provider>
   )
 }

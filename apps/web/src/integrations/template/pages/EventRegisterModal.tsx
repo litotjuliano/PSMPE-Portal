@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import { useMembershipAccess } from '../../../core/auth/ExpiredMembershipGate'
 import type { Event } from '../../../core/api/endpoints/eventApi'
 import {
   EventMode,
@@ -34,6 +35,19 @@ function feeForMode(event: Event, mode: EventModeValue): number {
   return mode === EventMode.Onsite ? event.feeOnsite : event.feeOnline
 }
 
+/** A modality priced at 0 while its sibling has a real price means "not offered" (an
+ *  admin forgot to price it, most likely), not "free" - same convention as EventsTable's
+ *  formatFees. Both at 0 is a genuinely free event, so both stay offered in that case. */
+function isModeOffered(event: Event, mode: EventModeValue): boolean {
+  if (event.feeOnsite <= 0 && event.feeOnline <= 0) return true
+  return feeForMode(event, mode) > 0
+}
+
+/** Onsite unless only Online is actually offered. */
+function defaultMode(event: Event): EventModeValue {
+  return isModeOffered(event, EventMode.Onsite) ? EventMode.Onsite : EventMode.Online
+}
+
 /** Member-facing: shows the event's detail (poster, type, hours, objectives, sessions with their
  *  effective venue), lets the member pick a modality (fee and CPD units update live for whichever
  *  is selected), registers, then optionally submits payment proof right away (the member can also
@@ -46,9 +60,22 @@ function isPastPaymentSubmission(status: EventRegistrationStatusValue | null): b
   return status !== null && status !== EventRegistrationStatus.Registered
 }
 
+/** Browsing the event (this whole modal, poster and detail included) is allowed regardless of
+ *  membership restriction - see EventsController.GetAll's [AllowExpiredMember]. Only the actual
+ *  Register action requires an unrestricted membership, disabled here (rather than hiding the
+ *  modal) with a message specific to why, so the member knows what to fix. */
+function restrictionMessage({ isExpired, hasNoProfile, lacksPortalAccess }: ReturnType<typeof useMembershipAccess>): string | null {
+  if (isExpired) return 'Your membership has expired. Renew your dues to register for events.'
+  if (hasNoProfile) return 'Complete your membership application to register for events.'
+  if (lacksPortalAccess) return 'Add Portal Access on your next renewal to register for events.'
+  return null
+}
+
 export function EventRegisterModal({ event, onClose, onRegistered }: EventRegisterModalProps) {
-  const [mode, setMode] = useState<EventModeValue>(EventMode.Onsite)
-  const [amount, setAmount] = useState(feeForMode(event, EventMode.Onsite).toString())
+  const membershipAccess = useMembershipAccess()
+  const blockedMessage = restrictionMessage(membershipAccess)
+  const [mode, setMode] = useState<EventModeValue>(defaultMode(event))
+  const [amount, setAmount] = useState(feeForMode(event, defaultMode(event)).toString())
   const [referenceNo, setReferenceNo] = useState('')
   const [paidOn, setPaidOn] = useState(new Date().toISOString().slice(0, 10))
   const [proofFile, setProofFile] = useState<File | null>(null)
@@ -215,14 +242,35 @@ export function EventRegisterModal({ event, onClose, onRegistered }: EventRegist
             </>
           ) : !registrationId ? (
             <>
-              <label className="flex items-center gap-2 text-sm">
-                <input type="radio" name="eventMode" className="form-radio" checked={mode === EventMode.Onsite} onChange={() => setMode(EventMode.Onsite)} />
-                Onsite {event.cpdUnitsOnsite !== null ? `(${event.cpdUnitsOnsite} CPD units${event.cpdCodeOnsite ? `, ${event.cpdCodeOnsite}` : ''})` : '(CPD units: TBD)'}
-              </label>
-              <label className="flex items-center gap-2 text-sm">
-                <input type="radio" name="eventMode" className="form-radio" checked={mode === EventMode.Online} onChange={() => setMode(EventMode.Online)} />
-                Online {event.cpdUnitsOnline !== null ? `(${event.cpdUnitsOnline} CPD units${event.cpdCodeOnline ? `, ${event.cpdCodeOnline}` : ''})` : '(CPD units: TBD)'}
-              </label>
+              {blockedMessage && (
+                <p className="text-sm text-warning bg-warning/10 rounded-lg px-3 py-2">{blockedMessage}</p>
+              )}
+              {isModeOffered(event, EventMode.Onsite) && (
+                <label className="flex items-center gap-2 text-sm">
+                  <input
+                    type="radio"
+                    name="eventMode"
+                    className="form-radio"
+                    checked={mode === EventMode.Onsite}
+                    disabled={!!blockedMessage}
+                    onChange={() => setMode(EventMode.Onsite)}
+                  />
+                  Onsite {event.cpdUnitsOnsite !== null ? `(${event.cpdUnitsOnsite} CPD units${event.cpdCodeOnsite ? `, ${event.cpdCodeOnsite}` : ''})` : '(CPD units: TBD)'}
+                </label>
+              )}
+              {isModeOffered(event, EventMode.Online) && (
+                <label className="flex items-center gap-2 text-sm">
+                  <input
+                    type="radio"
+                    name="eventMode"
+                    className="form-radio"
+                    checked={mode === EventMode.Online}
+                    disabled={!!blockedMessage}
+                    onChange={() => setMode(EventMode.Online)}
+                  />
+                  Online {event.cpdUnitsOnline !== null ? `(${event.cpdUnitsOnline} CPD units${event.cpdCodeOnline ? `, ${event.cpdCodeOnline}` : ''})` : '(CPD units: TBD)'}
+                </label>
+              )}
               <p className="text-sm text-default-600">
                 Fee: {feeForMode(event, mode) > 0 ? `PHP ${feeForMode(event, mode).toFixed(2)}` : 'Free'}
               </p>
@@ -256,7 +304,7 @@ export function EventRegisterModal({ event, onClose, onRegistered }: EventRegist
             {readOnlyStatus ? 'Close' : 'Cancel'}
           </StandardButton>
           {readOnlyStatus ? null : !registrationId ? (
-            <StandardButton onClick={handleRegister} loading={saving} loadingLabel="Registering…">
+            <StandardButton onClick={handleRegister} loading={saving} loadingLabel="Registering…" disabled={!!blockedMessage}>
               Register
             </StandardButton>
           ) : (

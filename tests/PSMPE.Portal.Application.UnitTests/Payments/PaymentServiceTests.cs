@@ -158,6 +158,27 @@ public class PaymentServiceTests
         Assert.False(member.HasPortalAccess);
     }
 
+    /// <summary>
+    /// The whole point of the separate Kind: a mid-cycle add-on purchase must not give the member a
+    /// free extra year, the way verifying it as an ordinary Renewal would.
+    /// </summary>
+    [Fact]
+    public async Task VerifyAsync_PortalAccessOnly_GrantsAccessWithoutMovingRenewalDueDate()
+    {
+        using var db = TestDbContext.CreateInMemory();
+        var service = new PaymentService(db);
+        var dueDate = new DateOnly(2026, 6, 1);
+        var member = await SeedApprovedMemberAsync(db, dueDate);
+        var payment = await SeedPaymentAsync(db, member, PaymentKind.PortalAccessOnly, includesPortalAccess: true);
+
+        var result = await service.VerifyAsync(payment.Id, Guid.NewGuid());
+
+        Assert.True(result.Succeeded);
+        Assert.True(member.HasPortalAccess);
+        Assert.Equal(dueDate, member.RenewalDueDate);
+        Assert.Equal(MembershipStatus.Active, member.Status);
+    }
+
     [Fact]
     public async Task VerifyAsync_ForAnUnapprovedMember_IsRejected()
     {
@@ -310,6 +331,53 @@ public class PaymentServiceTests
         var stored = await db.Payments.FindAsync(result.Value!.Id);
         Assert.False(stored!.IncludesPortalAccess);
         Assert.Equal(0m, stored.PortalFeeAmount);
+    }
+
+    [Fact]
+    public async Task SubmitAsync_PortalAccessOnly_ProducesThatKindAndForcesIncludesPortalAccess()
+    {
+        using var db = TestDbContext.CreateInMemory();
+        var service = new PaymentService(db);
+        var member = await SeedApprovedMemberAsync(db, new DateOnly(2026, 6, 1));
+
+        var result = await service.SubmitAsync(
+            member.UserId,
+            new SubmitPaymentRequest(900m, "REF-1", DateOnly.FromDateTime(DateTime.UtcNow), IncludePortalAccess: false, PortalAccessOnly: true));
+
+        Assert.True(result.Succeeded);
+        Assert.Equal(PaymentKind.PortalAccessOnly, result.Value!.Kind);
+        var stored = await db.Payments.FindAsync(result.Value.Id);
+        Assert.True(stored!.IncludesPortalAccess);
+    }
+
+    [Fact]
+    public async Task SubmitAsync_PortalAccessOnly_WithoutAPriorRenewalDueDate_IsRefused()
+    {
+        using var db = TestDbContext.CreateInMemory();
+        var service = new PaymentService(db);
+        var member = await SeedApprovedMemberAsync(db); // never renewed - RenewalDueDate is null
+
+        var result = await service.SubmitAsync(
+            member.UserId,
+            new SubmitPaymentRequest(900m, "REF-1", DateOnly.FromDateTime(DateTime.UtcNow), PortalAccessOnly: true));
+
+        Assert.False(result.Succeeded);
+    }
+
+    [Fact]
+    public async Task SubmitAsync_PortalAccessOnly_WhenAlreadyHasPortalAccess_IsRefused()
+    {
+        using var db = TestDbContext.CreateInMemory();
+        var service = new PaymentService(db);
+        var member = await SeedApprovedMemberAsync(db, new DateOnly(2026, 6, 1));
+        member.HasPortalAccess = true;
+        await db.SaveChangesAsync();
+
+        var result = await service.SubmitAsync(
+            member.UserId,
+            new SubmitPaymentRequest(900m, "REF-1", DateOnly.FromDateTime(DateTime.UtcNow), PortalAccessOnly: true));
+
+        Assert.False(result.Succeeded);
     }
 
     [Fact]

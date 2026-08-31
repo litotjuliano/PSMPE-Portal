@@ -10,6 +10,7 @@ const PAYMENT_KIND_LABELS: Record<Payment['kind'], string> = {
   NewMembership: 'New membership',
   Renewal: 'Renewal',
   EventRegistration: 'Event registration',
+  PortalAccessOnly: 'Portal access',
 }
 
 interface RenewalPaymentCardProps {
@@ -52,6 +53,15 @@ export const RenewalPaymentCard = ({ member, onSubmitted }: RenewalPaymentCardPr
   const amountManuallyEditedRef = useRef(false)
   const proofInputRef = useRef<HTMLInputElement>(null)
 
+  // Mirrors the full form's fields above, for the standalone "Add Portal Access" card below - kept
+  // separate rather than shared, since the two forms can't both be showing at once but do need
+  // independent defaults (this one always pre-fills to the bare portal fee, never a dues total).
+  const [portalOnlyAmount, setPortalOnlyAmount] = useState('')
+  const [portalOnlyReferenceNo, setPortalOnlyReferenceNo] = useState('')
+  const [portalOnlyPaidOn, setPortalOnlyPaidOn] = useState(() => new Date().toISOString().slice(0, 10))
+  const [portalOnlySubmitting, setPortalOnlySubmitting] = useState(false)
+  const portalOnlyProofRef = useRef<HTMLInputElement>(null)
+
   // Takes the checkbox value as a parameter rather than reading it off state, since this is a
   // stable useCallback ([] deps) and would otherwise close over a stale value - callers pass
   // whatever's current at the call site (the mount effect, and handleSubmit below).
@@ -64,6 +74,7 @@ export const RenewalPaymentCard = ({ member, onSubmitted }: RenewalPaymentCardPr
     if (!amountManuallyEditedRef.current) {
       setAmount(String(portalAccess ? loadedFees.renewalTotalWithPortal : loadedFees.renewalTotalWithoutPortal))
     }
+    setPortalOnlyAmount((current) => current || String(loadedFees.portalFee))
   }, [])
 
   const toggleIncludePortalAccess = (checked: boolean) => {
@@ -87,6 +98,11 @@ export const RenewalPaymentCard = ({ member, onSubmitted }: RenewalPaymentCardPr
 
   const dueInDays = member.renewalDueDate ? daysUntil(member.renewalDueDate) : null
   const withinWindow = dueInDays !== null && dueInDays <= RENEWAL_WINDOW_DAYS
+  const showFullForm = Boolean(withinWindow || member.isInGracePeriod || member.isExpired || !member.renewalDueDate)
+  // A member who's current on dues but never opted into portal access has no way to add it through
+  // the full form above - it only appears near/at renewal. See openspec/changes/
+  // add-portal-access-payment/proposal.md's "Not Built: Mid-cycle portal upgrade".
+  const showAddPortalAccess = !showFullForm && !member.hasPortalAccess && !pending
 
   const handleSubmit = async () => {
     setError(null)
@@ -121,6 +137,41 @@ export const RenewalPaymentCard = ({ member, onSubmitted }: RenewalPaymentCardPr
       setError(describeError(err, 'Could not submit your payment. Please try again.'))
     } finally {
       setSubmitting(false)
+    }
+  }
+
+  const handleAddPortalAccess = async () => {
+    setError(null)
+    const parsed = Number(portalOnlyAmount)
+    if (!Number.isFinite(parsed) || parsed <= 0) {
+      setError('Enter the amount you paid.')
+      return
+    }
+
+    const file = portalOnlyProofRef.current?.files?.[0]
+    if (!file) {
+      setError('Attach your deposit slip or transfer screenshot.')
+      return
+    }
+
+    setPortalOnlySubmitting(true)
+    try {
+      const payment = await paymentApi.submitMyPayment({
+        amount: parsed,
+        referenceNo: portalOnlyReferenceNo.trim() || null,
+        paidOn: portalOnlyPaidOn,
+        includePortalAccess: true,
+        portalAccessOnly: true,
+      })
+      await paymentApi.uploadProof(payment.id, file)
+      if (portalOnlyProofRef.current) portalOnlyProofRef.current.value = ''
+      setPortalOnlyReferenceNo('')
+      await load(includePortalAccess)
+      await onSubmitted()
+    } catch (err) {
+      setError(describeError(err, 'Could not submit your payment. Please try again.'))
+    } finally {
+      setPortalOnlySubmitting(false)
     }
   }
 
@@ -179,7 +230,7 @@ export const RenewalPaymentCard = ({ member, onSubmitted }: RenewalPaymentCardPr
                 Your last payment was rejected: {lastRejected.rejectedReason}
               </p>
             )}
-            {(withinWindow || member.isInGracePeriod || member.isExpired || !member.renewalDueDate) && (
+            {showFullForm && (
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div>
                   <label htmlFor="dues-amount" className="block font-medium text-default-900 text-sm mb-2">
@@ -239,6 +290,61 @@ export const RenewalPaymentCard = ({ member, onSubmitted }: RenewalPaymentCardPr
                     Submit Payment
                   </StandardButton>
                   <span className="text-xs text-default-500">JPG, PNG or PDF, up to 1 MB.</span>
+                </div>
+              </div>
+            )}
+            {showAddPortalAccess && (
+              <div className="border border-default-200 rounded-lg p-4 flex flex-col gap-3">
+                <p className="text-sm text-default-600">
+                  You're current on dues but don't have Portal Access yet - required to register for events. Add it
+                  now without waiting for your next renewal.
+                </p>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  <div>
+                    <label htmlFor="portal-only-amount" className="block font-medium text-default-900 text-sm mb-2">
+                      Amount Paid
+                    </label>
+                    <input
+                      id="portal-only-amount"
+                      className="form-input"
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={portalOnlyAmount}
+                      onChange={(e) => setPortalOnlyAmount(e.target.value)}
+                    />
+                  </div>
+                  <div>
+                    <label htmlFor="portal-only-reference" className="block font-medium text-default-900 text-sm mb-2">
+                      Reference No. (optional)
+                    </label>
+                    <input
+                      id="portal-only-reference"
+                      className="form-input"
+                      value={portalOnlyReferenceNo}
+                      onChange={(e) => setPortalOnlyReferenceNo(e.target.value)}
+                    />
+                  </div>
+                  <div>
+                    <label htmlFor="portal-only-paid-on" className="block font-medium text-default-900 text-sm mb-2">
+                      Date Paid
+                    </label>
+                    <input
+                      id="portal-only-paid-on"
+                      className="form-input"
+                      type="date"
+                      max={new Date().toISOString().slice(0, 10)}
+                      value={portalOnlyPaidOn}
+                      onChange={(e) => setPortalOnlyPaidOn(e.target.value)}
+                    />
+                  </div>
+                  <div className="sm:col-span-3 flex flex-wrap items-center gap-3">
+                    <input ref={portalOnlyProofRef} type="file" accept="image/jpeg,image/png,application/pdf" className="text-sm" />
+                    <StandardButton icon={LuUpload} onClick={handleAddPortalAccess} loading={portalOnlySubmitting} loadingLabel="Submitting…">
+                      Pay Portal Fee
+                    </StandardButton>
+                    <span className="text-xs text-default-500">JPG, PNG or PDF, up to 1 MB.</span>
+                  </div>
                 </div>
               </div>
             )}

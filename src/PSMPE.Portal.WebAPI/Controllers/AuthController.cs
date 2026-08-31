@@ -7,6 +7,7 @@ using PSMPE.Portal.Application.Auth;
 using PSMPE.Portal.Application.Common.Interfaces;
 using PSMPE.Portal.Domain.Entities;
 using PSMPE.Portal.Domain.Enums;
+using PSMPE.Portal.Infrastructure.Authorization;
 using PSMPE.Portal.WebAPI.Extensions;
 
 namespace PSMPE.Portal.WebAPI.Controllers;
@@ -270,7 +271,12 @@ public class AuthController(
     private async Task<ApplicationUser?> GetCurrentUserAsync() =>
         await userManager.GetUserAsync(User);
 
+    // Must stay reachable regardless of membership state - including a "Member"-role account with
+    // no application submitted yet (MembershipAccessMiddleware's MEMBERSHIP_NOT_STARTED check) -
+    // since DataPrivacyConsentGate runs for every authenticated user before anything else, well
+    // before a member profile might exist.
     [Authorize]
+    [AllowExpiredMember]
     [HttpGet("me/data-privacy-consent")]
     public async Task<ActionResult<DataPrivacyConsentStatusResponse>> GetDataPrivacyConsent()
     {
@@ -288,7 +294,9 @@ public class AuthController(
             user.DataPrivacyConsentAt));
     }
 
+    // See GetDataPrivacyConsent's comment - same "must stay reachable" reasoning.
     [Authorize]
+    [AllowExpiredMember]
     [HttpPost("me/data-privacy-consent")]
     public async Task<ActionResult<DataPrivacyConsentStatusResponse>> GiveDataPrivacyConsent()
     {

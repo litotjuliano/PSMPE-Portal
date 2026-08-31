@@ -75,6 +75,12 @@ Each resolved by the user during brainstorming:
 - **`MembershipFeesDto.RegistrationTotal`** is replaced by four explicit totals
   (`RegistrationTotalWithoutPortal`/`WithPortal`, `RenewalTotalWithoutPortal`/`WithPortal`) — a
   deliberate breaking rename so no consumer silently keeps using a total that ignores the add-on.
+- **New `PaymentKind.PortalAccessOnly`** — a standalone mid-cycle purchase of the add-on alone, for a
+  member who's current on dues but never opted into portal access. `SubmitPaymentRequest` gains a
+  `PortalAccessOnly` flag; `PaymentVerification.Apply` grants `HasPortalAccess` without moving
+  `RenewalDueDate` the way a real `Renewal` would. Surfaced on `RenewalPaymentCard` as a compact "Add
+  Portal Access" card, shown only outside the normal renewal window (where the full form's checkbox
+  already covers it).
 
 ## Design Notes
 
@@ -98,8 +104,6 @@ Each resolved by the user during brainstorming:
 
 ## Not Built
 
-- **Mid-cycle portal upgrade.** No standalone way to add portal access between renewal dates — only
-  through a renewal payment that includes it.
 - **Bulk import for paper-form registrants.** One-at-a-time through the existing admin screen only;
   revisit if offline intake keeps happening at scale.
 - **Line-item drill-down for the payment report.** Aggregate figures only for now.

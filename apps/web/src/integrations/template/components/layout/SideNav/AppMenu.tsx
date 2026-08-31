@@ -2,7 +2,6 @@ import { Link, useLocation } from 'react-router-dom'
 import { LuChevronRight } from 'react-icons/lu'
 import { menuItemsData, type MenuItemType } from './menu'
 import { useAuth } from '../../../../../core/auth/useAuth'
-import { useMembershipAccess } from '../../../../../core/auth/ExpiredMembershipGate'
 
 const isItemActive = (item: MenuItemType, pathname: string): boolean => {
   if (item.href && pathname === item.href) return true
@@ -65,23 +64,13 @@ const filterByRole = (items: MenuItemType[], roles: readonly string[]): MenuItem
     .filter((item) => !item.requiredRoles || item.requiredRoles.some((r) => roles.includes(r)))
     .map((item) => (item.children ? { ...item, children: filterByRole(item.children, roles) } : item))
 
-/** A restricted member (fully Expired, or lacking portal access) keeps only the Profile link -
- *  everything else the backend now 403s anyway (see MembershipAccessMiddleware). Drops a section
- *  title left with no items under it. */
-const keepProfileOnly = (items: MenuItemType[]): MenuItemType[] =>
-  items.filter((item, index, all) => {
-    if (item.isTitle) {
-      const next = all[index + 1]
-      return next !== undefined && !next.isTitle && next.href === '/profile'
-    }
-    return item.href === '/profile'
-  })
-
 const AppMenu = () => {
   const { user } = useAuth()
-  const { isRestricted } = useMembershipAccess()
-  const roleFiltered = filterByRole(menuItemsData, user?.roles ?? [])
-  const items = isRestricted ? keepProfileOnly(roleFiltered) : roleFiltered
+  // Nav visibility is role-based only, never collapsed by membership-restriction state (Expired,
+  // lacking portal access, no profile yet) - a restricted member still sees every item their role
+  // grants; MembershipAccessMiddleware/ExpiredMembershipGate are what actually gate the pages and
+  // actions behind them (e.g. EventRegisterModal disabling Register), not the sidebar.
+  const items = filterByRole(menuItemsData, user?.roles ?? [])
 
   return (
     <ul className="side-nav py-3 hs-accordion-group">

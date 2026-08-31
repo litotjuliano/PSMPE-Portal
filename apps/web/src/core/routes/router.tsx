@@ -38,8 +38,8 @@ export const router = createBrowserRouter([
         element: <DataPrivacyConsentGate />,
         children: [
           {
-            // Consent resolves first, then membership access - a fully Expired member is
-            // redirected to /profile from any other route. See ExpiredMembershipGate.
+            // Consent resolves first, then membership-access state is resolved and exposed via
+            // useMembershipAccess - it doesn't redirect or hide pages, see ExpiredMembershipGate.
             element: <ExpiredMembershipGate />,
             children: [
               {
