@@ -84,7 +84,11 @@ export const PaymentsQueueTable = ({
                       <td className="py-3 px-3.5">
                         {payment.membershipNo ?? <span className="text-default-500">Not yet assigned</span>}
                       </td>
-                      <td className="py-3 px-3.5">{KIND_LABELS[payment.kind]}</td>
+                      <td className="py-3 px-3.5">
+                        {payment.kind === 'EventRegistration' && payment.eventTitle
+                          ? `${KIND_LABELS[payment.kind]} — ${payment.eventTitle}`
+                          : KIND_LABELS[payment.kind]}
+                      </td>
                       <td className="py-3 px-3.5">{peso.format(payment.amount)}</td>
                       <td className="py-3 px-3.5">{payment.referenceNo || '-'}</td>
                       <td className="py-3 px-3.5">{new Date(payment.paidOn).toLocaleDateString()}</td>

@@ -27,7 +27,8 @@ public class PaymentService(IApplicationDbContext db, ICacheService? cache = nul
         p.Member.MembershipNo,
         p.Kind, p.Amount, p.ReferenceNo, p.PaidOn,
         p.ProofStorageKey is not null,
-        p.Status, p.RejectedReason, p.DecidedAt, p.CoversUntil, p.CreatedAt);
+        p.Status, p.RejectedReason, p.DecidedAt, p.CoversUntil, p.CreatedAt,
+        p.EventRegistration?.Event.Title);
 
     public async Task<PagedResult<PaymentDto>> GetAllAsync(
         int page, int pageSize, PaymentStatus? status = null, CancellationToken cancellationToken = default)
@@ -35,7 +36,9 @@ public class PaymentService(IApplicationDbContext db, ICacheService? cache = nul
         page = Math.Max(page, 1);
         pageSize = Math.Clamp(pageSize, 1, 100);
 
-        var query = db.Payments.AsNoTracking().Include(p => p.Member).AsQueryable();
+        var query = db.Payments.AsNoTracking().Include(p => p.Member)
+            .Include(p => p.EventRegistration).ThenInclude(er => er!.Event)
+            .AsQueryable();
         if (status is not null)
         {
             query = query.Where(p => p.Status == status);
@@ -53,6 +56,7 @@ public class PaymentService(IApplicationDbContext db, ICacheService? cache = nul
     public async Task<IReadOnlyList<PaymentDto>> GetForMemberAsync(Guid memberId, CancellationToken cancellationToken = default)
     {
         var items = await db.Payments.AsNoTracking().Include(p => p.Member)
+            .Include(p => p.EventRegistration).ThenInclude(er => er!.Event)
             .Where(p => p.MemberId == memberId)
             // Newest first here - a member reads their own history most-recent-first.
             .OrderByDescending(p => p.CreatedAt)
@@ -63,6 +67,7 @@ public class PaymentService(IApplicationDbContext db, ICacheService? cache = nul
     public async Task<PaymentDto?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default)
     {
         var payment = await db.Payments.AsNoTracking().Include(p => p.Member)
+            .Include(p => p.EventRegistration).ThenInclude(er => er!.Event)
             .FirstOrDefaultAsync(p => p.Id == id, cancellationToken);
         return payment is null ? null : ToDto(payment);
     }
@@ -246,7 +251,7 @@ public class PaymentService(IApplicationDbContext db, ICacheService? cache = nul
     public async Task<Result<PaymentDto>> SubmitForEventRegistrationAsync(
         Guid userId, Guid registrationId, SubmitPaymentRequest request, CancellationToken cancellationToken = default)
     {
-        var registration = await db.EventRegistrations.Include(r => r.Member)
+        var registration = await db.EventRegistrations.Include(r => r.Member).Include(r => r.Event)
             .FirstOrDefaultAsync(r => r.Id == registrationId, cancellationToken);
         if (registration is null)
         {
@@ -292,6 +297,7 @@ public class PaymentService(IApplicationDbContext db, ICacheService? cache = nul
             Member = registration.Member,
             Kind = PaymentKind.EventRegistration,
             EventRegistrationId = registration.Id,
+            EventRegistration = registration,
             Amount = request.Amount,
             ReferenceNo = request.ReferenceNo?.Trim(),
             PaidOn = request.PaidOn,
@@ -309,7 +315,7 @@ public class PaymentService(IApplicationDbContext db, ICacheService? cache = nul
     public async Task<Result<PaymentDto>> RecordEventCashPaymentAsync(
         Guid registrationId, decimal amount, Guid decidedByUserId, CancellationToken cancellationToken = default)
     {
-        var registration = await db.EventRegistrations.Include(r => r.Member)
+        var registration = await db.EventRegistrations.Include(r => r.Member).Include(r => r.Event)
             .FirstOrDefaultAsync(r => r.Id == registrationId, cancellationToken);
         if (registration is null)
         {
@@ -350,6 +356,7 @@ public class PaymentService(IApplicationDbContext db, ICacheService? cache = nul
             Member = registration.Member,
             Kind = PaymentKind.EventRegistration,
             EventRegistrationId = registration.Id,
+            EventRegistration = registration,
             Amount = amount,
             PaidOn = DateOnly.FromDateTime(DateTime.UtcNow),
             Status = PaymentStatus.Submitted,

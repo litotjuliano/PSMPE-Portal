@@ -18,7 +18,11 @@ public record PaymentDto(
     string? RejectedReason,
     DateTimeOffset? DecidedAt,
     DateOnly? CoversUntil,
-    DateTimeOffset CreatedAt);
+    DateTimeOffset CreatedAt,
+    /// <summary>Set only when Kind is EventRegistration - "Event registration" alone doesn't tell
+    /// an admin working the queue which event, and it's a fair question with several events running
+    /// at once. Null for NewMembership/Renewal, which have nothing else to name.</summary>
+    string? EventTitle = null);
 
 /// <summary>
 /// Self-service: the member declares what they paid. No Kind - the server decides whether this is

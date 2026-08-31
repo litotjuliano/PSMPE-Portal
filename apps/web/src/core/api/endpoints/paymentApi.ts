@@ -34,6 +34,9 @@ export interface Payment {
   /** The renewal date this payment bought, recorded at verification. */
   coversUntil: string | null
   createdAt: string
+  /** Set only when kind is EventRegistration - which event, since "Event registration" alone
+   *  doesn't say which one. Null for NewMembership/Renewal. */
+  eventTitle: string | null
 }
 
 export interface SubmitPaymentRequest {
