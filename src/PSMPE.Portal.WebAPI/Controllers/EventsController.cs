@@ -24,13 +24,21 @@ namespace PSMPE.Portal.WebAPI.Controllers;
 [Route("api/events")]
 public class EventsController(IEventService eventService, IPaymentService paymentService, IEventPosterService eventPosterService) : ControllerBase
 {
+    /// <summary>Browsable regardless of membership restriction (Expired, no profile yet, lacking
+    /// portal access) - the Dashboard's Upcoming Events widget and the Events list are meant to be
+    /// reachable by any authenticated member; only the actual Register action (below) requires an
+    /// unrestricted membership. See ExpiredMembershipGate.tsx's doc comment for the broader
+    /// "browsing is more permissive than acting" rule this follows.</summary>
     [HttpGet]
+    [AllowExpiredMember]
     public async Task<ActionResult<PagedResult<EventDto>>> GetAll(
         int page = 1, int pageSize = 20, string? search = null, string? chapter = null, bool upcomingOnly = false,
         CancellationToken cancellationToken = default) =>
         Ok(await eventService.GetAllAsync(page, pageSize, search, chapter, upcomingOnly, CurrentUserId, IsEventsStaff, cancellationToken));
 
+    /// <summary>See GetAll's comment - same browsable-regardless-of-restriction reasoning.</summary>
     [HttpGet("{id:guid}")]
+    [AllowExpiredMember]
     public async Task<ActionResult<EventDto>> GetById(Guid id, CancellationToken cancellationToken)
     {
         var @event = await eventService.GetByIdAsync(id, CurrentUserId, IsEventsStaff, cancellationToken);
@@ -64,10 +72,11 @@ public class EventsController(IEventService eventService, IPaymentService paymen
         return ToActionResult(result);
     }
 
-    /// <summary>Any authenticated caller - same auth level as GetById, since the poster is shown on
-    /// the member-facing events list/register views, not just to staff. A Draft event's poster is
-    /// still gated to staff only, same as GetById.</summary>
+    /// <summary>Any authenticated caller, regardless of membership restriction - same as GetById,
+    /// since the poster is shown on the member-facing events list/register views, not just to
+    /// staff. A Draft event's poster is still gated to staff only, same as GetById.</summary>
     [HttpGet("{id:guid}/poster")]
+    [AllowExpiredMember]
     public async Task<IActionResult> GetPoster(Guid id, CancellationToken cancellationToken)
     {
         var file = await eventPosterService.GetAsync(id, IsEventsStaff, cancellationToken);

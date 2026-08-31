@@ -91,6 +91,42 @@ public class EventsControllerTests : IClassFixture<CustomWebApplicationFactory>,
         return verifyBody!.Token;
     }
 
+    /// <summary>Same as RegisterMemberAsync but lacking the portal-access add-on, for the browse-
+    /// vs-register distinction test below - MembershipAccessMiddlewareTests covers the axis itself
+    /// generically, this confirms Events' own endpoints actually carry the split correctly.</summary>
+    private async Task<string> RegisterMemberLackingPortalAccessAsync()
+    {
+        var email = $"{Guid.NewGuid()}@example.com";
+        var register = await _client.PostAsJsonFromNewClientIpAsync(
+            "/api/auth/register", new RegisterRequest(email, "Password123!", "Test Member", DataPrivacyConsent: true));
+        var registerBody = await register.Content.ReadFromJsonAsync<RegisterResponse>();
+
+        var (userId, verifyToken) = AuthTestHelpers.ParseVerificationLink(registerBody!.DevVerificationLink!);
+        var verify = await _client.PostAsJsonFromNewClientIpAsync(
+            "/api/auth/verify-email", new VerifyEmailRequest(userId, verifyToken));
+        var verifyBody = await verify.Content.ReadFromJsonAsync<AuthResponse>();
+
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            db.Members.Add(new Member
+            {
+                UserId = userId,
+                FirstName = "Test",
+                LastName = "Member",
+                Chapter = Chapters.Ncr,
+                MemberType = "Regular",
+                Status = MembershipStatus.Active,
+                SubmittedAt = DateTimeOffset.UtcNow.AddYears(-1),
+                ApprovedAt = DateTimeOffset.UtcNow.AddYears(-1),
+                HasPortalAccess = false,
+            });
+            await db.SaveChangesAsync();
+        }
+
+        return verifyBody!.Token;
+    }
+
     private HttpRequestMessage PostJson(string url, object body, string token) =>
         new HttpRequestMessage(HttpMethod.Post, url) { Content = JsonContent.Create(body) }.WithBearer(token);
 
@@ -203,6 +239,29 @@ public class EventsControllerTests : IClassFixture<CustomWebApplicationFactory>,
             new HttpRequestMessage(HttpMethod.Get, $"/api/events/registrations/{registrationId}/certificate").WithBearer(memberToken));
         Assert.Equal(HttpStatusCode.OK, certificateResponse.StatusCode);
         Assert.Equal("application/pdf", certificateResponse.Content.Headers.ContentType?.MediaType);
+    }
+
+    /// <summary>
+    /// Browsing (GetAll here) is allowlisted regardless of membership restriction, but Register
+    /// itself carries no such attribute - a member lacking portal access can see the event and
+    /// reach the register modal (confirmed by the 200 below) but still can't actually register.
+    /// This is what EventRegisterModal.tsx's disabled Register button/message mirrors client-side.
+    /// </summary>
+    [Fact]
+    public async Task MemberLackingPortalAccess_CanBrowse_ButRegisterIsStillBlocked()
+    {
+        var (_, adminToken) = await CreateAdminAsync();
+        var createResponse = await _client.SendAsync(PostJson("/api/events", ValidEventPayload(), adminToken));
+        var eventId = (await createResponse.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("id").GetGuid();
+        var memberToken = await RegisterMemberLackingPortalAccessAsync();
+
+        var browseResponse = await _client.SendAsync(new HttpRequestMessage(HttpMethod.Get, "/api/events").WithBearer(memberToken));
+        Assert.Equal(HttpStatusCode.OK, browseResponse.StatusCode);
+
+        var registerResponse = await _client.SendAsync(PostJson($"/api/events/{eventId}/register", new { mode = "Onsite" }, memberToken));
+        Assert.Equal(HttpStatusCode.Forbidden, registerResponse.StatusCode);
+        var body = await registerResponse.Content.ReadFromJsonAsync<Dictionary<string, string>>();
+        Assert.Equal("PORTAL_ACCESS_REQUIRED", body!["code"]);
     }
 
     /// <summary>

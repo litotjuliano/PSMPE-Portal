@@ -121,6 +121,7 @@ public class MembershipAccessMiddlewareTests : IClassFixture<CustomWebApplicatio
     [InlineData("/api/members/me")]
     [InlineData("/api/payments/me")]
     [InlineData("/api/payments/fees")]
+    [InlineData("/api/events")]
     public async Task ExpiredMember_IsAllowed_OnAllowlistedRoutes(string url)
     {
         var token = await RegisterMemberWithStatusAsync(MembershipStatus.Expired, DateOnly.FromDateTime(DateTime.UtcNow).AddDays(-100));
@@ -203,6 +204,7 @@ public class MembershipAccessMiddlewareTests : IClassFixture<CustomWebApplicatio
     [InlineData("/api/members/me")]
     [InlineData("/api/payments/me")]
     [InlineData("/api/payments/fees")]
+    [InlineData("/api/events")]
     public async Task MemberLackingPortalAccess_IsAllowed_OnAllowlistedRoutes(string url)
     {
         var token = await RegisterMemberWithStatusAsync(
@@ -265,5 +267,17 @@ public class MembershipAccessMiddlewareTests : IClassFixture<CustomWebApplicatio
         var response = await _client.SendAsync(Get("/api/members/me", token));
 
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task MemberRoleWithNoProfileAtAll_CanStillBrowseEvents()
+    {
+        // Same allowlisted-browsing reasoning as the Expired/lacking-portal-access cases above -
+        // Events is meant to be reachable by any authenticated member regardless of restriction.
+        var token = await RegisterMemberWithNoProfileAsync();
+
+        var response = await _client.SendAsync(Get("/api/events", token));
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
 }
