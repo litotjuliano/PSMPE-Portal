@@ -6,6 +6,7 @@ import PageMeta from '../components/shared/PageMeta'
 import { MembershipDashboard } from '../components/dashboard-membership/MembershipDashboard'
 import { UpcomingEventsWidget } from '../components/dashboard-events/UpcomingEventsWidget'
 import { NewsPreviewWidget } from '../components/dashboard-previews/NewsPreviewWidget'
+import { WhatsNewWidget } from '../components/dashboard-release/WhatsNewWidget'
 import { GaugeStat } from '../components/shared/GaugeStat'
 import { FilePreviewModal } from '../components/shared/FilePreviewModal'
 import { memberApi, type ProfileCompleteness } from '../../../core/api/endpoints/memberApi'
@@ -166,6 +167,7 @@ export const DashboardPage = () => {
             {!isMember && <MembershipDashboard />}
           </div>
           <div className="lg:col-span-1 col-span-1 flex flex-col gap-5">
+            <WhatsNewWidget />
             <UpcomingEventsWidget />
             <NewsPreviewWidget />
           </div>
