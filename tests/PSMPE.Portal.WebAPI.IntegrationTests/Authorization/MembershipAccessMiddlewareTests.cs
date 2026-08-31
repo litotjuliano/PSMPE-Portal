@@ -19,7 +19,10 @@ namespace PSMPE.Portal.WebAPI.IntegrationTests.Authorization;
 /// Also covers the independent portal-access check: an Active member lacking portal access is
 /// blocked with PORTAL_ACCESS_REQUIRED outside the allowlist, a member failing both checks sees
 /// MEMBERSHIP_EXPIRED (the expiry check runs first), and a Deactivated member is exempt from the
-/// portal-access check.
+/// portal-access check. And the third, independent check: a "Member"-role account with no Member
+/// row at all yet (registered but never submitted an application) is blocked with
+/// MEMBERSHIP_NOT_STARTED outside the allowlist, while still reaching the allowlisted
+/// /api/members/me endpoint (which reports 404, not the middleware's 403).
 /// </summary>
 public class MembershipAccessMiddlewareTests : IClassFixture<CustomWebApplicationFactory>, IAsyncLifetime
 {
@@ -79,6 +82,28 @@ public class MembershipAccessMiddlewareTests : IClassFixture<CustomWebApplicatio
 
     private HttpRequestMessage Get(string url, string token) =>
         new HttpRequestMessage(HttpMethod.Get, url).WithBearer(token);
+
+    /// <summary>
+    /// Real self-registration (account + "Member" role), deliberately never followed by a Member
+    /// row - reproduces the account state AuthController.Register alone always produces, before
+    /// MemberService.SubmitMyProfileAsync ever runs. Found via a live account
+    /// (andreisabaterTest@gmail.com on staging) that could reach event registration with no
+    /// membership application submitted at all.
+    /// </summary>
+    private async Task<string> RegisterMemberWithNoProfileAsync()
+    {
+        var email = $"{Guid.NewGuid()}@example.com";
+        var register = await _client.PostAsJsonFromNewClientIpAsync(
+            "/api/auth/register", new RegisterRequest(email, "Password123!", "No Profile Yet", DataPrivacyConsent: true));
+        var registerBody = await register.Content.ReadFromJsonAsync<RegisterResponse>();
+
+        var (userId, verifyToken) = AuthTestHelpers.ParseVerificationLink(registerBody!.DevVerificationLink!);
+        var verify = await _client.PostAsJsonFromNewClientIpAsync(
+            "/api/auth/verify-email", new VerifyEmailRequest(userId, verifyToken));
+        var verifyBody = await verify.Content.ReadFromJsonAsync<AuthResponse>();
+
+        return verifyBody!.Token;
+    }
 
     [Fact]
     public async Task ExpiredMember_IsBlocked_OnANonAllowlistedRoute()
@@ -213,5 +238,32 @@ public class MembershipAccessMiddlewareTests : IClassFixture<CustomWebApplicatio
         var response = await _client.SendAsync(Get("/api/content", token));
 
         Assert.NotEqual(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task MemberRoleWithNoProfileAtAll_IsBlocked_OnANonAllowlistedRoute()
+    {
+        var token = await RegisterMemberWithNoProfileAsync();
+
+        var response = await _client.SendAsync(Get("/api/content", token));
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        var body = await response.Content.ReadFromJsonAsync<Dictionary<string, string>>();
+        Assert.Equal("MEMBERSHIP_NOT_STARTED", body!["code"]);
+    }
+
+    [Fact]
+    public async Task MemberRoleWithNoProfileAtAll_CanStillReachTheAllowlistedMeEndpoint_WhichReportsNotFound()
+    {
+        // The middleware doesn't block /api/members/me (it's [AllowExpiredMember]) - it's the
+        // controller itself that correctly reports "no profile" here, exactly as it would for any
+        // other caller with no Member row. Confirms the new MEMBERSHIP_NOT_STARTED check isn't
+        // accidentally blocking the one endpoint a pre-application member needs to discover that
+        // fact and get routed to the application wizard.
+        var token = await RegisterMemberWithNoProfileAsync();
+
+        var response = await _client.SendAsync(Get("/api/members/me", token));
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 }

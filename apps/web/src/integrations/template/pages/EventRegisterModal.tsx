@@ -34,6 +34,19 @@ function feeForMode(event: Event, mode: EventModeValue): number {
   return mode === EventMode.Onsite ? event.feeOnsite : event.feeOnline
 }
 
+/** A modality priced at 0 while its sibling has a real price means "not offered" (an
+ *  admin forgot to price it, most likely), not "free" - same convention as EventsTable's
+ *  formatFees. Both at 0 is a genuinely free event, so both stay offered in that case. */
+function isModeOffered(event: Event, mode: EventModeValue): boolean {
+  if (event.feeOnsite <= 0 && event.feeOnline <= 0) return true
+  return feeForMode(event, mode) > 0
+}
+
+/** Onsite unless only Online is actually offered. */
+function defaultMode(event: Event): EventModeValue {
+  return isModeOffered(event, EventMode.Onsite) ? EventMode.Onsite : EventMode.Online
+}
+
 /** Member-facing: shows the event's detail (poster, type, hours, objectives, sessions with their
  *  effective venue), lets the member pick a modality (fee and CPD units update live for whichever
  *  is selected), registers, then optionally submits payment proof right away (the member can also
@@ -47,8 +60,8 @@ function isPastPaymentSubmission(status: EventRegistrationStatusValue | null): b
 }
 
 export function EventRegisterModal({ event, onClose, onRegistered }: EventRegisterModalProps) {
-  const [mode, setMode] = useState<EventModeValue>(EventMode.Onsite)
-  const [amount, setAmount] = useState(feeForMode(event, EventMode.Onsite).toString())
+  const [mode, setMode] = useState<EventModeValue>(defaultMode(event))
+  const [amount, setAmount] = useState(feeForMode(event, defaultMode(event)).toString())
   const [referenceNo, setReferenceNo] = useState('')
   const [paidOn, setPaidOn] = useState(new Date().toISOString().slice(0, 10))
   const [proofFile, setProofFile] = useState<File | null>(null)
@@ -215,14 +228,18 @@ export function EventRegisterModal({ event, onClose, onRegistered }: EventRegist
             </>
           ) : !registrationId ? (
             <>
-              <label className="flex items-center gap-2 text-sm">
-                <input type="radio" name="eventMode" className="form-radio" checked={mode === EventMode.Onsite} onChange={() => setMode(EventMode.Onsite)} />
-                Onsite {event.cpdUnitsOnsite !== null ? `(${event.cpdUnitsOnsite} CPD units${event.cpdCodeOnsite ? `, ${event.cpdCodeOnsite}` : ''})` : '(CPD units: TBD)'}
-              </label>
-              <label className="flex items-center gap-2 text-sm">
-                <input type="radio" name="eventMode" className="form-radio" checked={mode === EventMode.Online} onChange={() => setMode(EventMode.Online)} />
-                Online {event.cpdUnitsOnline !== null ? `(${event.cpdUnitsOnline} CPD units${event.cpdCodeOnline ? `, ${event.cpdCodeOnline}` : ''})` : '(CPD units: TBD)'}
-              </label>
+              {isModeOffered(event, EventMode.Onsite) && (
+                <label className="flex items-center gap-2 text-sm">
+                  <input type="radio" name="eventMode" className="form-radio" checked={mode === EventMode.Onsite} onChange={() => setMode(EventMode.Onsite)} />
+                  Onsite {event.cpdUnitsOnsite !== null ? `(${event.cpdUnitsOnsite} CPD units${event.cpdCodeOnsite ? `, ${event.cpdCodeOnsite}` : ''})` : '(CPD units: TBD)'}
+                </label>
+              )}
+              {isModeOffered(event, EventMode.Online) && (
+                <label className="flex items-center gap-2 text-sm">
+                  <input type="radio" name="eventMode" className="form-radio" checked={mode === EventMode.Online} onChange={() => setMode(EventMode.Online)} />
+                  Online {event.cpdUnitsOnline !== null ? `(${event.cpdUnitsOnline} CPD units${event.cpdCodeOnline ? `, ${event.cpdCodeOnline}` : ''})` : '(CPD units: TBD)'}
+                </label>
+              )}
               <p className="text-sm text-default-600">
                 Fee: {feeForMode(event, mode) > 0 ? `PHP ${feeForMode(event, mode).toFixed(2)}` : 'Free'}
               </p>
