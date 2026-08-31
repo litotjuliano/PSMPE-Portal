@@ -12,6 +12,11 @@ interface FilePreviewModalProps {
   /** Lazily invoked on open, not on mount - avoids fetching a file nobody asked to view yet. */
   fetchFile: () => Promise<FetchedFile | null>
   onClose: () => void
+  /** Shown when fetchFile throws (as opposed to resolving null, which means "nothing was ever
+   *  uploaded" - see the "No file has been uploaded yet." message below). Defaults to a generic
+   *  retry message; callers that can distinguish a more specific failure (e.g. a payment proof
+   *  recorded in the database but missing from storage) can override it. */
+  genericErrorMessage?: string
 }
 
 /**
@@ -19,7 +24,13 @@ interface FilePreviewModalProps {
  * place of opening a new browser tab. PDFs render via a plain <iframe> (the browser's own built-in
  * viewer - no PDF.js/lightbox dependency needed for a single-page ≤2MB ID scan).
  */
-export const FilePreviewModal = ({ isOpen, title, fetchFile, onClose }: FilePreviewModalProps) => {
+export const FilePreviewModal = ({
+  isOpen,
+  title,
+  fetchFile,
+  onClose,
+  genericErrorMessage = 'Unable to load this file. Please try again.',
+}: FilePreviewModalProps) => {
   const [file, setFile] = useState<FetchedFile | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -39,7 +50,7 @@ export const FilePreviewModal = ({ isOpen, title, fetchFile, onClose }: FilePrev
         }
       })
       .catch(() => {
-        if (!cancelled) setError('Unable to load this file. Please try again.')
+        if (!cancelled) setError(genericErrorMessage)
       })
       .finally(() => {
         if (!cancelled) setLoading(false)

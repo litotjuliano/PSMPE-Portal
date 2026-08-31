@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using PSMPE.Portal.Infrastructure.Persistence;
@@ -11,9 +12,11 @@ using PSMPE.Portal.Infrastructure.Persistence;
 namespace PSMPE.Portal.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    partial class ApplicationDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260831034756_BackfillPortalAccessForExistingPayments")]
+    partial class BackfillPortalAccessForExistingPayments
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -435,11 +438,6 @@ namespace PSMPE.Portal.Infrastructure.Persistence.Migrations
                     b.Property<DateTimeOffset>("StartsAt")
                         .HasColumnType("timestamp with time zone");
 
-                    b.Property<string>("Status")
-                        .IsRequired()
-                        .HasMaxLength(32)
-                        .HasColumnType("character varying(32)");
-
                     b.Property<string>("Title")
                         .IsRequired()
                         .HasMaxLength(256)
@@ -459,8 +457,6 @@ namespace PSMPE.Portal.Infrastructure.Persistence.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("StartsAt");
-
-                    b.HasIndex("Status");
 
                     b.ToTable("Events");
                 });

@@ -1,3 +1,5 @@
+using PSMPE.Portal.Domain.Enums;
+
 namespace PSMPE.Portal.Application.Events.Dtos;
 
 public record EventSessionDto(
@@ -34,7 +36,15 @@ public record EventDto(
     /// <summary>Derived from PosterImageStorageKey being non-null, same pattern as
     /// PaymentDto.HasProof - the key itself is never exposed to the client.</summary>
     bool HasPoster,
-    IReadOnlyList<EventSessionDto> Sessions);
+    IReadOnlyList<EventSessionDto> Sessions,
+    /// <summary>The calling member's own non-cancelled registration for this event, if any - null
+    /// for a non-member caller (e.g. an admin) or a member who hasn't registered (or cancelled).
+    /// Lets the Events list/register modal show "you're already registered" without a second
+    /// round-trip. See EventService.GetAllAsync/GetByIdAsync's currentUserId parameter.</summary>
+    Guid? MyRegistrationId = null,
+    string? MyMode = null,
+    string? MyRegistrationStatus = null,
+    EventStatus Status = EventStatus.Published);
 
 public record CreateEventRequest(
     string Title,
@@ -46,6 +56,9 @@ public record CreateEventRequest(
     int? Capacity,
     decimal FeeOnsite,
     decimal FeeOnline,
+    /// <summary>Which of the form's two save actions ("Save Draft" / "Publish") the admin used -
+    /// see EventStatus's doc comment. No default: the frontend always sends one explicitly.</summary>
+    EventStatus Status,
     string? Type = null,
     decimal? Hours = null,
     string? Objectives = null);
@@ -70,6 +83,9 @@ public record UpdateEventRequest(
     decimal? CpdUnitsOnsite,
     decimal? CpdUnitsOnline,
     IReadOnlyList<EventSessionRequest> Sessions,
+    /// <summary>Which of the form's two save actions ("Save Draft" / "Publish") the admin used -
+    /// see EventStatus's doc comment. No default: the frontend always sends one explicitly.</summary>
+    EventStatus Status,
     string? Type = null,
     decimal? Hours = null,
     string? Objectives = null,

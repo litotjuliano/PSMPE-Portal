@@ -7,9 +7,10 @@ public interface IEventService
 {
     Task<PagedResult<EventDto>> GetAllAsync(
         int page, int pageSize, string? search, string? chapter, bool upcomingOnly,
-        CancellationToken cancellationToken = default);
+        Guid? currentUserId = null, bool includeDrafts = false, CancellationToken cancellationToken = default);
 
-    Task<EventDto?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default);
+    Task<EventDto?> GetByIdAsync(
+        Guid id, Guid? currentUserId = null, bool includeDrafts = false, CancellationToken cancellationToken = default);
 
     Task<Result<EventDto>> CreateAsync(CreateEventRequest request, CancellationToken cancellationToken = default);
 

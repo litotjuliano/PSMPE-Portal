@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { LuCalendar, LuMapPin, LuPlus, LuSearch } from 'react-icons/lu'
-import type { Event } from '../../../core/api/endpoints/eventApi'
+import type { Event, EventRegistrationStatusValue } from '../../../core/api/endpoints/eventApi'
 import { eventApi } from '../../../core/api/endpoints/eventApi'
 import { Chapters, type ChapterValue } from '../../../core/types/member'
 import { StandardButton } from '../components/shared/StandardButton'
@@ -23,9 +23,29 @@ interface EventsTableProps {
   onSelectEvent: (event: Event) => void
 }
 
+const REGISTRATION_STATUS_LABELS: Record<EventRegistrationStatusValue, string> = {
+  Registered: 'Registered',
+  PaymentSubmitted: 'Payment submitted',
+  PaymentVerified: 'Payment verified',
+  Attended: 'Attended',
+  EvaluationSubmitted: 'Completed',
+  Rejected: 'Payment rejected',
+  Cancelled: 'Cancelled',
+}
+
 function formatCpdUnits(onsite: number | null, online: number | null) {
   if (onsite === null && online === null) return 'CPD units: TBD'
   return `CPD units: Onsite ${onsite ?? 'TBD'} / Online ${online ?? 'TBD'}`
+}
+
+/** A modality with no configured fee (0) reads as "not priced yet", not "free" - so it's simply
+ *  omitted rather than shown as "PHP 0.00". Both zero falls back to the existing "Free" label. */
+function formatFees(feeOnsite: number, feeOnline: number) {
+  if (feeOnsite <= 0 && feeOnline <= 0) return 'Free'
+  const parts: string[] = []
+  if (feeOnsite > 0) parts.push(`Onsite PHP ${feeOnsite.toFixed(2)}`)
+  if (feeOnline > 0) parts.push(`Online PHP ${feeOnline.toFixed(2)}`)
+  return parts.join(' / ')
 }
 
 export function EventsTable({
@@ -128,7 +148,12 @@ export function EventsTable({
                   )}
                   <div className="flex flex-1 min-w-0 items-start justify-between gap-3">
                     <div className="min-w-0">
-                      <p className="font-medium text-default-800">{event.title}</p>
+                      <p className="font-medium text-default-800 flex items-center gap-2">
+                        {event.title}
+                        {canManageEvents && event.status === 'Draft' && (
+                          <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-warning/20 text-warning">Draft</span>
+                        )}
+                      </p>
                       <p className="flex items-center gap-1 text-xs text-default-500 mt-1">
                         <LuCalendar className="size-3.5" />
                         {new Date(event.startsAt).toLocaleDateString()} - {new Date(event.endsAt).toLocaleDateString()}
@@ -141,15 +166,19 @@ export function EventsTable({
                       <p className="text-xs text-default-500 mt-1">{formatCpdUnits(event.cpdUnitsOnsite, event.cpdUnitsOnline)}</p>
                     </div>
                     <div className="text-right shrink-0">
-                      <p className="text-sm font-semibold">
-                        {event.feeOnsite > 0 || event.feeOnline > 0
-                          ? `Onsite PHP ${event.feeOnsite.toFixed(2)} / Online PHP ${event.feeOnline.toFixed(2)}`
-                          : 'Free'}
-                      </p>
+                      <p className="text-sm font-semibold">{formatFees(event.feeOnsite, event.feeOnline)}</p>
                       <p className="text-xs text-default-500">
                         {event.registeredCount}
                         {event.capacity ? ` / ${event.capacity}` : ''} registered
                       </p>
+                      {event.myMode && (
+                        <p className="text-xs font-medium text-primary mt-0.5">
+                          You: {event.myMode}
+                          {event.myRegistrationStatus && event.myRegistrationStatus !== 'Registered'
+                            ? ` — ${REGISTRATION_STATUS_LABELS[event.myRegistrationStatus]}`
+                            : ''}
+                        </p>
+                      )}
                       {canManageEvents && (
                         <Link
                           to={`/events/${event.id}/roster`}

@@ -1,8 +1,10 @@
-import { useEffect, useState } from 'react'
-import type { Event, EventSessionInput } from '../../../core/api/endpoints/eventApi'
-import { EventTypes, eventApi } from '../../../core/api/endpoints/eventApi'
+import { useEffect, useRef, useState } from 'react'
+import { LuFile } from 'react-icons/lu'
+import type { Event, EventSessionInput, EventStatusValue } from '../../../core/api/endpoints/eventApi'
+import { EventStatus, EventTypes, eventApi } from '../../../core/api/endpoints/eventApi'
 import { Chapters } from '../../../core/types/member'
 import { describeError } from '../../../core/utils/apiError'
+import { ConfirmationModal } from '../components/shared/ConfirmationModal'
 import { StandardButton } from '../components/shared/StandardButton'
 
 interface EventFormModalProps {
@@ -41,6 +43,8 @@ export function EventFormModal({ event, mode, onClose, onSaved }: EventFormModal
   const [posterPreviewUrl, setPosterPreviewUrl] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const posterInputRef = useRef<HTMLInputElement>(null)
+  const [confirmingFreePublish, setConfirmingFreePublish] = useState(false)
 
   useEffect(() => {
     setSessions(toSessionInputs(event))
@@ -98,7 +102,18 @@ export function EventFormModal({ event, mode, onClose, onSaved }: EventFormModal
     setSessions((prev) => prev.filter((_, i) => i !== index))
   }
 
-  const handleSubmit = async () => {
+  // Publishing with no fee set on either modality is very likely a forgotten price, not an
+  // intentionally free event - catch it here rather than have it silently go live. Save Draft
+  // skips this entirely since a Draft is never visible to members regardless of price.
+  const handlePublishClick = () => {
+    if (Number(feeOnsite) === 0 && Number(feeOnline) === 0) {
+      setConfirmingFreePublish(true)
+      return
+    }
+    handleSubmit(EventStatus.Published)
+  }
+
+  const handleSubmit = async (status: EventStatusValue) => {
     setSaving(true)
     setError(null)
 
@@ -112,6 +127,7 @@ export function EventFormModal({ event, mode, onClose, onSaved }: EventFormModal
       capacity: capacity ? Number(capacity) : null,
       feeOnsite: Number(feeOnsite),
       feeOnline: Number(feeOnline),
+      status,
       type: type || null,
       hours: hours ? Number(hours) : null,
       objectives: objectives || null,
@@ -164,79 +180,124 @@ export function EventFormModal({ event, mode, onClose, onSaved }: EventFormModal
     <div className="fixed inset-0 z-100 flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/50" onClick={onClose} />
       <div className="relative card w-full max-w-2xl max-h-[90vh] overflow-y-auto">
-        <div className="card-header">
+        <div className="card-header flex items-center gap-2">
           <h6 className="card-title">{mode === 'create' ? 'New Event' : 'Edit Event'}</h6>
+          {mode === 'edit' && event && (
+            <span
+              className={`text-xs font-medium px-2 py-0.5 rounded-full ${
+                event.status === EventStatus.Published ? 'bg-success/20 text-success' : 'bg-warning/20 text-warning'
+              }`}
+            >
+              {event.status}
+            </span>
+          )}
         </div>
         <div className="card-body flex flex-col gap-3">
           {error && <p className="text-sm text-danger">{error}</p>}
-          <input className="form-input" placeholder="Title" value={title} onChange={(e) => setTitle(e.target.value)} />
-          <textarea
-            className="form-input"
-            placeholder="Description"
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-          />
-          <textarea
-            className="form-input"
-            placeholder="Objectives"
-            value={objectives}
-            onChange={(e) => setObjectives(e.target.value)}
-          />
-          <div className="grid grid-cols-2 gap-3">
-            <select className="form-input" value={type} onChange={(e) => setType(e.target.value)}>
-              <option value="">No type set</option>
-              {Object.values(EventTypes).map((t) => (
-                <option key={t} value={t}>
-                  {t}
-                </option>
-              ))}
-            </select>
-            <input
-              type="number"
-              step="0.01"
+          <div>
+            <label className="text-sm text-default-600 block mb-1">Title</label>
+            <input className="form-input" placeholder="Title" value={title} onChange={(e) => setTitle(e.target.value)} />
+          </div>
+          <div>
+            <label className="text-sm text-default-600 block mb-1">Description</label>
+            <textarea
               className="form-input"
-              placeholder="Hours (PRC-declared)"
-              value={hours}
-              onChange={(e) => setHours(e.target.value)}
+              placeholder="Description"
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+            />
+          </div>
+          <div>
+            <label className="text-sm text-default-600 block mb-1">Objectives</label>
+            <textarea
+              className="form-input"
+              placeholder="Objectives"
+              value={objectives}
+              onChange={(e) => setObjectives(e.target.value)}
             />
           </div>
           <div className="grid grid-cols-2 gap-3">
-            <select className="form-input" value={chapter} onChange={(e) => setChapter(e.target.value)}>
-              <option value="">National (all chapters)</option>
-              {Object.values(Chapters).map((c) => (
-                <option key={c} value={c}>
-                  {c}
-                </option>
-              ))}
-            </select>
-            <input className="form-input" placeholder="Venue" value={venue} onChange={(e) => setVenue(e.target.value)} />
+            <div>
+              <label className="text-sm text-default-600 block mb-1">Type</label>
+              <select className="form-input" value={type} onChange={(e) => setType(e.target.value)}>
+                <option value="">No type set</option>
+                {Object.values(EventTypes).map((t) => (
+                  <option key={t} value={t}>
+                    {t}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="text-sm text-default-600 block mb-1">Hours (PRC-declared)</label>
+              <input
+                type="number"
+                step="0.01"
+                className="form-input"
+                placeholder="Hours (PRC-declared)"
+                value={hours}
+                onChange={(e) => setHours(e.target.value)}
+              />
+            </div>
           </div>
           <div className="grid grid-cols-2 gap-3">
-            <input type="datetime-local" className="form-input" value={startsAt} onChange={(e) => setStartsAt(e.target.value)} />
-            <input type="datetime-local" className="form-input" value={endsAt} onChange={(e) => setEndsAt(e.target.value)} />
+            <div>
+              <label className="text-sm text-default-600 block mb-1">Chapter</label>
+              <select className="form-input" value={chapter} onChange={(e) => setChapter(e.target.value)}>
+                <option value="">National (all chapters)</option>
+                {Object.values(Chapters).map((c) => (
+                  <option key={c} value={c}>
+                    {c}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="text-sm text-default-600 block mb-1">Venue</label>
+              <input className="form-input" placeholder="Venue" value={venue} onChange={(e) => setVenue(e.target.value)} />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-sm text-default-600 block mb-1">Starts At</label>
+              <input type="datetime-local" className="form-input" value={startsAt} onChange={(e) => setStartsAt(e.target.value)} />
+            </div>
+            <div>
+              <label className="text-sm text-default-600 block mb-1">Ends At</label>
+              <input type="datetime-local" className="form-input" value={endsAt} onChange={(e) => setEndsAt(e.target.value)} />
+            </div>
           </div>
           <div className="grid grid-cols-3 gap-3">
-            <input
-              type="number"
-              className="form-input"
-              placeholder="Capacity"
-              value={capacity}
-              onChange={(e) => setCapacity(e.target.value)}
-            />
-            <input
-              type="number"
-              className="form-input"
-              placeholder="Fee (Onsite)"
-              value={feeOnsite}
-              onChange={(e) => setFeeOnsite(e.target.value)}
-            />
-            <input
-              type="number"
-              className="form-input"
-              placeholder="Fee (Online)"
-              value={feeOnline}
-              onChange={(e) => setFeeOnline(e.target.value)}
-            />
+            <div>
+              <label className="text-sm text-default-600 block mb-1">Capacity</label>
+              <input
+                type="number"
+                className="form-input"
+                placeholder="Capacity"
+                value={capacity}
+                onChange={(e) => setCapacity(e.target.value)}
+              />
+            </div>
+            <div>
+              <label className="text-sm text-default-600 block mb-1">Fee (Onsite)</label>
+              <input
+                type="number"
+                className="form-input"
+                placeholder="Fee (Onsite)"
+                value={feeOnsite}
+                onChange={(e) => setFeeOnsite(e.target.value)}
+              />
+            </div>
+            <div>
+              <label className="text-sm text-default-600 block mb-1">Fee (Online)</label>
+              <input
+                type="number"
+                className="form-input"
+                placeholder="Fee (Online)"
+                value={feeOnline}
+                onChange={(e) => setFeeOnline(e.target.value)}
+              />
+            </div>
           </div>
 
           <div>
@@ -245,46 +306,65 @@ export function EventFormModal({ event, mode, onClose, onSaved }: EventFormModal
               <img src={posterPreviewUrl} alt="Poster preview" className="w-full h-32 object-cover rounded-md mb-2" />
             )}
             <input
+              ref={posterInputRef}
               type="file"
               accept="image/jpeg,image/png"
-              className="text-sm"
+              className="hidden"
               onChange={(e) => handlePosterFileChange(e.target.files?.[0] ?? null)}
             />
+            <div className="flex items-center gap-2">
+              <StandardButton variant="primary" size="sm" icon={LuFile} onClick={() => posterInputRef.current?.click()}>
+                Choose File
+              </StandardButton>
+              <span className="text-xs text-default-500 truncate">{posterFile?.name ?? 'No file chosen'}</span>
+            </div>
           </div>
 
           {mode === 'edit' && (
             <>
               <div className="grid grid-cols-2 gap-3">
-                <input
-                  type="number"
-                  step="0.01"
-                  className="form-input"
-                  placeholder="CPD Units (Onsite) - blank for TBD"
-                  value={cpdUnitsOnsite}
-                  onChange={(e) => setCpdUnitsOnsite(e.target.value)}
-                />
-                <input
-                  type="number"
-                  step="0.01"
-                  className="form-input"
-                  placeholder="CPD Units (Online) - blank for TBD"
-                  value={cpdUnitsOnline}
-                  onChange={(e) => setCpdUnitsOnline(e.target.value)}
-                />
+                <div>
+                  <label className="text-sm text-default-600 block mb-1">CPD Units (Onsite)</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    className="form-input"
+                    placeholder="Blank for TBD"
+                    value={cpdUnitsOnsite}
+                    onChange={(e) => setCpdUnitsOnsite(e.target.value)}
+                  />
+                </div>
+                <div>
+                  <label className="text-sm text-default-600 block mb-1">CPD Units (Online)</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    className="form-input"
+                    placeholder="Blank for TBD"
+                    value={cpdUnitsOnline}
+                    onChange={(e) => setCpdUnitsOnline(e.target.value)}
+                  />
+                </div>
               </div>
               <div className="grid grid-cols-2 gap-3">
-                <input
-                  className="form-input"
-                  placeholder="PRC Accreditation Code (Onsite)"
-                  value={cpdCodeOnsite}
-                  onChange={(e) => setCpdCodeOnsite(e.target.value)}
-                />
-                <input
-                  className="form-input"
-                  placeholder="PRC Accreditation Code (Online)"
-                  value={cpdCodeOnline}
-                  onChange={(e) => setCpdCodeOnline(e.target.value)}
-                />
+                <div>
+                  <label className="text-sm text-default-600 block mb-1">PRC Accreditation Code (Onsite)</label>
+                  <input
+                    className="form-input"
+                    placeholder="PRC Accreditation Code (Onsite)"
+                    value={cpdCodeOnsite}
+                    onChange={(e) => setCpdCodeOnsite(e.target.value)}
+                  />
+                </div>
+                <div>
+                  <label className="text-sm text-default-600 block mb-1">PRC Accreditation Code (Online)</label>
+                  <input
+                    className="form-input"
+                    placeholder="PRC Accreditation Code (Online)"
+                    value={cpdCodeOnline}
+                    onChange={(e) => setCpdCodeOnline(e.target.value)}
+                  />
+                </div>
               </div>
 
               <div className="border-t border-default-200 pt-3">
@@ -295,34 +375,50 @@ export function EventFormModal({ event, mode, onClose, onSaved }: EventFormModal
                   </StandardButton>
                 </div>
                 {sessions.map((session, index) => (
-                  <div key={session.id ?? `new-${index}`} className="grid grid-cols-[1fr_auto_auto_1fr_auto] gap-2 mb-2 items-center">
-                    <input
-                      className="form-input"
-                      placeholder="Session title"
-                      value={session.title}
-                      onChange={(e) => updateSession(index, { title: e.target.value })}
-                    />
-                    <input
-                      type="datetime-local"
-                      className="form-input"
-                      value={session.startsAt.slice(0, 16)}
-                      onChange={(e) => updateSession(index, { startsAt: new Date(e.target.value).toISOString() })}
-                    />
-                    <input
-                      type="datetime-local"
-                      className="form-input"
-                      value={session.endsAt.slice(0, 16)}
-                      onChange={(e) => updateSession(index, { endsAt: new Date(e.target.value).toISOString() })}
-                    />
-                    <input
-                      className="form-input"
-                      placeholder="Venue override (blank = event's venue)"
-                      value={session.venue ?? ''}
-                      onChange={(e) => updateSession(index, { venue: e.target.value || null })}
-                    />
-                    <StandardButton variant="danger" size="sm" onClick={() => removeSession(index)}>
-                      Remove
-                    </StandardButton>
+                  <div key={session.id ?? `new-${index}`} className="border border-default-200 rounded-md p-3 mb-2 flex flex-col gap-2">
+                    <div className="flex items-end gap-2">
+                      <div className="flex-1">
+                        <label className="text-sm text-default-600 block mb-1">Session title</label>
+                        <input
+                          className="form-input"
+                          placeholder="Session title"
+                          value={session.title}
+                          onChange={(e) => updateSession(index, { title: e.target.value })}
+                        />
+                      </div>
+                      <StandardButton variant="danger" size="sm" onClick={() => removeSession(index)}>
+                        Remove
+                      </StandardButton>
+                    </div>
+                    <div className="grid grid-cols-3 gap-2">
+                      <div>
+                        <label className="text-sm text-default-600 block mb-1">Starts At</label>
+                        <input
+                          type="datetime-local"
+                          className="form-input"
+                          value={session.startsAt.slice(0, 16)}
+                          onChange={(e) => updateSession(index, { startsAt: new Date(e.target.value).toISOString() })}
+                        />
+                      </div>
+                      <div>
+                        <label className="text-sm text-default-600 block mb-1">Ends At</label>
+                        <input
+                          type="datetime-local"
+                          className="form-input"
+                          value={session.endsAt.slice(0, 16)}
+                          onChange={(e) => updateSession(index, { endsAt: new Date(e.target.value).toISOString() })}
+                        />
+                      </div>
+                      <div>
+                        <label className="text-sm text-default-600 block mb-1">Venue Override</label>
+                        <input
+                          className="form-input"
+                          placeholder="Blank = event's venue"
+                          value={session.venue ?? ''}
+                          onChange={(e) => updateSession(index, { venue: e.target.value || null })}
+                        />
+                      </div>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -333,11 +429,27 @@ export function EventFormModal({ event, mode, onClose, onSaved }: EventFormModal
           <StandardButton variant="secondary" onClick={onClose} disabled={saving}>
             Cancel
           </StandardButton>
-          <StandardButton onClick={handleSubmit} loading={saving} loadingLabel="Saving…">
-            Save
+          <StandardButton variant="secondary" onClick={() => handleSubmit(EventStatus.Draft)} loading={saving} loadingLabel="Saving…">
+            Save Draft
+          </StandardButton>
+          <StandardButton onClick={handlePublishClick} loading={saving} loadingLabel="Saving…">
+            Publish
           </StandardButton>
         </div>
       </div>
+
+      <ConfirmationModal
+        isOpen={confirmingFreePublish}
+        title="Publish as a free event?"
+        message="This event has no fee set for either Onsite or Online. Publish it anyway as a free event?"
+        confirmLabel="Publish"
+        confirmVariant="primary"
+        onConfirm={() => {
+          setConfirmingFreePublish(false)
+          handleSubmit(EventStatus.Published)
+        }}
+        onCancel={() => setConfirmingFreePublish(false)}
+      />
     </div>
   )
 }

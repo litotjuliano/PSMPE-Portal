@@ -11,12 +11,20 @@ public partial class EventService(IApplicationDbContext db) : IEventService
 {
     public async Task<PagedResult<EventDto>> GetAllAsync(
         int page, int pageSize, string? search, string? chapter, bool upcomingOnly,
-        CancellationToken cancellationToken = default)
+        Guid? currentUserId = null, bool includeDrafts = false, CancellationToken cancellationToken = default)
     {
         page = Math.Max(page, 1);
         pageSize = Math.Clamp(pageSize, 1, 100);
 
         var query = db.Events.AsNoTracking().Include(e => e.Sessions).AsQueryable();
+
+        if (!includeDrafts)
+        {
+            // A Draft event is invisible to anyone without Events.View/Events.Manage - see
+            // EventStatus's doc comment. EventsController.GetAll passes includeDrafts=true only for
+            // that staff cohort.
+            query = query.Where(e => e.Status == EventStatus.Published);
+        }
 
         if (!string.IsNullOrWhiteSpace(search))
         {
@@ -51,21 +59,52 @@ public partial class EventService(IApplicationDbContext db) : IEventService
             .Select(g => new { EventId = g.Key, Count = g.Count() })
             .ToDictionaryAsync(g => g.EventId, g => g.Count, cancellationToken);
 
-        var items = events.Select(e => ToDto(e, registeredCounts.GetValueOrDefault(e.Id))).ToList();
+        var myRegistrations = await GetMyRegistrationsByEventAsync(currentUserId, eventIds, cancellationToken);
+
+        var items = events
+            .Select(e => ToDto(e, registeredCounts.GetValueOrDefault(e.Id), myRegistrations.GetValueOrDefault(e.Id)))
+            .ToList();
         return new PagedResult<EventDto>(items, totalCount, page, pageSize);
     }
 
-    public async Task<EventDto?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default)
+    public async Task<EventDto?> GetByIdAsync(
+        Guid id, Guid? currentUserId = null, bool includeDrafts = false, CancellationToken cancellationToken = default)
     {
         var @event = await db.Events.AsNoTracking().Include(e => e.Sessions).FirstOrDefaultAsync(e => e.Id == id, cancellationToken);
-        if (@event is null)
+        if (@event is null || (!includeDrafts && @event.Status != EventStatus.Published))
         {
+            // A Draft event behaves as if it doesn't exist to a non-staff caller - same treatment
+            // as a genuinely missing id, not a distinguishable "exists but hidden" response.
             return null;
         }
 
         var registeredCount = await db.EventRegistrations.CountAsync(
             r => r.EventId == id && r.Status != EventRegistrationStatus.Cancelled, cancellationToken);
-        return ToDto(@event, registeredCount);
+        var myRegistrations = await GetMyRegistrationsByEventAsync(currentUserId, [id], cancellationToken);
+        return ToDto(@event, registeredCount, myRegistrations.GetValueOrDefault(id));
+    }
+
+    /// <summary>The calling member's own non-cancelled registration per event, for the given event
+    /// ids only. Empty (not an error) when currentUserId is null or belongs to no member - an admin
+    /// browsing the Events list simply sees no "you're registered" badges. At most one row per event
+    /// per member, same invariant RegisterAsync's duplicate-registration check relies on.</summary>
+    private async Task<Dictionary<Guid, EventRegistration>> GetMyRegistrationsByEventAsync(
+        Guid? currentUserId, IReadOnlyList<Guid> eventIds, CancellationToken cancellationToken)
+    {
+        if (currentUserId is null || eventIds.Count == 0)
+        {
+            return [];
+        }
+
+        var member = await db.Members.AsNoTracking().FirstOrDefaultAsync(m => m.UserId == currentUserId, cancellationToken);
+        if (member is null)
+        {
+            return [];
+        }
+
+        return await db.EventRegistrations
+            .Where(r => r.MemberId == member.Id && eventIds.Contains(r.EventId) && r.Status != EventRegistrationStatus.Cancelled)
+            .ToDictionaryAsync(r => r.EventId, cancellationToken);
     }
 
     public async Task<Result<EventDto>> CreateAsync(CreateEventRequest request, CancellationToken cancellationToken = default)
@@ -92,6 +131,7 @@ public partial class EventService(IApplicationDbContext db) : IEventService
             Capacity = request.Capacity,
             FeeOnsite = request.FeeOnsite,
             FeeOnline = request.FeeOnline,
+            Status = request.Status,
         };
         // Every event gets at least one session, even with no separate lectures - see
         // Event.Sessions's doc comment. Admins split this into real lectures via UpdateAsync.
@@ -222,6 +262,7 @@ public partial class EventService(IApplicationDbContext db) : IEventService
         @event.CpdUnitsOnline = request.CpdUnitsOnline;
         @event.CpdCodeOnsite = request.CpdCodeOnsite;
         @event.CpdCodeOnline = request.CpdCodeOnline;
+        @event.Status = request.Status;
         @event.UpdatedAt = DateTimeOffset.UtcNow;
         await db.SaveChangesAsync(cancellationToken);
 
@@ -265,11 +306,12 @@ public partial class EventService(IApplicationDbContext db) : IEventService
         return null;
     }
 
-    private static EventDto ToDto(Event e, int registeredCount) =>
+    private static EventDto ToDto(Event e, int registeredCount, EventRegistration? myRegistration = null) =>
         new(e.Id, e.Title, e.Description, e.Objectives, e.Type, e.Chapter, e.Venue, e.StartsAt, e.EndsAt,
             e.Hours, e.Capacity, registeredCount, e.FeeOnsite, e.FeeOnline, e.CpdUnitsOnsite, e.CpdUnitsOnline,
             e.CpdCodeOnsite, e.CpdCodeOnline, e.PosterImageStorageKey is not null,
             e.Sessions.OrderBy(s => s.Order)
                 .Select(s => new EventSessionDto(s.Id, s.Title, s.StartsAt, s.EndsAt, s.Order, s.Venue))
-                .ToList());
+                .ToList(),
+            myRegistration?.Id, myRegistration?.Mode.ToString(), myRegistration?.Status.ToString(), e.Status);
 }

@@ -1,8 +1,28 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import type { Event } from '../../../core/api/endpoints/eventApi'
-import { EventMode, type EventModeValue, eventApi } from '../../../core/api/endpoints/eventApi'
+import {
+  EventMode,
+  type EventModeValue,
+  EventRegistrationStatus,
+  type EventRegistrationStatusValue,
+  eventApi,
+} from '../../../core/api/endpoints/eventApi'
+import { paymentApi, type Payment } from '../../../core/api/endpoints/paymentApi'
 import { describeError } from '../../../core/utils/apiError'
+import { ProofOfPaymentControl } from '../components/shared/ProofOfPaymentControl'
 import { StandardButton } from '../components/shared/StandardButton'
+
+const peso = new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' })
+
+const REGISTRATION_STATUS_LABELS: Record<EventRegistrationStatusValue, string> = {
+  Registered: 'Registered',
+  PaymentSubmitted: 'Payment submitted - awaiting verification',
+  PaymentVerified: 'Payment verified',
+  Attended: 'Attended',
+  EvaluationSubmitted: 'Completed - evaluation submitted',
+  Rejected: 'Payment rejected',
+  Cancelled: 'Cancelled',
+}
 
 interface EventRegisterModalProps {
   event: Event
@@ -18,16 +38,55 @@ function feeForMode(event: Event, mode: EventModeValue): number {
  *  effective venue), lets the member pick a modality (fee and CPD units update live for whichever
  *  is selected), registers, then optionally submits payment proof right away (the member can also
  *  come back to it later from My CPD - registering alone is enough to hold the Registered row). */
+/** True once a registration exists but has moved past the "submit your payment" step - e.g. the
+ *  payment was already submitted/verified, or attendance/evaluation has happened. Reopening the
+ *  modal for one of these should show a read-only status, not the registration form or payment
+ *  form again. */
+function isPastPaymentSubmission(status: EventRegistrationStatusValue | null): boolean {
+  return status !== null && status !== EventRegistrationStatus.Registered
+}
+
 export function EventRegisterModal({ event, onClose, onRegistered }: EventRegisterModalProps) {
   const [mode, setMode] = useState<EventModeValue>(EventMode.Onsite)
   const [amount, setAmount] = useState(feeForMode(event, EventMode.Onsite).toString())
   const [referenceNo, setReferenceNo] = useState('')
   const [paidOn, setPaidOn] = useState(new Date().toISOString().slice(0, 10))
   const [proofFile, setProofFile] = useState<File | null>(null)
-  const [registrationId, setRegistrationId] = useState<string | null>(null)
+  // Reopening an event the member already registered for (status Registered, payment not yet
+  // submitted) should land directly on the payment form below rather than the Onsite/Online
+  // picker, which would just re-trigger the backend's duplicate-registration guard.
+  const [registrationId, setRegistrationId] = useState<string | null>(
+    event.myRegistrationStatus === EventRegistrationStatus.Registered ? event.myRegistrationId : null,
+  )
+  const readOnlyStatus = isPastPaymentSubmission(event.myRegistrationStatus)
   const [posterUrl, setPosterUrl] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [myPayment, setMyPayment] = useState<Payment | null>(null)
+
+  // Reopening a past-registration event should show what was actually submitted (amount, when,
+  // and the proof) rather than just the bare status - the member's whole payment history is
+  // already fetched for this, so find the one row that matches this registration. Also re-run
+  // after a proof re-upload (ProofOfPaymentControl's onUploaded) so hasProof reflects the change -
+  // takes an isStale check, same pattern as EventsPage.tsx's fetchEvents, so a re-upload's refresh
+  // and this effect's own refresh can't clobber each other with a stale result.
+  const refreshMyPayment = useCallback(
+    async (isStale: () => boolean = () => false) => {
+      const payments = await paymentApi.getMyPayments()
+      if (isStale()) return
+      setMyPayment(payments.find((p) => p.eventRegistrationId === event.myRegistrationId) ?? null)
+    },
+    [event.myRegistrationId],
+  )
+
+  useEffect(() => {
+    if (!readOnlyStatus || !event.myRegistrationId) return
+    let cancelled = false
+    refreshMyPayment(() => cancelled)
+    return () => {
+      cancelled = true
+    }
+  }, [readOnlyStatus, event.myRegistrationId, refreshMyPayment])
 
   // Same Escape-to-close/backdrop-click shell as ConfirmationModal, LogDetailsModal, etc.
   useEffect(() => {
@@ -124,7 +183,37 @@ export function EventRegisterModal({ event, onClose, onRegistered }: EventRegist
             </div>
           )}
 
-          {!registrationId ? (
+          {readOnlyStatus ? (
+            <>
+              <p className="text-sm text-default-600">
+                You're registered: {event.myMode}. Status:{' '}
+                {event.myRegistrationStatus ? REGISTRATION_STATUS_LABELS[event.myRegistrationStatus] : '-'}. Visit My
+                CPD for certificate/evaluation actions.
+              </p>
+              {myPayment && (
+                <div className="text-sm text-default-600 bg-default-100 rounded-lg px-3 py-2 flex flex-col gap-1">
+                  <span>
+                    You submitted {peso.format(myPayment.amount)} on {new Date(myPayment.paidOn).toLocaleDateString()}
+                    {myPayment.referenceNo ? ` (Ref: ${myPayment.referenceNo})` : ''}.
+                  </span>
+                  {myPayment.hasProof ? (
+                    <ProofOfPaymentControl
+                      fetchProof={async () => {
+                        const file = await paymentApi.fetchProofUrl(myPayment.id)
+                        if (!file) throw new Error('Proof not found.')
+                        return file
+                      }}
+                      uploadProof={(file) => paymentApi.uploadProof(myPayment.id, file)}
+                      onUploaded={() => refreshMyPayment()}
+                      allowResubmit={myPayment.status === 'Submitted'}
+                    />
+                  ) : (
+                    <span className="text-xs text-default-500">No proof attached.</span>
+                  )}
+                </div>
+              )}
+            </>
+          ) : !registrationId ? (
             <>
               <label className="flex items-center gap-2 text-sm">
                 <input type="radio" name="eventMode" className="form-radio" checked={mode === EventMode.Onsite} onChange={() => setMode(EventMode.Onsite)} />
@@ -164,9 +253,9 @@ export function EventRegisterModal({ event, onClose, onRegistered }: EventRegist
         </div>
         <div className="card-footer flex justify-end gap-2">
           <StandardButton variant="secondary" onClick={onClose} disabled={saving}>
-            Cancel
+            {readOnlyStatus ? 'Close' : 'Cancel'}
           </StandardButton>
-          {!registrationId ? (
+          {readOnlyStatus ? null : !registrationId ? (
             <StandardButton onClick={handleRegister} loading={saving} loadingLabel="Registering…">
               Register
             </StandardButton>
