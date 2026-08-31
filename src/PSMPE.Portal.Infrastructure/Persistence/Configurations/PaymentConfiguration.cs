@@ -11,6 +11,7 @@ public class PaymentConfiguration : IEntityTypeConfiguration<Payment>
         // 12,2 rather than the provider default: money needs an exact decimal, and the fees this
         // records are in pesos with centavos.
         builder.Property(p => p.Amount).HasPrecision(12, 2);
+        builder.Property(p => p.PortalFeeAmount).HasPrecision(12, 2);
         builder.Property(p => p.ReferenceNo).HasMaxLength(64);
         builder.Property(p => p.ProofStorageKey).HasMaxLength(512);
         builder.Property(p => p.RejectedReason).HasMaxLength(512);

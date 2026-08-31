@@ -89,6 +89,7 @@ function buildEmptyWizardState(displayName: string): MembershipApplicationState 
     housePhone: '',
     agreedToTerms: false,
     dataPrivacyConsent: false,
+    includePortalAccess: false,
   }
 }
 
@@ -138,6 +139,11 @@ function toWizardState(member: Member): MembershipApplicationState {
     housePhone: member.housePhone ?? '',
     agreedToTerms: false,
     dataPrivacyConsent: false,
+    // Not derived from member.hasPortalAccess - that field only ever gets set by payment
+    // verification after submission, so it carries no meaningful signal for an in-progress,
+    // not-yet-submitted draft. Always resets to false on resume, exactly like the terms/consent
+    // checkboxes above.
+    includePortalAccess: false,
   }
 }
 
@@ -388,7 +394,7 @@ export function MyProfilePage() {
     setSubmitting(true)
     try {
       await saveDraft()
-      await memberApi.submitMyProfile()
+      await memberApi.submitMyProfile(wizardState.includePortalAccess)
       const updated = await memberApi.getMyProfile()
       setExisting(updated)
     } catch (err) {

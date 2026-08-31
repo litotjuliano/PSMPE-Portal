@@ -11,6 +11,10 @@ public record PaymentDto(
     string? MembershipNo,
     PaymentKind Kind,
     decimal Amount,
+    /// <summary>Whether this payment included the optional portal-access add-on - see
+    /// Payment.IncludesPortalAccess. Surfaced here so the admin queue can flag a payment whose
+    /// Amount doesn't match what this flag implies, without a separate lookup.</summary>
+    bool IncludesPortalAccess,
     string? ReferenceNo,
     DateOnly PaidOn,
     bool HasProof,
@@ -32,7 +36,11 @@ public record PaymentDto(
 public record SubmitPaymentRequest(
     decimal Amount,
     string? ReferenceNo,
-    DateOnly PaidOn);
+    DateOnly PaidOn,
+    /// <summary>Whether this payment includes the optional portal-access add-on - always the
+    /// caller's own declared intent, never server-forced. No global mode to switch: ticked
+    /// produces the "combined" total, left unticked the "separate" one.</summary>
+    bool IncludePortalAccess = false);
 
 public record RejectPaymentRequest(string Reason);
 
@@ -49,11 +57,34 @@ public record ProofUploadDto(string StorageKey);
 
 /// <summary>
 /// PSMPE's configured fees. Read by the registration wizard (to show the total), the receipt, and
-/// the admin fees screen.
+/// the admin fees screen. Portal access is always an optional add-on, so every total comes in a
+/// with/without pair rather than one figure that silently ignores it.
 /// </summary>
-public record MembershipFeesDto(decimal MembershipFee, decimal ShippingFee, decimal AnnualDues)
+public record MembershipFeesDto(decimal MembershipFee, decimal ShippingFee, decimal AnnualDues, decimal PortalFee)
 {
-    public decimal RegistrationTotal => MembershipFee + ShippingFee;
+    public decimal RegistrationTotalWithoutPortal => MembershipFee + ShippingFee;
+    public decimal RegistrationTotalWithPortal => MembershipFee + ShippingFee + PortalFee;
+    public decimal RenewalTotalWithoutPortal => AnnualDues;
+    public decimal RenewalTotalWithPortal => AnnualDues + PortalFee;
 }
 
-public record UpdateMembershipFeesRequest(decimal MembershipFee, decimal ShippingFee, decimal AnnualDues);
+public record UpdateMembershipFeesRequest(decimal MembershipFee, decimal ShippingFee, decimal AnnualDues, decimal PortalFee);
+
+/// <summary>A configured FeePromotion, for the admin Promotions panel. See FeePromotion for the
+/// resolution mechanics and the overlap rule enforced at creation.</summary>
+public record FeePromotionDto(
+    Guid Id, string FeeKey, decimal PromoAmount, DateOnly StartDate, DateOnly EndDate,
+    Guid CreatedByUserId, DateTimeOffset CreatedAt);
+
+/// <summary>FeeKey must be one of the MembershipFeeKeys constants; StartDate/EndDate must not
+/// overlap an existing promotion for the same FeeKey - see PaymentService.CreatePromotionAsync.</summary>
+public record CreateFeePromotionRequest(string FeeKey, decimal PromoAmount, DateOnly StartDate, DateOnly EndDate);
+
+/// <summary>Summary figures for a date range, driving the admin Payments tab's reporting panel.
+/// Only NewMembership/Renewal payments count - EventRegistration is a separate revenue stream.
+/// See PaymentService.GetReportSummaryAsync for the exact filter (Verified status, PaidOn in
+/// range, inclusive on both ends).</summary>
+public record PaymentReportSummaryDto(
+    int MembershipOnlyCount, decimal MembershipOnlyTotal,
+    int CombinedCount, decimal CombinedTotal,
+    decimal PortalRevenueTotal);

@@ -90,7 +90,7 @@ public class MemberService(IApplicationDbContext db, ICacheService? cache = null
         m.Chapter, m.ChapterYear, m.ChapterPosition,
         m.EmploymentStatus, m.Company, m.Position, m.BusinessAddress, m.YearsOfPractice, m.Specialization, m.Skills,
         m.MemberType,
-        m.Status, m.RenewalDueDate, m.NationalDuesReferenceNo, m.ApprovedAt, m.SubmittedAt,
+        m.Status, m.RenewalDueDate, m.HasPortalAccess, m.NationalDuesReferenceNo, m.ApprovedAt, m.SubmittedAt,
         ComputeIsInGracePeriod(m, gracePeriodDays), ComputeIsExpired(m, gracePeriodDays), m.CreatedAt, m.UpdatedAt);
 
     public async Task<PagedResult<MemberDto>> GetAllAsync(
@@ -620,6 +620,15 @@ public class MemberService(IApplicationDbContext db, ICacheService? cache = null
             return Result<Payment>.Failure("Proof of payment is required.");
         }
 
+        // The admin types a raw Amount directly on this path - there's no fee computation to piggy-
+        // back PortalFeeAmount onto, unlike EnsureRegistrationPaymentAsync. Still resolved
+        // independently here (through the same promotion-aware lookup) so it reflects "what
+        // PortalFee was configured at the time," same as Amount is already allowed to diverge from
+        // configured fees without validation.
+        var portalFeeAmount = supplied.IncludePortalAccess
+            ? await FeePromotionResolver.ResolveCurrentAsync(db, MembershipFeeKeys.PortalFee, MembershipFeeKeys.DefaultPortalFee, cancellationToken)
+            : 0m;
+
         var created = new Payment
         {
             MemberId = member.Id,
@@ -630,6 +639,8 @@ public class MemberService(IApplicationDbContext db, ICacheService? cache = null
             PaidOn = supplied.PaidOn,
             ProofStorageKey = supplied.ProofStorageKey,
             Status = PaymentStatus.Submitted,
+            IncludesPortalAccess = supplied.IncludePortalAccess,
+            PortalFeeAmount = portalFeeAmount,
         };
         db.Payments.Add(created);
         return Result<Payment>.Success(created);
@@ -741,7 +752,7 @@ public class MemberService(IApplicationDbContext db, ICacheService? cache = null
     /// Finalizes the wizard's per-step autosave drafts into a real submitted application.
     /// Idempotent (re-submitting an already-submitted application is a no-op success).
     /// </summary>
-    public async Task<Result> SubmitMyProfileAsync(Guid userId, CancellationToken cancellationToken = default)
+    public async Task<Result> SubmitMyProfileAsync(Guid userId, bool includePortalAccess = false, CancellationToken cancellationToken = default)
     {
         var member = await db.Members.FirstOrDefaultAsync(m => m.UserId == userId, cancellationToken);
         if (member is null)
@@ -820,7 +831,7 @@ public class MemberService(IApplicationDbContext db, ICacheService? cache = null
         {
             member.SubmittedAt = DateTimeOffset.UtcNow;
             member.UpdatedAt = DateTimeOffset.UtcNow;
-            await EnsureRegistrationPaymentAsync(member, cancellationToken);
+            await EnsureRegistrationPaymentAsync(member, includePortalAccess, cancellationToken);
             await db.SaveChangesAsync(cancellationToken);
         }
 
@@ -1120,7 +1131,7 @@ public class MemberService(IApplicationDbContext db, ICacheService? cache = null
     /// (amount, reference, date) through the payments endpoint, that row is left alone and only its
     /// proof is filled in.
     /// </summary>
-    private async Task EnsureRegistrationPaymentAsync(Member member, CancellationToken cancellationToken)
+    private async Task EnsureRegistrationPaymentAsync(Member member, bool includePortalAccess, CancellationToken cancellationToken)
     {
         var proofKey = await db.MemberUploads.AsNoTracking()
             .Where(u => u.UserId == member.UserId && u.Kind == UploadKind.ProofOfPayment)
@@ -1140,20 +1151,41 @@ public class MemberService(IApplicationDbContext db, ICacheService? cache = null
         // `new MemberService(db)` in ~70 unit tests, and adding a required dependency to satisfy
         // one default value would break all of them for no benefit.
         var feeRows = await db.SystemConfigs.AsNoTracking()
-            .Where(c => c.Key == MembershipFeeKeys.MembershipFee || c.Key == MembershipFeeKeys.ShippingFee)
+            .Where(c => c.Key == MembershipFeeKeys.MembershipFee || c.Key == MembershipFeeKeys.ShippingFee || c.Key == MembershipFeeKeys.PortalFee)
             .ToDictionaryAsync(c => c.Key, c => c.Value, cancellationToken);
+
+        // Resolved through FeePromotionResolver rather than the plain configured value, so a
+        // promotion applies here the same way it does in PaymentService.GetFeesAsync. No cache
+        // parameter needed: the resolver does no caching of its own (callers decide), and this
+        // method already reads SystemConfig uncached above, so there is nothing to keep consistent
+        // with by adding one.
+        var asOf = DateOnly.FromDateTime(DateTime.UtcNow);
+        var membershipFee = await FeePromotionResolver.ResolveAsync(
+            db, MembershipFeeKeys.MembershipFee,
+            ReadFee(feeRows, MembershipFeeKeys.MembershipFee, MembershipFeeKeys.DefaultMembershipFee), asOf, cancellationToken);
+        var shippingFee = await FeePromotionResolver.ResolveAsync(
+            db, MembershipFeeKeys.ShippingFee,
+            ReadFee(feeRows, MembershipFeeKeys.ShippingFee, MembershipFeeKeys.DefaultShippingFee), asOf, cancellationToken);
+        var portalFee = await FeePromotionResolver.ResolveAsync(
+            db, MembershipFeeKeys.PortalFee,
+            ReadFee(feeRows, MembershipFeeKeys.PortalFee, MembershipFeeKeys.DefaultPortalFee), asOf, cancellationToken);
 
         db.Payments.Add(new Payment
         {
             MemberId = member.Id,
             Kind = PaymentKind.NewMembership,
             // What PSMPE charges, not what the member typed - they didn't declare an amount on this
-            // path. The admin sees the proof and can reject if it doesn't match.
-            Amount = ReadFee(feeRows, MembershipFeeKeys.MembershipFee, MembershipFeeKeys.DefaultMembershipFee)
-                + ReadFee(feeRows, MembershipFeeKeys.ShippingFee, MembershipFeeKeys.DefaultShippingFee),
+            // path. The admin sees the proof and can reject if it doesn't match. Portal access adds
+            // its fee on top only when the applicant ticked the opt-in checkbox.
+            Amount = membershipFee + shippingFee + (includePortalAccess ? portalFee : 0m),
             PaidOn = DateOnly.FromDateTime(DateTime.UtcNow),
             ProofStorageKey = proofKey,
             Status = PaymentStatus.Submitted,
+            IncludesPortalAccess = includePortalAccess,
+            // Same resolved value already used above to size Amount - captured independently so a
+            // later fee/promo edit can never retroactively change what this payment's own
+            // portal-revenue contribution was.
+            PortalFeeAmount = includePortalAccess ? portalFee : 0m,
         });
     }
 

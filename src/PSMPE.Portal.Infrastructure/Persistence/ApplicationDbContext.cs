@@ -17,6 +17,7 @@ public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options
     public DbSet<MemberCertificate> MemberCertificates => Set<MemberCertificate>();
     public DbSet<PrcVerificationHistory> PrcVerificationHistories => Set<PrcVerificationHistory>();
     public DbSet<Payment> Payments => Set<Payment>();
+    public DbSet<FeePromotion> FeePromotions => Set<FeePromotion>();
     public DbSet<Event> Events => Set<Event>();
     public DbSet<EventSession> EventSessions => Set<EventSession>();
     public DbSet<EventRegistration> EventRegistrations => Set<EventRegistration>();

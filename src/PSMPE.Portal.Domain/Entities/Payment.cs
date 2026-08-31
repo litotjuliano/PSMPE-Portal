@@ -48,4 +48,14 @@ public class Payment : BaseEntity
     /// <summary>The RenewalDueDate this payment produced, recorded at verification. Without it the
     /// history says a payment was accepted but not what period it bought.</summary>
     public DateOnly? CoversUntil { get; set; }
+
+    /// <summary>Whether this payment included the optional Portal Fee add-on, decided by whoever
+    /// submitted it (the member, or an admin recording a walk-in). Set once at submission and never
+    /// changed afterward - see openspec/changes/add-portal-access-payment/proposal.md.</summary>
+    public bool IncludesPortalAccess { get; set; }
+
+    /// <summary>The exact Portal Fee amount in effect (promo-aware) when this payment was created,
+    /// captured separately from Amount so revenue reporting stays accurate even after a later fee
+    /// or FeePromotion change. Zero when IncludesPortalAccess is false.</summary>
+    public decimal PortalFeeAmount { get; set; }
 }

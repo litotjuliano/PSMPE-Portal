@@ -37,19 +37,43 @@ export const RenewalPaymentCard = ({ member, onSubmitted }: RenewalPaymentCardPr
   const [paidOn, setPaidOn] = useState(() => new Date().toISOString().slice(0, 10))
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // Pre-checked to the member's *current* access, so keep-renewing-the-same-way is one click.
+  const [includePortalAccess, setIncludePortalAccess] = useState(member.hasPortalAccess)
+  // Tracks whether the member has touched the Amount field themselves - once they have, a
+  // checkbox toggle no longer overwrites their typed value (same "don't clobber a manual edit"
+  // rule ApproveApplicationWizard.tsx applies in the opposite direction to its own amount field).
+  const amountManuallyEditedRef = useRef(false)
   const proofInputRef = useRef<HTMLInputElement>(null)
 
-  const load = useCallback(async () => {
+  // Takes the checkbox value as a parameter rather than reading it off state, since this is a
+  // stable useCallback ([] deps) and would otherwise close over a stale value - callers pass
+  // whatever's current at the call site (the mount effect, and handleSubmit below).
+  const load = useCallback(async (portalAccess: boolean) => {
     const [loadedFees, loadedPayments] = await Promise.all([paymentApi.getFees(), paymentApi.getMyPayments()])
     setFees(loadedFees)
     setPayments(loadedPayments)
-    // Pre-filled with what's actually owed, so the common case is one click.
-    setAmount((current) => current || String(loadedFees.annualDues))
+    // Pre-filled with what's actually owed, following the given checkbox value - only if the
+    // member hasn't already started typing their own amount.
+    if (!amountManuallyEditedRef.current) {
+      setAmount(String(portalAccess ? loadedFees.renewalTotalWithPortal : loadedFees.renewalTotalWithoutPortal))
+    }
   }, [])
 
+  const toggleIncludePortalAccess = (checked: boolean) => {
+    setIncludePortalAccess(checked)
+    // The checkbox drives the amount here (opposite of the admin walk-in form, where the typed
+    // amount drives the checkbox) - only while the member hasn't already typed their own figure.
+    if (!amountManuallyEditedRef.current && fees) {
+      setAmount(String(checked ? fees.renewalTotalWithPortal : fees.renewalTotalWithoutPortal))
+    }
+  }
+
   useEffect(() => {
-    load().catch(() => setError('Could not load your payment details.'))
-  }, [load])
+    // Reflects the member's access as it stood when this card loaded (or when a verification
+    // elsewhere flips it). Later checkbox toggles are handled directly by
+    // toggleIncludePortalAccess, not by re-running this effect.
+    load(member.hasPortalAccess).catch(() => setError('Could not load your payment details.'))
+  }, [load, member.hasPortalAccess])
 
   const pending = payments.find((p) => p.status === 'Submitted')
   const lastRejected = payments.find((p) => p.status === 'Rejected')
@@ -77,13 +101,14 @@ export const RenewalPaymentCard = ({ member, onSubmitted }: RenewalPaymentCardPr
         amount: parsed,
         referenceNo: referenceNo.trim() || null,
         paidOn,
+        includePortalAccess,
       })
       // Two calls because the proof is multipart - the same split the document uploads use. If this
       // one fails the payment exists without proof, which the member can see and re-attach.
       await paymentApi.uploadProof(payment.id, file)
       if (proofInputRef.current) proofInputRef.current.value = ''
       setReferenceNo('')
-      await load()
+      await load(includePortalAccess)
       await onSubmitted()
     } catch (err) {
       setError(describeError(err, 'Could not submit your payment. Please try again.'))
@@ -108,6 +133,10 @@ export const RenewalPaymentCard = ({ member, onSubmitted }: RenewalPaymentCardPr
           <div>
             <span className="block font-medium text-default-900 mb-1">Annual Dues</span>
             <span className="font-semibold text-default-800">{fees ? peso.format(fees.annualDues) : '—'}</span>
+          </div>
+          <div>
+            <span className="block font-medium text-default-900 mb-1">Portal Access</span>
+            <span className="font-semibold text-default-800">{member.hasPortalAccess ? 'Included' : 'Not included'}</span>
           </div>
         </div>
 
@@ -156,7 +185,10 @@ export const RenewalPaymentCard = ({ member, onSubmitted }: RenewalPaymentCardPr
                     min="0"
                     step="0.01"
                     value={amount}
-                    onChange={(e) => setAmount(e.target.value)}
+                    onChange={(e) => {
+                      amountManuallyEditedRef.current = true
+                      setAmount(e.target.value)
+                    }}
                   />
                 </div>
                 <div>
@@ -182,6 +214,17 @@ export const RenewalPaymentCard = ({ member, onSubmitted }: RenewalPaymentCardPr
                     value={paidOn}
                     onChange={(e) => setPaidOn(e.target.value)}
                   />
+                </div>
+                <div className="sm:col-span-3">
+                  <label className="flex items-center gap-2 text-sm text-default-800">
+                    <input
+                      type="checkbox"
+                      className="form-checkbox"
+                      checked={includePortalAccess}
+                      onChange={(e) => toggleIncludePortalAccess(e.target.checked)}
+                    />
+                    Include Portal Access {fees ? `(+${peso.format(fees.portalFee)})` : ''} this year
+                  </label>
                 </div>
                 <div className="sm:col-span-3 flex flex-wrap items-center gap-3">
                   <input ref={proofInputRef} type="file" accept="image/jpeg,image/png,application/pdf" className="text-sm" />

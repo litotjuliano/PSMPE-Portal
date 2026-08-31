@@ -202,6 +202,41 @@ public class PaymentsController(
     public async Task<IActionResult> UpdateFees(UpdateMembershipFeesRequest request, CancellationToken cancellationToken) =>
         ToActionResult(await paymentService.UpdateFeesAsync(request, cancellationToken));
 
+    /// <summary>Admin configuration screen - unlike GET /fees this isn't shown to an applicant, so
+    /// it requires members:manage rather than being AllowExpiredMember.</summary>
+    [HttpGet("fees/promotions")]
+    [RequirePermission(Permissions.Members.Manage)]
+    public async Task<ActionResult<IReadOnlyList<FeePromotionDto>>> GetPromotions(CancellationToken cancellationToken) =>
+        Ok(await paymentService.GetPromotionsAsync(cancellationToken));
+
+    [HttpPost("fees/promotions")]
+    [RequirePermission(Permissions.Members.Manage)]
+    public async Task<ActionResult<FeePromotionDto>> CreatePromotion(
+        CreateFeePromotionRequest request, CancellationToken cancellationToken)
+    {
+        var createdBy = CurrentUserId;
+        if (createdBy is null)
+        {
+            return Unauthorized();
+        }
+
+        return ToActionResult(await paymentService.CreatePromotionAsync(request, createdBy.Value, cancellationToken));
+    }
+
+    [HttpDelete("fees/promotions/{id:guid}")]
+    [RequirePermission(Permissions.Members.Manage)]
+    public async Task<IActionResult> DeletePromotion(Guid id, CancellationToken cancellationToken) =>
+        ToActionResult(await paymentService.DeletePromotionAsync(id, cancellationToken));
+
+    /// <summary>Admin Payments tab's reporting panel - aggregate figures only, no line-item
+    /// drill-down (see proposal.md's "Not Built"). Verified NewMembership/Renewal payments only;
+    /// EventRegistration is a separate revenue stream and is always excluded.</summary>
+    [HttpGet("reports/summary")]
+    [RequirePermission(Permissions.Members.View)]
+    public async Task<ActionResult<PaymentReportSummaryDto>> GetReportSummary(
+        DateOnly startDate, DateOnly endDate, CancellationToken cancellationToken) =>
+        ToActionResult(await paymentService.GetReportSummaryAsync(startDate, endDate, cancellationToken));
+
     /// <summary>Null when the payment is the caller's own; an error result otherwise.</summary>
     private async Task<IActionResult?> EnsureOwnPaymentAsync(Guid paymentId, Guid userId, CancellationToken cancellationToken)
     {
@@ -223,6 +258,22 @@ public class PaymentsController(
         if (result.Succeeded)
         {
             return NoContent();
+        }
+
+        return result.ErrorType switch
+        {
+            ResultErrorType.NotFound => NotFound(new { message = result.Error }),
+            ResultErrorType.Forbidden => Forbid(),
+            ResultErrorType.Conflict => Conflict(new { message = result.Error }),
+            _ => BadRequest(new { message = result.Error }),
+        };
+    }
+
+    private ActionResult<T> ToActionResult<T>(Result<T> result)
+    {
+        if (result.Succeeded)
+        {
+            return Ok(result.Value);
         }
 
         return result.ErrorType switch

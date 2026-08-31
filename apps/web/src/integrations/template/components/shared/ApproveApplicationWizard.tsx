@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { LuEye, LuUpload } from 'react-icons/lu'
+import { LuEye, LuTriangleAlert, LuUpload } from 'react-icons/lu'
 import { memberApi } from '../../../../core/api/endpoints/memberApi'
 import { paymentApi, type MembershipFees, type Payment } from '../../../../core/api/endpoints/paymentApi'
 import { uploadApi } from '../../../../core/api/endpoints/uploadApi'
@@ -64,6 +64,13 @@ export const ApproveApplicationWizard = ({ member, onApproved, onCancel }: Appro
   const [paymentsLoaded, setPaymentsLoaded] = useState(false)
   const [fees, setFees] = useState<MembershipFees | null>(null)
   const [amount, setAmount] = useState('')
+  // Auto-synced from `amount` as it's typed (see handleAmountChange) until the admin directly
+  // toggles the checkbox themselves - portalManuallyToggledRef then latches so a later typo fix in
+  // Amount can't silently overwrite a deliberate override with no warning. Reset alongside the
+  // rest of the payment-step state below whenever the wizard opens for a different member, so a
+  // fresh session always starts in auto-sync mode.
+  const [includePortalAccess, setIncludePortalAccess] = useState(false)
+  const portalManuallyToggledRef = useRef(false)
   const [referenceNo, setReferenceNo] = useState('')
   const [paidOn, setPaidOn] = useState(() => new Date().toISOString().slice(0, 10))
   const [proofKey, setProofKey] = useState<string | null>(null)
@@ -94,6 +101,11 @@ export const ApproveApplicationWizard = ({ member, onApproved, onCancel }: Appro
     setProofKey(null)
     setReferenceNo('')
     setPaidOn(new Date().toISOString().slice(0, 10))
+    // Opt-in default: a fresh walk-in entry starts unticked at the without-portal amount, same as
+    // the registration wizard's own default. Otherwise this would leak the previous wizard
+    // session's checkbox state onto an unrelated member.
+    setIncludePortalAccess(false)
+    portalManuallyToggledRef.current = false
     if (proofInputRef.current) proofInputRef.current.value = ''
 
     void Promise.all([paymentApi.getPaymentsForMember(member.id), paymentApi.getFees()])
@@ -102,7 +114,7 @@ export const ApproveApplicationWizard = ({ member, onApproved, onCancel }: Appro
         setExistingPayment(registration ?? null)
         setFees(loadedFees)
         // Pre-filled with what PSMPE actually charges, so the common walk-in case is one click.
-        setAmount(registration ? String(registration.amount) : String(loadedFees.registrationTotal))
+        setAmount(registration ? String(registration.amount) : String(loadedFees.registrationTotalWithoutPortal))
       })
       .catch(() => setError('Could not load this member\'s payment details.'))
       .finally(() => setPaymentsLoaded(true))
@@ -197,6 +209,7 @@ export const ApproveApplicationWizard = ({ member, onApproved, onCancel }: Appro
         referenceNo: referenceNo.trim() || null,
         paidOn,
         proofStorageKey: proofKey!,
+        includePortalAccess,
       })
       await onApproved()
       onCancel()
@@ -217,6 +230,42 @@ export const ApproveApplicationWizard = ({ member, onApproved, onCancel }: Appro
   const canContinueFromPayment = existingPayment
     ? existingPayment.hasProof
     : Boolean(proofKey) && Number.isFinite(recordedAmount) && recordedAmount > 0 && Boolean(paidOn)
+
+  // Auto-syncs the checkbox from what's typed: this is the one context where the amount is a
+  // known, already-collected fact rather than a declared intent, so it drives the checkbox rather
+  // than the other way around. Stops once the admin has directly toggled the checkbox themselves
+  // (see the input below) - otherwise fixing an unrelated typo in Amount afterward would silently
+  // overwrite a deliberate override with no warning, exactly the kind of silent mismatch this
+  // whole feature exists to catch.
+  const handleAmountChange = (value: string) => {
+    setAmount(value)
+    if (portalManuallyToggledRef.current) return
+    const parsed = Number(value)
+    setIncludePortalAccess(Boolean(fees) && Number.isFinite(parsed) && parsed >= fees!.registrationTotalWithPortal)
+  }
+
+  // Walk-in branch: does the typed amount actually match what the checkbox claims? Soft warning
+  // only - Amount is never hard-validated against configured fees anywhere in this codebase.
+  const walkInExpectedTotal = fees
+    ? includePortalAccess
+      ? fees.registrationTotalWithPortal
+      : fees.registrationTotalWithoutPortal
+    : null
+  const walkInPortalMismatch =
+    fees !== null && Number.isFinite(recordedAmount) &&
+    (includePortalAccess ? recordedAmount < fees.registrationTotalWithPortal : recordedAmount >= fees.registrationTotalWithPortal)
+
+  // Read-only review branch: does what the applicant actually paid match what their own declared
+  // IncludesPortalAccess implies? This is the admin's one chance to catch the mismatch before
+  // approving - after that, verification is what grants/restricts portal access, driven by this
+  // same flag.
+  const existingExpectedTotal =
+    existingPayment && fees
+      ? existingPayment.includesPortalAccess
+        ? fees.registrationTotalWithPortal
+        : fees.registrationTotalWithoutPortal
+      : null
+  const existingPortalMismatch = existingExpectedTotal !== null && existingPayment!.amount !== existingExpectedTotal
 
   const handleProofSelected = async (file: File | undefined) => {
     if (!file || !member) return
@@ -314,10 +363,23 @@ export const ApproveApplicationWizard = ({ member, onApproved, onCancel }: Appro
                     <div>
                       <dt className="font-medium text-default-900 mb-1">Expected</dt>
                       <dd className="font-semibold text-default-800">
-                        {fees ? peso.format(fees.registrationTotal) : '—'}
+                        {existingExpectedTotal !== null ? peso.format(existingExpectedTotal) : '—'}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt className="font-medium text-default-900 mb-1">Portal Access</dt>
+                      <dd className="font-semibold text-default-800">
+                        {existingPayment.includesPortalAccess ? 'Included' : 'Not included'}
                       </dd>
                     </div>
                   </dl>
+                  {existingPortalMismatch && (
+                    <p className="text-sm text-warning bg-warning/10 rounded-lg px-3 py-2 flex items-start gap-2">
+                      <LuTriangleAlert className="size-4 shrink-0 mt-0.5" />
+                      This payment's amount doesn't match what {existingPayment.includesPortalAccess ? 'including' : 'not including'} Portal
+                      Access would come to ({peso.format(existingExpectedTotal!)}). Not a hard rule - use your judgment.
+                    </p>
+                  )}
                   {existingPayment.hasProof ? (
                     <div>
                       <StandardButton variant="view" size="sm" icon={LuEye} onClick={() => setPreviewingPayment(true)}>
@@ -348,7 +410,7 @@ export const ApproveApplicationWizard = ({ member, onApproved, onCancel }: Appro
                         min="0"
                         step="0.01"
                         value={amount}
-                        onChange={(e) => setAmount(e.target.value)}
+                        onChange={(e) => handleAmountChange(e.target.value)}
                       />
                     </div>
                     <div>
@@ -376,6 +438,29 @@ export const ApproveApplicationWizard = ({ member, onApproved, onCancel }: Appro
                       />
                     </div>
                   </div>
+                  <div>
+                    <label className="flex items-center gap-2 text-sm text-default-800">
+                      <input
+                        type="checkbox"
+                        className="form-checkbox"
+                        checked={includePortalAccess}
+                        onChange={(e) => {
+                          portalManuallyToggledRef.current = true
+                          setIncludePortalAccess(e.target.checked)
+                        }}
+                      />
+                      Include Portal Access {fees ? `(+${peso.format(fees.portalFee)})` : ''}
+                    </label>
+                    {walkInPortalMismatch && (
+                      <p className="text-sm text-warning bg-warning/10 rounded-lg px-3 py-2 mt-2 flex items-start gap-2">
+                        <LuTriangleAlert className="size-4 shrink-0 mt-0.5" />
+                        {includePortalAccess
+                          ? "The typed amount is less than the total with Portal Access included."
+                          : 'The typed amount looks like it includes Portal Access, but the box is unticked.'}{' '}
+                        Not a hard rule - use your judgment on what was actually paid.
+                      </p>
+                    )}
+                  </div>
                   <div className="flex flex-wrap items-center gap-3">
                     <input
                       ref={proofInputRef}
@@ -397,7 +482,7 @@ export const ApproveApplicationWizard = ({ member, onApproved, onCancel }: Appro
                     {proofKey && !uploadingProof && <span className="text-xs text-success font-medium">Proof attached.</span>}
                   </div>
                   <p className="text-xs text-default-500">
-                    Expected total {fees ? peso.format(fees.registrationTotal) : '—'}. JPG, PNG or PDF up to 1 MB.
+                    Expected total {walkInExpectedTotal !== null ? peso.format(walkInExpectedTotal) : '—'}. JPG, PNG or PDF up to 1 MB.
                   </p>
                 </>
               )}
@@ -466,6 +551,7 @@ export const ApproveApplicationWizard = ({ member, onApproved, onCancel }: Appro
                   <dt className="font-medium text-default-900 mb-1">Payment</dt>
                   <dd className="font-semibold text-default-800">
                     {peso.format(existingPayment ? existingPayment.amount : Number(amount) || 0)}
+                    {(existingPayment ? existingPayment.includesPortalAccess : includePortalAccess) && ' (includes Portal Access)'}
                   </dd>
                 </div>
               </dl>

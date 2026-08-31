@@ -25,7 +25,7 @@ public class PaymentService(IApplicationDbContext db, ICacheService? cache = nul
         p.Id, p.MemberId,
         $"{p.Member.FirstName} {p.Member.LastName}".Trim(),
         p.Member.MembershipNo,
-        p.Kind, p.Amount, p.ReferenceNo, p.PaidOn,
+        p.Kind, p.Amount, p.IncludesPortalAccess, p.ReferenceNo, p.PaidOn,
         p.ProofStorageKey is not null,
         p.Status, p.RejectedReason, p.DecidedAt, p.CoversUntil, p.CreatedAt,
         p.EventRegistration?.Event.Title);
@@ -112,6 +112,14 @@ public class PaymentService(IApplicationDbContext db, ICacheService? cache = nul
         // was never activated, nor a second "new membership" payment once they're active.
         var kind = member.RenewalDueDate is null ? PaymentKind.NewMembership : PaymentKind.Renewal;
 
+        // Captured independently of the caller-declared Amount, same as GetFeesAsync resolves the
+        // other three fees - this is "what PortalFee was configured (net of any promotion) when
+        // this payment was made," so later fee/promo edits can never retroactively change what a
+        // historical payment's portal-revenue contribution was. Zero when the add-on isn't included.
+        var portalFeeAmount = request.IncludePortalAccess
+            ? await FeePromotionResolver.ResolveCurrentAsync(db, MembershipFeeKeys.PortalFee, MembershipFeeKeys.DefaultPortalFee, cancellationToken)
+            : 0m;
+
         var payment = new Payment
         {
             MemberId = member.Id,
@@ -121,6 +129,10 @@ public class PaymentService(IApplicationDbContext db, ICacheService? cache = nul
             ReferenceNo = request.ReferenceNo?.Trim(),
             PaidOn = request.PaidOn,
             Status = PaymentStatus.Submitted,
+            // Whatever the member declared - no server-side forcing or branching, and no
+            // consistency check against Amount (mismatch guarding is a UI safety net only).
+            IncludesPortalAccess = request.IncludePortalAccess,
+            PortalFeeAmount = portalFeeAmount,
         };
 
         db.Payments.Add(payment);
@@ -377,10 +389,25 @@ public class PaymentService(IApplicationDbContext db, ICacheService? cache = nul
                 .Where(c => keys.Contains(c.Key))
                 .ToDictionaryAsync(c => c.Key, c => c.Value, cancellationToken);
 
-            return new MembershipFeesDto(
-                Read(rows, MembershipFeeKeys.MembershipFee, MembershipFeeKeys.DefaultMembershipFee),
-                Read(rows, MembershipFeeKeys.ShippingFee, MembershipFeeKeys.DefaultShippingFee),
-                Read(rows, MembershipFeeKeys.AnnualDues, MembershipFeeKeys.DefaultAnnualDues));
+            // Resolved through FeePromotionResolver, not the plain configured value, so an active
+            // promotion is reflected here without a separate code path - still inside this single
+            // cached factory, so a promotion starting/ending exactly at a date boundary can be up to
+            // 10 minutes late to reflect, same accepted tradeoff as a manual fee edit today.
+            var asOf = DateOnly.FromDateTime(DateTime.UtcNow);
+            var membershipFee = await FeePromotionResolver.ResolveAsync(
+                db, MembershipFeeKeys.MembershipFee,
+                Read(rows, MembershipFeeKeys.MembershipFee, MembershipFeeKeys.DefaultMembershipFee), asOf, cancellationToken);
+            var shippingFee = await FeePromotionResolver.ResolveAsync(
+                db, MembershipFeeKeys.ShippingFee,
+                Read(rows, MembershipFeeKeys.ShippingFee, MembershipFeeKeys.DefaultShippingFee), asOf, cancellationToken);
+            var annualDues = await FeePromotionResolver.ResolveAsync(
+                db, MembershipFeeKeys.AnnualDues,
+                Read(rows, MembershipFeeKeys.AnnualDues, MembershipFeeKeys.DefaultAnnualDues), asOf, cancellationToken);
+            var portalFee = await FeePromotionResolver.ResolveAsync(
+                db, MembershipFeeKeys.PortalFee,
+                Read(rows, MembershipFeeKeys.PortalFee, MembershipFeeKeys.DefaultPortalFee), asOf, cancellationToken);
+
+            return new MembershipFeesDto(membershipFee, shippingFee, annualDues, portalFee);
         });
 
     /// <summary>Falls back to the shipped constant for a missing or unparseable row, so a bad config
@@ -397,6 +424,7 @@ public class PaymentService(IApplicationDbContext db, ICacheService? cache = nul
             (MembershipFeeKeys.MembershipFee, request.MembershipFee),
             (MembershipFeeKeys.ShippingFee, request.ShippingFee),
             (MembershipFeeKeys.AnnualDues, request.AnnualDues),
+            (MembershipFeeKeys.PortalFee, request.PortalFee),
         };
 
         if (values.Any(v => v.Value < 0))
@@ -426,5 +454,121 @@ public class PaymentService(IApplicationDbContext db, ICacheService? cache = nul
         // the wizard's total and the receipt from showing a stale price for up to 10 minutes.
         Cache.Remove(MembershipFeeKeys.CacheKey);
         return Result.Success();
+    }
+
+    private static FeePromotionDto ToPromotionDto(FeePromotion p) =>
+        new(p.Id, p.FeeKey, p.PromoAmount, p.StartDate, p.EndDate, p.CreatedByUserId, p.CreatedAt);
+
+    public async Task<IReadOnlyList<FeePromotionDto>> GetPromotionsAsync(CancellationToken cancellationToken = default)
+    {
+        var promotions = await db.FeePromotions.AsNoTracking()
+            // Newest-starting first - this is an admin configuration list, not a fee read, so the
+            // most recently scheduled promotion is what someone editing this screen cares about.
+            .OrderByDescending(p => p.StartDate)
+            .ToListAsync(cancellationToken);
+        return promotions.Select(ToPromotionDto).ToList();
+    }
+
+    public async Task<Result<FeePromotionDto>> CreatePromotionAsync(
+        CreateFeePromotionRequest request, Guid createdByUserId, CancellationToken cancellationToken = default)
+    {
+        if (!MembershipFeeKeys.All.Any(f => f.Key == request.FeeKey))
+        {
+            return Result<FeePromotionDto>.Failure($"'{request.FeeKey}' is not a recognized fee.");
+        }
+
+        if (request.StartDate > request.EndDate)
+        {
+            return Result<FeePromotionDto>.Failure("Start date must be on or before the end date.");
+        }
+
+        if (request.PromoAmount < 0)
+        {
+            return Result<FeePromotionDto>.Failure("Promo amount can't be negative.");
+        }
+
+        // Inclusive overlap check: two ranges overlap unless one ends before the other starts. Kept
+        // to one row active per FeeKey per day so FeePromotionResolver never has to pick among
+        // several matches.
+        var overlaps = await db.FeePromotions.AsNoTracking().AnyAsync(
+            p => p.FeeKey == request.FeeKey && p.StartDate <= request.EndDate && p.EndDate >= request.StartDate,
+            cancellationToken);
+        if (overlaps)
+        {
+            return Result<FeePromotionDto>.Conflict("A promotion for this fee already covers part of that date range.");
+        }
+
+        var promotion = new FeePromotion
+        {
+            FeeKey = request.FeeKey,
+            PromoAmount = request.PromoAmount,
+            StartDate = request.StartDate,
+            EndDate = request.EndDate,
+            CreatedByUserId = createdByUserId,
+        };
+        db.FeePromotions.Add(promotion);
+        await db.SaveChangesAsync(cancellationToken);
+
+        // A promotion covering today changes what GetFeesAsync's cached factory should return,
+        // exactly like UpdateFeesAsync's own edit - evicted here for the same reason.
+        Cache.Remove(MembershipFeeKeys.CacheKey);
+
+        return Result<FeePromotionDto>.Success(ToPromotionDto(promotion));
+    }
+
+    public async Task<Result> DeletePromotionAsync(Guid id, CancellationToken cancellationToken = default)
+    {
+        var promotion = await db.FeePromotions.FirstOrDefaultAsync(p => p.Id == id, cancellationToken);
+        if (promotion is null)
+        {
+            return Result.NotFound($"Promotion '{id}' was not found.");
+        }
+
+        // Hard delete: this is a lightweight promotional record, not an audited financial
+        // transaction like Payment - nothing downstream references a FeePromotion by Id once it's
+        // gone, since already-created Payments captured their own amount at submission time.
+        db.FeePromotions.Remove(promotion);
+        await db.SaveChangesAsync(cancellationToken);
+        Cache.Remove(MembershipFeeKeys.CacheKey);
+        return Result.Success();
+    }
+
+    public async Task<Result<PaymentReportSummaryDto>> GetReportSummaryAsync(
+        DateOnly startDate, DateOnly endDate, CancellationToken cancellationToken = default)
+    {
+        if (startDate > endDate)
+        {
+            return Result<PaymentReportSummaryDto>.Failure("Start date must be on or before the end date.");
+        }
+
+        // Verified only - a Submitted or Rejected payment isn't real revenue yet. NewMembership/
+        // Renewal only - EventRegistration is a separate revenue stream (see proposal.md). PaidOn
+        // range is inclusive on both ends, matching FeePromotion's own StartDate/EndDate convention.
+        var query = db.Payments.AsNoTracking().Where(p =>
+            p.Status == PaymentStatus.Verified &&
+            (p.Kind == PaymentKind.NewMembership || p.Kind == PaymentKind.Renewal) &&
+            p.PaidOn >= startDate && p.PaidOn <= endDate);
+
+        var membershipOnly = query.Where(p => !p.IncludesPortalAccess);
+        var combined = query.Where(p => p.IncludesPortalAccess);
+
+        var membershipOnlyCount = await membershipOnly.CountAsync(cancellationToken);
+        var membershipOnlyTotal = await membershipOnly.SumAsync(p => p.Amount, cancellationToken);
+        var combinedCount = await combined.CountAsync(cancellationToken);
+        var combinedTotal = await combined.SumAsync(p => p.Amount, cancellationToken);
+
+        // Filtered explicitly to the combined subset rather than relying on the (true today, but
+        // not worth depending on silently) invariant that PortalFeeAmount is always zero on a
+        // membership-only payment - see PaymentService.SubmitAsync and
+        // MemberService.EnsureRegistrationPaymentAsync/ResolveRegistrationPaymentAsync, the three
+        // call sites that stamp it.
+        var portalRevenueTotal = await combined.SumAsync(p => p.PortalFeeAmount, cancellationToken);
+
+        // SumAsync over zero matching rows returns 0m, not null/an exception - guaranteed by LINQ
+        // for a non-nullable numeric selector, and EF Core's SQL translation wraps SUM() in
+        // COALESCE(..., 0) for the same reason, so this holds against both the InMemory provider
+        // used by this project's unit tests and the real Npgsql provider in production.
+        return Result<PaymentReportSummaryDto>.Success(new PaymentReportSummaryDto(
+            membershipOnlyCount, membershipOnlyTotal, combinedCount, combinedTotal, portalRevenueTotal));
     }
 }
