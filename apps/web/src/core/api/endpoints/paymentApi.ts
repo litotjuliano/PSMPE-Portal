@@ -6,6 +6,7 @@ export const PaymentKind = {
   NewMembership: 'NewMembership',
   Renewal: 'Renewal',
   EventRegistration: 'EventRegistration',
+  PortalAccessOnly: 'PortalAccessOnly',
 } as const
 
 export type PaymentKindValue = (typeof PaymentKind)[keyof typeof PaymentKind]
@@ -55,6 +56,10 @@ export interface SubmitPaymentRequest {
    *  backend defaults to false when omitted) so existing callers that don't yet expose the
    *  checkbox in their own UI (task 6) keep compiling unchanged. */
   includePortalAccess?: boolean
+  /** A standalone mid-cycle purchase of the portal-access add-on alone - not a renewal. Forces
+   *  includesPortalAccess server-side regardless of includePortalAccess above. See
+   *  RenewalPaymentCard.tsx's "Add Portal Access" card, shown outside the renewal window. */
+  portalAccessOnly?: boolean
 }
 
 export interface MembershipFees {

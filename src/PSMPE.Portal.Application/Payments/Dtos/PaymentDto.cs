@@ -44,7 +44,13 @@ public record SubmitPaymentRequest(
     /// <summary>Whether this payment includes the optional portal-access add-on - always the
     /// caller's own declared intent, never server-forced. No global mode to switch: ticked
     /// produces the "combined" total, left unticked the "separate" one.</summary>
-    bool IncludePortalAccess = false);
+    bool IncludePortalAccess = false,
+    /// <summary>A standalone mid-cycle purchase of the portal-access add-on alone - not a renewal.
+    /// When true, PaymentService.SubmitAsync overrides the derived Kind to PortalAccessOnly and
+    /// forces IncludesPortalAccess regardless of IncludePortalAccess above. See
+    /// PaymentVerification.Apply for why this Kind exists: verifying it must not advance
+    /// RenewalDueDate the way a real Renewal does.</summary>
+    bool PortalAccessOnly = false);
 
 public record RejectPaymentRequest(string Reason);
 

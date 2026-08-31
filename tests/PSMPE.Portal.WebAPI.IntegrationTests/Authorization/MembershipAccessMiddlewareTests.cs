@@ -17,9 +17,7 @@ namespace PSMPE.Portal.WebAPI.IntegrationTests.Authorization;
 /// except an explicit allowlist; grace-period and Active members are unaffected; staff/admin roles
 /// (which never have a Member row) are never gated; unauthenticated requests still get a plain 401.
 /// Also covers the independent portal-access check: an Active member lacking portal access is
-/// blocked with PORTAL_ACCESS_REQUIRED outside the allowlist (Events browsing is a deliberate
-/// exception - GetAll/GetById/GetPoster carry [AllowExpiredMember] so any member can browse
-/// regardless, only Register itself requires portal access), a member failing both checks sees
+/// blocked with PORTAL_ACCESS_REQUIRED outside the allowlist, a member failing both checks sees
 /// MEMBERSHIP_EXPIRED (the expiry check runs first), and a Deactivated member is exempt from the
 /// portal-access check. And the third, independent check: a "Member"-role account with no Member
 /// row at all yet (registered but never submitted an application) is blocked with
@@ -123,6 +121,7 @@ public class MembershipAccessMiddlewareTests : IClassFixture<CustomWebApplicatio
     [InlineData("/api/members/me")]
     [InlineData("/api/payments/me")]
     [InlineData("/api/payments/fees")]
+    [InlineData("/api/events")]
     public async Task ExpiredMember_IsAllowed_OnAllowlistedRoutes(string url)
     {
         var token = await RegisterMemberWithStatusAsync(MembershipStatus.Expired, DateOnly.FromDateTime(DateTime.UtcNow).AddDays(-100));
@@ -201,55 +200,11 @@ public class MembershipAccessMiddlewareTests : IClassFixture<CustomWebApplicatio
         Assert.Equal("PORTAL_ACCESS_REQUIRED", body!["code"]);
     }
 
-    [Fact]
-    public async Task MemberLackingPortalAccess_CanStillBrowseEvents()
-    {
-        // Events is meant to be browsable by every member regardless of the portal-access add-on -
-        // GetAll/GetById/GetPoster carry [AllowExpiredMember] specifically for this. Only the
-        // Register action itself (below) requires portal access.
-        var token = await RegisterMemberWithStatusAsync(
-            MembershipStatus.Active, DateOnly.FromDateTime(DateTime.UtcNow).AddDays(300), hasPortalAccess: false);
-
-        var response = await _client.SendAsync(Get("/api/events", token));
-
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-    }
-
-    [Fact]
-    public async Task MemberLackingPortalAccess_IsBlocked_FromRegisteringForAnEvent()
-    {
-        // Register carries no [AllowExpiredMember] - browsing is open (see the test above), but
-        // actually registering still requires portal access.
-        using var scope = _factory.Services.CreateScope();
-        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        var @event = new Event
-        {
-            Title = "Portal Access Gate Test Event",
-            StartsAt = DateTimeOffset.UtcNow.AddDays(10),
-            EndsAt = DateTimeOffset.UtcNow.AddDays(10).AddHours(4),
-            Status = EventStatus.Published,
-        };
-        db.Events.Add(@event);
-        await db.SaveChangesAsync();
-
-        var token = await RegisterMemberWithStatusAsync(
-            MembershipStatus.Active, DateOnly.FromDateTime(DateTime.UtcNow).AddDays(300), hasPortalAccess: false);
-        var request = new HttpRequestMessage(HttpMethod.Post, $"/api/events/{@event.Id}/register")
-        {
-            Content = JsonContent.Create(new { mode = "Onsite" })
-        }.WithBearer(token);
-
-        var response = await _client.SendAsync(request);
-
-        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
-        var body = await response.Content.ReadFromJsonAsync<Dictionary<string, string>>();
-        Assert.Equal("PORTAL_ACCESS_REQUIRED", body!["code"]);
-    }
-
     [Theory]
     [InlineData("/api/members/me")]
     [InlineData("/api/payments/me")]
     [InlineData("/api/payments/fees")]
+    [InlineData("/api/events")]
     public async Task MemberLackingPortalAccess_IsAllowed_OnAllowlistedRoutes(string url)
     {
         var token = await RegisterMemberWithStatusAsync(
@@ -312,5 +267,17 @@ public class MembershipAccessMiddlewareTests : IClassFixture<CustomWebApplicatio
         var response = await _client.SendAsync(Get("/api/members/me", token));
 
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task MemberRoleWithNoProfileAtAll_CanStillBrowseEvents()
+    {
+        // Same allowlisted-browsing reasoning as the Expired/lacking-portal-access cases above -
+        // Events is meant to be reachable by any authenticated member regardless of restriction.
+        var token = await RegisterMemberWithNoProfileAsync();
+
+        var response = await _client.SendAsync(Get("/api/events", token));
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
 }

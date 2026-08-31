@@ -2,7 +2,6 @@ import { Link, useLocation } from 'react-router-dom'
 import { LuChevronRight } from 'react-icons/lu'
 import { menuItemsData, type MenuItemType } from './menu'
 import { useAuth } from '../../../../../core/auth/useAuth'
-import { useMembershipAccess } from '../../../../../core/auth/ExpiredMembershipGate'
 
 const isItemActive = (item: MenuItemType, pathname: string): boolean => {
   if (item.href && pathname === item.href) return true
@@ -65,29 +64,13 @@ const filterByRole = (items: MenuItemType[], roles: readonly string[]): MenuItem
     .filter((item) => !item.requiredRoles || item.requiredRoles.some((r) => roles.includes(r)))
     .map((item) => (item.children ? { ...item, children: filterByRole(item.children, roles) } : item))
 
-/** A restricted member keeps only the given hrefs - everything else the backend now 403s anyway
- *  (see MembershipAccessMiddleware). Drops a section title left with no items under it. */
-const keepOnly = (items: MenuItemType[], allowedHrefs: string[]): MenuItemType[] =>
-  items.filter((item, index, all) => {
-    if (item.isTitle) {
-      const next = all[index + 1]
-      return next !== undefined && !next.isTitle && !!next.href && allowedHrefs.includes(next.href)
-    }
-    return !!item.href && allowedHrefs.includes(item.href)
-  })
-
 const AppMenu = () => {
   const { user } = useAuth()
-  const { isExpired, hasNoProfile, lacksPortalAccess, isRestricted } = useMembershipAccess()
-  const roleFiltered = filterByRole(menuItemsData, user?.roles ?? [])
-  // Fully Expired or no application at all yet: Profile only. Lacking only the portal-access
-  // add-on: Profile *and* Events stay - Events is browsable regardless, only the Register action
-  // itself is gated (see ExpiredMembershipGate's matching /events route exception).
-  const items = !isRestricted
-    ? roleFiltered
-    : isExpired || hasNoProfile
-      ? keepOnly(roleFiltered, ['/profile'])
-      : keepOnly(roleFiltered, lacksPortalAccess ? ['/profile', '/events'] : ['/profile'])
+  // Nav visibility is role-based only, never collapsed by membership-restriction state (Expired,
+  // lacking portal access, no profile yet) - a restricted member still sees every item their role
+  // grants; MembershipAccessMiddleware/ExpiredMembershipGate are what actually gate the pages and
+  // actions behind them (e.g. EventRegisterModal disabling Register), not the sidebar.
+  const items = filterByRole(menuItemsData, user?.roles ?? [])
 
   return (
     <ul className="side-nav py-3 hs-accordion-group">

@@ -60,11 +60,20 @@ function isPastPaymentSubmission(status: EventRegistrationStatusValue | null): b
   return status !== null && status !== EventRegistrationStatus.Registered
 }
 
+/** Browsing the event (this whole modal, poster and detail included) is allowed regardless of
+ *  membership restriction - see EventsController.GetAll's [AllowExpiredMember]. Only the actual
+ *  Register action requires an unrestricted membership, disabled here (rather than hiding the
+ *  modal) with a message specific to why, so the member knows what to fix. */
+function restrictionMessage({ isExpired, hasNoProfile, lacksPortalAccess }: ReturnType<typeof useMembershipAccess>): string | null {
+  if (isExpired) return 'Your membership has expired. Renew your dues to register for events.'
+  if (hasNoProfile) return 'Complete your membership application to register for events.'
+  if (lacksPortalAccess) return 'Add Portal Access on your next renewal to register for events.'
+  return null
+}
+
 export function EventRegisterModal({ event, onClose, onRegistered }: EventRegisterModalProps) {
-  // Browsing an event is allowed regardless of the portal-access add-on (see
-  // ExpiredMembershipGate.tsx's /events exception) - only the Register action itself is gated
-  // here, disabled rather than hidden so the member can see what registering would involve.
-  const { lacksPortalAccess } = useMembershipAccess()
+  const membershipAccess = useMembershipAccess()
+  const blockedMessage = restrictionMessage(membershipAccess)
   const [mode, setMode] = useState<EventModeValue>(defaultMode(event))
   const [amount, setAmount] = useState(feeForMode(event, defaultMode(event)).toString())
   const [referenceNo, setReferenceNo] = useState('')
@@ -233,10 +242,8 @@ export function EventRegisterModal({ event, onClose, onRegistered }: EventRegist
             </>
           ) : !registrationId ? (
             <>
-              {lacksPortalAccess && (
-                <p className="text-sm text-warning bg-warning/10 rounded-lg px-3 py-2">
-                  Add Portal Access on your next renewal to register for events.
-                </p>
+              {blockedMessage && (
+                <p className="text-sm text-warning bg-warning/10 rounded-lg px-3 py-2">{blockedMessage}</p>
               )}
               {isModeOffered(event, EventMode.Onsite) && (
                 <label className="flex items-center gap-2 text-sm">
@@ -245,7 +252,7 @@ export function EventRegisterModal({ event, onClose, onRegistered }: EventRegist
                     name="eventMode"
                     className="form-radio"
                     checked={mode === EventMode.Onsite}
-                    disabled={lacksPortalAccess}
+                    disabled={!!blockedMessage}
                     onChange={() => setMode(EventMode.Onsite)}
                   />
                   Onsite {event.cpdUnitsOnsite !== null ? `(${event.cpdUnitsOnsite} CPD units${event.cpdCodeOnsite ? `, ${event.cpdCodeOnsite}` : ''})` : '(CPD units: TBD)'}
@@ -258,7 +265,7 @@ export function EventRegisterModal({ event, onClose, onRegistered }: EventRegist
                     name="eventMode"
                     className="form-radio"
                     checked={mode === EventMode.Online}
-                    disabled={lacksPortalAccess}
+                    disabled={!!blockedMessage}
                     onChange={() => setMode(EventMode.Online)}
                   />
                   Online {event.cpdUnitsOnline !== null ? `(${event.cpdUnitsOnline} CPD units${event.cpdCodeOnline ? `, ${event.cpdCodeOnline}` : ''})` : '(CPD units: TBD)'}
@@ -297,7 +304,7 @@ export function EventRegisterModal({ event, onClose, onRegistered }: EventRegist
             {readOnlyStatus ? 'Close' : 'Cancel'}
           </StandardButton>
           {readOnlyStatus ? null : !registrationId ? (
-            <StandardButton onClick={handleRegister} loading={saving} loadingLabel="Registering…" disabled={lacksPortalAccess}>
+            <StandardButton onClick={handleRegister} loading={saving} loadingLabel="Registering…" disabled={!!blockedMessage}>
               Register
             </StandardButton>
           ) : (

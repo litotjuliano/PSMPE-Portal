@@ -108,15 +108,36 @@ public class PaymentService(IApplicationDbContext db, ICacheService? cache = nul
             return Result<PaymentDto>.Conflict("You already have a payment awaiting verification.");
         }
 
+        if (request.PortalAccessOnly)
+        {
+            if (member.RenewalDueDate is null)
+            {
+                return Result<PaymentDto>.Failure("You need an active membership before adding Portal Access separately.");
+            }
+
+            if (member.HasPortalAccess)
+            {
+                return Result<PaymentDto>.Failure("You already have Portal Access.");
+            }
+        }
+
         // Derived, not taken from the caller: a member can't claim a renewal for a membership that
         // was never activated, nor a second "new membership" payment once they're active.
-        var kind = member.RenewalDueDate is null ? PaymentKind.NewMembership : PaymentKind.Renewal;
+        // PortalAccessOnly overrides this - it's neither, a standalone mid-cycle add-on purchase
+        // validated above.
+        var kind = request.PortalAccessOnly
+            ? PaymentKind.PortalAccessOnly
+            : member.RenewalDueDate is null ? PaymentKind.NewMembership : PaymentKind.Renewal;
+
+        // PortalAccessOnly always includes the add-on by definition, regardless of what
+        // IncludePortalAccess was passed as.
+        var includesPortalAccess = request.PortalAccessOnly || request.IncludePortalAccess;
 
         // Captured independently of the caller-declared Amount, same as GetFeesAsync resolves the
         // other three fees - this is "what PortalFee was configured (net of any promotion) when
         // this payment was made," so later fee/promo edits can never retroactively change what a
         // historical payment's portal-revenue contribution was. Zero when the add-on isn't included.
-        var portalFeeAmount = request.IncludePortalAccess
+        var portalFeeAmount = includesPortalAccess
             ? await FeePromotionResolver.ResolveCurrentAsync(db, MembershipFeeKeys.PortalFee, MembershipFeeKeys.DefaultPortalFee, cancellationToken)
             : 0m;
 
@@ -131,7 +152,7 @@ public class PaymentService(IApplicationDbContext db, ICacheService? cache = nul
             Status = PaymentStatus.Submitted,
             // Whatever the member declared - no server-side forcing or branching, and no
             // consistency check against Amount (mismatch guarding is a UI safety net only).
-            IncludesPortalAccess = request.IncludePortalAccess,
+            IncludesPortalAccess = includesPortalAccess,
             PortalFeeAmount = portalFeeAmount,
         };
 
