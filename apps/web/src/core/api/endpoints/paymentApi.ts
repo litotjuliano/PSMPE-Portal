@@ -4,6 +4,7 @@ import type { PagedResult } from './adminApi'
 export const PaymentKind = {
   NewMembership: 'NewMembership',
   Renewal: 'Renewal',
+  EventRegistration: 'EventRegistration',
 } as const
 
 export type PaymentKindValue = (typeof PaymentKind)[keyof typeof PaymentKind]

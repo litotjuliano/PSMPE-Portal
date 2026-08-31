@@ -22,6 +22,7 @@ interface PaymentsQueueTableProps {
 const KIND_LABELS: Record<Payment['kind'], string> = {
   NewMembership: 'New membership',
   Renewal: 'Renewal',
+  EventRegistration: 'Event registration',
 }
 
 const peso = new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' })
