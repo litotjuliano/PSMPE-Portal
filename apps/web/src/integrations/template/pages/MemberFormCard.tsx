@@ -659,7 +659,7 @@ export const MemberFormCard = ({
               <select
                 className="form-input"
                 value={state.status}
-                onChange={(e) => onChange('status', Number(e.target.value) as MembershipStatusValue)}
+                onChange={(e) => onChange('status', e.target.value as MembershipStatusValue)}
               >
                 {Object.entries(statusLabels).map(([value, label]) => (
                   <option key={value} value={value}>
