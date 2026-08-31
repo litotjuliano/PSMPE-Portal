@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useState } from 'react'
-import { useMembershipAccess } from '../../../core/auth/ExpiredMembershipGate'
 import type { Event } from '../../../core/api/endpoints/eventApi'
 import {
   EventMode,
@@ -61,10 +60,6 @@ function isPastPaymentSubmission(status: EventRegistrationStatusValue | null): b
 }
 
 export function EventRegisterModal({ event, onClose, onRegistered }: EventRegisterModalProps) {
-  // Browsing an event is allowed regardless of the portal-access add-on (see
-  // ExpiredMembershipGate.tsx's /events exception) - only the Register action itself is gated
-  // here, disabled rather than hidden so the member can see what registering would involve.
-  const { lacksPortalAccess } = useMembershipAccess()
   const [mode, setMode] = useState<EventModeValue>(defaultMode(event))
   const [amount, setAmount] = useState(feeForMode(event, defaultMode(event)).toString())
   const [referenceNo, setReferenceNo] = useState('')
@@ -233,34 +228,15 @@ export function EventRegisterModal({ event, onClose, onRegistered }: EventRegist
             </>
           ) : !registrationId ? (
             <>
-              {lacksPortalAccess && (
-                <p className="text-sm text-warning bg-warning/10 rounded-lg px-3 py-2">
-                  Add Portal Access on your next renewal to register for events.
-                </p>
-              )}
               {isModeOffered(event, EventMode.Onsite) && (
                 <label className="flex items-center gap-2 text-sm">
-                  <input
-                    type="radio"
-                    name="eventMode"
-                    className="form-radio"
-                    checked={mode === EventMode.Onsite}
-                    disabled={lacksPortalAccess}
-                    onChange={() => setMode(EventMode.Onsite)}
-                  />
+                  <input type="radio" name="eventMode" className="form-radio" checked={mode === EventMode.Onsite} onChange={() => setMode(EventMode.Onsite)} />
                   Onsite {event.cpdUnitsOnsite !== null ? `(${event.cpdUnitsOnsite} CPD units${event.cpdCodeOnsite ? `, ${event.cpdCodeOnsite}` : ''})` : '(CPD units: TBD)'}
                 </label>
               )}
               {isModeOffered(event, EventMode.Online) && (
                 <label className="flex items-center gap-2 text-sm">
-                  <input
-                    type="radio"
-                    name="eventMode"
-                    className="form-radio"
-                    checked={mode === EventMode.Online}
-                    disabled={lacksPortalAccess}
-                    onChange={() => setMode(EventMode.Online)}
-                  />
+                  <input type="radio" name="eventMode" className="form-radio" checked={mode === EventMode.Online} onChange={() => setMode(EventMode.Online)} />
                   Online {event.cpdUnitsOnline !== null ? `(${event.cpdUnitsOnline} CPD units${event.cpdCodeOnline ? `, ${event.cpdCodeOnline}` : ''})` : '(CPD units: TBD)'}
                 </label>
               )}
@@ -297,7 +273,7 @@ export function EventRegisterModal({ event, onClose, onRegistered }: EventRegist
             {readOnlyStatus ? 'Close' : 'Cancel'}
           </StandardButton>
           {readOnlyStatus ? null : !registrationId ? (
-            <StandardButton onClick={handleRegister} loading={saving} loadingLabel="Registering…" disabled={lacksPortalAccess}>
+            <StandardButton onClick={handleRegister} loading={saving} loadingLabel="Registering…">
               Register
             </StandardButton>
           ) : (

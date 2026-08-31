@@ -11,11 +11,7 @@ interface MembershipAccessState {
   isExpired: boolean
   /** The member's most recently verified payment didn't include the portal-access add-on. */
   lacksPortalAccess: boolean
-  /** Registered but never submitted a membership application - no Member row exists at all yet
-   *  (getMyProfile() 404s). See MembershipAccessMiddleware's MEMBERSHIP_NOT_STARTED check. */
-  hasNoProfile: boolean
-  /** Any condition above - used by AppMenu to hide everything but Profile (and, for
-   *  lacksPortalAccess alone, Events too - see keepProfileOnly's exception). Always all-false for
+  /** Either condition above - used by AppMenu to hide everything but Profile. Always all-false for
    *  administrative accounts. */
   isRestricted: boolean
 }
@@ -23,7 +19,6 @@ interface MembershipAccessState {
 const defaultMembershipAccessState: MembershipAccessState = {
   isExpired: false,
   lacksPortalAccess: false,
-  hasNoProfile: false,
   isRestricted: false,
 }
 
@@ -41,16 +36,9 @@ export const useMembershipAccess = () => useContext(MembershipAccessContext)
  * but never submitted an application - getMyProfile() 404s) - any one condition alone is enough.
  * Grace-period members (Status still Active) with portal access are unaffected.
  *
- * One exception: /events stays reachable for a member who is *only* lacksPortalAccess (not
- * Expired, not hasNoProfile) - Events is meant to be browsable by every member regardless of the
- * portal-access add-on, with only the Register action itself gated (see EventsTable.tsx/
- * EventRegisterModal.tsx, which disable it using this same lacksPortalAccess flag). Matches
- * EventsController.GetAll/GetById/GetPoster's own [AllowExpiredMember] on the backend.
- *
  * This is UX only, not the security boundary: MembershipAccessMiddleware on the backend is what
- * actually enforces all three restrictions (with the same /events browsing exception baked into
- * which endpoints carry [AllowExpiredMember]), so a request slipping past this redirect (e.g.
- * during the brief window before the fetch resolves) still gets a 403 from the API.
+ * actually enforces all three restrictions, so a request slipping past this redirect (e.g. during
+ * the brief window before the fetch resolves) still gets a 403 from the API.
  *
  * Fails open on any OTHER fetch error / while loading - same trade-off DataPrivacyConsentGate
  * already makes, since briefly showing a page to someone whose status hasn't loaded yet is far
@@ -79,7 +67,7 @@ export function ExpiredMembershipGate() {
         if (cancelled) return
         const isExpired = member.status === MembershipStatus.Expired
         const lacksPortalAccess = !member.hasPortalAccess
-        setState({ isExpired, lacksPortalAccess, hasNoProfile: false, isRestricted: isExpired || lacksPortalAccess })
+        setState({ isExpired, lacksPortalAccess, isRestricted: isExpired || lacksPortalAccess })
       })
       .catch((err) => {
         if (cancelled) return
@@ -89,21 +77,16 @@ export function ExpiredMembershipGate() {
         // meaningful state, not a transient failure - restrict the same as Expired/lacking portal
         // access so the member lands on /profile, which already renders the application wizard for
         // exactly this case. Anything else (network error, 500) keeps failing open as before.
-        const hasNoProfile = isAxiosError(err) && err.response?.status === 404
-        setState(hasNoProfile ? { ...defaultMembershipAccessState, hasNoProfile: true, isRestricted: true } : defaultMembershipAccessState)
+        setState(isAxiosError(err) && err.response?.status === 404 ? { ...defaultMembershipAccessState, isRestricted: true } : defaultMembershipAccessState)
       })
     return () => {
       cancelled = true
     }
   }, [isPureMember])
 
-  const onlyLacksPortalAccess = state.lacksPortalAccess && !state.isExpired && !state.hasNoProfile
-  const eventsExempt = onlyLacksPortalAccess && location.pathname === '/events'
-  const shouldRedirect = state.isRestricted && location.pathname !== '/profile' && !eventsExempt
-
   return (
     <MembershipAccessContext.Provider value={state}>
-      {shouldRedirect ? <Navigate to="/profile" replace /> : <Outlet />}
+      {state.isRestricted && location.pathname !== '/profile' ? <Navigate to="/profile" replace /> : <Outlet />}
     </MembershipAccessContext.Provider>
   )
 }

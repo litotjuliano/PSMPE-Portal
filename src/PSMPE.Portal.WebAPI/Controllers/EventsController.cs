@@ -24,19 +24,13 @@ namespace PSMPE.Portal.WebAPI.Controllers;
 [Route("api/events")]
 public class EventsController(IEventService eventService, IPaymentService paymentService, IEventPosterService eventPosterService) : ControllerBase
 {
-    /// <summary>Browsable regardless of the portal-access add-on - only the Register action itself
-    /// (below) requires it. Matches ExpiredMembershipGate.tsx's own /events route exception and
-    /// AppMenu.tsx keeping the Events nav item for a member who only lacks portal access.</summary>
     [HttpGet]
-    [AllowExpiredMember]
     public async Task<ActionResult<PagedResult<EventDto>>> GetAll(
         int page = 1, int pageSize = 20, string? search = null, string? chapter = null, bool upcomingOnly = false,
         CancellationToken cancellationToken = default) =>
         Ok(await eventService.GetAllAsync(page, pageSize, search, chapter, upcomingOnly, CurrentUserId, IsEventsStaff, cancellationToken));
 
-    /// <summary>See GetAll's comment - same browsable-regardless-of-portal-access reasoning.</summary>
     [HttpGet("{id:guid}")]
-    [AllowExpiredMember]
     public async Task<ActionResult<EventDto>> GetById(Guid id, CancellationToken cancellationToken)
     {
         var @event = await eventService.GetByIdAsync(id, CurrentUserId, IsEventsStaff, cancellationToken);
@@ -70,11 +64,10 @@ public class EventsController(IEventService eventService, IPaymentService paymen
         return ToActionResult(result);
     }
 
-    /// <summary>Any authenticated caller, regardless of portal access - same as GetAll/GetById,
-    /// since the poster is shown on the member-facing events list/register views. A Draft event's
-    /// poster is still gated to staff only, same as GetById.</summary>
+    /// <summary>Any authenticated caller - same auth level as GetById, since the poster is shown on
+    /// the member-facing events list/register views, not just to staff. A Draft event's poster is
+    /// still gated to staff only, same as GetById.</summary>
     [HttpGet("{id:guid}/poster")]
-    [AllowExpiredMember]
     public async Task<IActionResult> GetPoster(Guid id, CancellationToken cancellationToken)
     {
         var file = await eventPosterService.GetAsync(id, IsEventsStaff, cancellationToken);
