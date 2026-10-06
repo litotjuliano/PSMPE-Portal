@@ -85,7 +85,9 @@ export function RegisterPage() {
         username: username || undefined,
         dataPrivacyConsent: termsAccepted,
       })
-      navigate('/verify-email', { state: { email: response.email, devVerificationLink: response.devVerificationLink } })
+      navigate('/verify-email', {
+        state: { email: response.email, devVerificationLink: response.devVerificationLink, emailSent: response.emailSent },
+      })
     } catch (err) {
       if (isAxiosError(err) && err.response?.status === 409) {
         setError(err.response.data?.message ?? 'An account with this email or username already exists.')
