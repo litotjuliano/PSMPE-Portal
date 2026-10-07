@@ -8,6 +8,8 @@ running app's own footer/"What's New" card get their copy from (`apps/web/src/co
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-10-07
+
 ### Added
 
 - A "Resend to all unverified" button on the Users page emails a new verification link to every

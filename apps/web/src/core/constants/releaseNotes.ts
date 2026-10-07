@@ -23,6 +23,36 @@ export interface ReleaseNote {
 
 export const releaseNotes: ReleaseNote[] = [
   {
+    version: '1.2.0',
+    date: '2026-10-07',
+    changes: [
+      {
+        type: 'Added',
+        description:
+          'A Resend to all unverified button on the Users page emails a new verification link to every unverified account at once and reports how many were sent.',
+      },
+      {
+        type: 'Added',
+        description:
+          'The Users page now shows Email sent with the date once a verification email has gone out, and asks before sending another - so you do not resend to the same person twice by accident.',
+      },
+      {
+        type: 'Changed',
+        description:
+          'The verification email is now a proper message with a Confirm my email button and a plain-text version, so it is less likely to land in junk. The check your email page also reminds members to look in Junk or Spam.',
+      },
+      {
+        type: 'Changed',
+        description:
+          'Results of sending an email from the Users page now appear as a pop-up that disappears on its own.',
+      },
+      {
+        type: 'Fixed',
+        description: 'The Users page showed No users yet when the list failed to load; it now says what went wrong.',
+      },
+    ],
+  },
+  {
     version: '1.1.0',
     date: '2026-10-07',
     changes: [
