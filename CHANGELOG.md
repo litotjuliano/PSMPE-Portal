@@ -8,6 +8,8 @@ running app's own footer/"What's New" card get their copy from (`apps/web/src/co
 
 ## [Unreleased]
 
+## [1.0.1] - 2026-10-06
+
 ### Fixed
 
 - If the verification email can't be sent when someone registers (e.g. the email provider is

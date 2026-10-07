@@ -23,6 +23,17 @@ export interface ReleaseNote {
 
 export const releaseNotes: ReleaseNote[] = [
   {
+    version: '1.0.1',
+    date: '2026-10-06',
+    changes: [
+      {
+        type: 'Fixed',
+        description:
+          "If the verification email can't be sent when you register, you now see a clear message that your account was created and to try again shortly, instead of a generic error. Resend verification email also reports a temporary failure instead of doing nothing.",
+      },
+    ],
+  },
+  {
     version: '1.0.0',
     date: '2026-08-31',
     changes: [
