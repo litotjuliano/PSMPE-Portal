@@ -710,6 +710,33 @@ public class AdminControllerTests : IClassFixture<CustomWebApplicationFactory>, 
     }
 
     [Fact]
+    public async Task ResendVerificationEmail_RecordsWhenItWasSent_SoTheListCanShowIt()
+    {
+        var user = await CreateUserAsync(RoleNames.Member);
+        Assert.Null(user.VerificationEmailLastSentAt);
+        var before = DateTimeOffset.UtcNow;
+
+        await _controller.ResendVerificationEmail(user.Id);
+
+        var summary = Assert.IsType<AdminController.UserSummaryDto>(
+            Assert.IsType<OkObjectResult>((await _controller.GetUserById(user.Id)).Result).Value);
+        Assert.NotNull(summary.VerificationEmailLastSentAt);
+        Assert.True(summary.VerificationEmailLastSentAt >= before);
+    }
+
+    [Fact]
+    public async Task ResendVerificationEmail_WhenTheEmailCannotBeSent_DoesNotMarkItAsSent()
+    {
+        var user = await CreateUserAsync(RoleNames.Member);
+        var controller = CreateController(new TestSupport.ThrowingEmailSender(), callerRoles: RoleNames.SuperAdmin);
+
+        await controller.ResendVerificationEmail(user.Id);
+
+        var reloaded = await _userManager.FindByIdAsync(user.Id.ToString());
+        Assert.Null(reloaded!.VerificationEmailLastSentAt);
+    }
+
+    [Fact]
     public async Task ResendVerificationEmail_ForAnAlreadyVerifiedAccount_IsRefused()
     {
         var user = await CreateUserAsync(RoleNames.Member);
@@ -740,6 +767,49 @@ public class AdminControllerTests : IClassFixture<CustomWebApplicationFactory>, 
 
         var objectResult = Assert.IsType<ObjectResult>(result);
         Assert.Equal(StatusCodes.Status503ServiceUnavailable, objectResult.StatusCode);
+    }
+
+    [Fact]
+    public async Task ResendVerificationToAll_EmailsEveryUnverifiedAccountAndNobodyElse()
+    {
+        var unverifiedA = await CreateUserAsync(RoleNames.Member);
+        var unverifiedB = await CreateUserAsync(RoleNames.Member);
+        var verified = await CreateUserAsync(RoleNames.Member);
+        verified.EmailConfirmed = true;
+        await _userManager.UpdateAsync(verified);
+        var sender = new TestSupport.RecordingEmailSender();
+        var controller = CreateController(sender, callerRoles: RoleNames.SuperAdmin);
+
+        var result = await controller.ResendVerificationToAllUnverified(CancellationToken.None);
+
+        var dto = Assert.IsType<AdminController.BulkResendResultDto>(Assert.IsType<OkObjectResult>(result.Result).Value);
+        Assert.Contains(unverifiedA.Email, sender.Recipients);
+        Assert.Contains(unverifiedB.Email, sender.Recipients);
+        Assert.DoesNotContain(verified.Email, sender.Recipients);
+        Assert.NotNull((await _userManager.FindByIdAsync(unverifiedA.Id.ToString()))!.VerificationEmailLastSentAt);
+        Assert.Null((await _userManager.FindByIdAsync(verified.Id.ToString()))!.VerificationEmailLastSentAt);
+        Assert.Equal(sender.Recipients.Count, dto.Sent);
+        Assert.Equal(0, dto.Failed);
+        Assert.False(dto.StoppedEarly);
+    }
+
+    [Fact]
+    public async Task ResendVerificationToAll_WhenEmailIsDown_StopsAfterThreeFailuresInARow()
+    {
+        for (var i = 0; i < 5; i++)
+        {
+            await CreateUserAsync(RoleNames.Member);
+        }
+
+        var controller = CreateController(new TestSupport.ThrowingEmailSender(), callerRoles: RoleNames.SuperAdmin);
+
+        var result = await controller.ResendVerificationToAllUnverified(CancellationToken.None);
+
+        var dto = Assert.IsType<AdminController.BulkResendResultDto>(Assert.IsType<OkObjectResult>(result.Result).Value);
+        Assert.Equal(0, dto.Sent);
+        Assert.Equal(3, dto.Failed);
+        Assert.True(dto.StoppedEarly);
+        Assert.True(dto.Total > dto.Attempted);
     }
 
     [Fact]

@@ -141,6 +141,38 @@ public class AuthControllerTests : IClassFixture<CustomWebApplicationFactory>, I
         var user = await scope.ServiceProvider.GetRequiredService<UserManager<ApplicationUser>>().FindByEmailAsync(email);
         Assert.NotNull(user);
         Assert.False(user!.EmailConfirmed);
+        Assert.Null(user.VerificationEmailLastSentAt);
+    }
+
+    [Fact]
+    public async Task Register_RecordsWhenTheVerificationEmailWasSent()
+    {
+        var email = $"{Guid.NewGuid()}@example.com";
+        await _client.PostAsJsonFromNewClientIpAsync("/api/auth/register",
+            new RegisterRequest(email, "Password123!", "Test User", DataPrivacyConsent: true));
+
+        using var scope = _factory.Services.CreateScope();
+        var user = await scope.ServiceProvider.GetRequiredService<UserManager<ApplicationUser>>().FindByEmailAsync(email);
+        Assert.NotNull(user!.VerificationEmailLastSentAt);
+    }
+
+    [Fact]
+    public async Task ResendVerificationEmail_RecordsWhenItWasSent()
+    {
+        var (email, _, _) = await RegisterAsync();
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var users = scope.ServiceProvider.GetRequiredService<UserManager<ApplicationUser>>();
+            var user = (await users.FindByEmailAsync(email))!;
+            user.VerificationEmailLastSentAt = null;
+            await users.UpdateAsync(user);
+        }
+
+        await _client.PostAsJsonFromNewClientIpAsync("/api/auth/resend-verification-email", new ResendVerificationEmailRequest(email));
+
+        using var checkScope = _factory.Services.CreateScope();
+        var reloaded = await checkScope.ServiceProvider.GetRequiredService<UserManager<ApplicationUser>>().FindByEmailAsync(email);
+        Assert.NotNull(reloaded!.VerificationEmailLastSentAt);
     }
 
     [Fact]

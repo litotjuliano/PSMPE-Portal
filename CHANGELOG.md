@@ -8,6 +8,33 @@ running app's own footer/"What's New" card get their copy from (`apps/web/src/co
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-10-07
+
+### Added
+
+- A "Resend to all unverified" button on the Users page emails a new verification link to every
+  unverified account at once, and reports how many were sent.
+
+- The Users page now marks an unverified account with "Email sent <date>" once a verification
+  email has gone out, relabels its button "Resend again", and asks before sending another - so an
+  admin doesn't resend to the same person twice by accident.
+
+### Changed
+
+- The result of sending an email from the Users page (password reset, resend, bulk resend) now
+  appears as a pop-up notification in the corner that disappears on its own, instead of a line of
+  text at the top of the page.
+- The per-account resend action on the Users page is now a labeled "Resend" button instead of an
+  unlabeled mail icon.
+- The verification email is now a proper message - a greeting, a "Confirm my email" button, and a
+  line explaining why it was sent - with a plain-text version alongside, so it is less likely to be
+  filed as junk. The "check your email" page also reminds members to look in their Junk or Spam
+  folder.
+
+### Fixed
+
+- The Users page showed "No users yet." when the list failed to load; it now says what went wrong.
+
 ## [1.1.0] - 2026-10-07
 
 ### Added

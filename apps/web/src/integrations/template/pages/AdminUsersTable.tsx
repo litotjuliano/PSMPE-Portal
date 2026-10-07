@@ -8,6 +8,10 @@ import { StandardButton } from '../components/shared/StandardButton'
 
 type SortableColumn = NonNullable<GetUsersParams['sortBy']>
 
+/** "Oct 7, 2:02 PM" - the year is dropped since a pending link is always recent. */
+const formatSentAt = (iso: string) =>
+  new Date(iso).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
+
 interface AdminUsersTableProps {
   users: UserSummary[]
   canManageRoles: boolean
@@ -32,6 +36,9 @@ interface AdminUsersTableProps {
   onSendPasswordReset: (userId: string) => void
   /** Same admin:manage-users gate as the password reset, so the same client-side approximation. */
   onResendVerificationEmail: (userId: string) => void
+  onResendVerificationToAll: () => void
+  /** Disables the bulk button while a bulk send is running, so it can't be started twice. */
+  bulkResending?: boolean
   currentUserEmail?: string
   sortBy: SortableColumn
   sortDir: 'asc' | 'desc'
@@ -90,6 +97,8 @@ export const AdminUsersTable = ({
   canSendPasswordReset,
   onSendPasswordReset,
   onResendVerificationEmail,
+  onResendVerificationToAll,
+  bulkResending = false,
   currentUserEmail,
   sortBy,
   sortDir,
@@ -104,6 +113,7 @@ export const AdminUsersTable = ({
   const [verifyingUser, setVerifyingUser] = useState<UserSummary | null>(null)
   const [resettingUser, setResettingUser] = useState<UserSummary | null>(null)
   const [resendingUser, setResendingUser] = useState<UserSummary | null>(null)
+  const [confirmingBulkResend, setConfirmingBulkResend] = useState(false)
 
   return (
     <div className="card">
@@ -155,6 +165,20 @@ export const AdminUsersTable = ({
             >
               Clear
             </button>
+          )}
+          {canSendPasswordReset && (
+            <div className="ms-auto">
+              <StandardButton
+                variant="secondary"
+                size="sm"
+                icon={LuMail}
+                loading={bulkResending}
+                loadingLabel="Sending…"
+                onClick={() => setConfirmingBulkResend(true)}
+              >
+                Resend to all unverified
+              </StandardButton>
+            </div>
           )}
         </div>
       </div>
@@ -227,9 +251,16 @@ export const AdminUsersTable = ({
                             Verified
                           </span>
                         ) : canManageUsers ? (
-                          <StandardButton variant="warning" size="sm" icon={LuCheck} onClick={() => setVerifyingUser(user)}>
-                            Verify
-                          </StandardButton>
+                          <div className="flex flex-col items-start gap-1">
+                            <StandardButton variant="warning" size="sm" icon={LuCheck} onClick={() => setVerifyingUser(user)}>
+                              Verify
+                            </StandardButton>
+                            {user.verificationEmailLastSentAt && (
+                              <span className="text-xs text-success" title="A send, not a delivery - it may still be in spam.">
+                                Email sent {formatSentAt(user.verificationEmailLastSentAt)}
+                              </span>
+                            )}
+                          </div>
                         ) : (
                           <span className="py-0.5 px-2.5 inline-flex items-center text-xs font-medium rounded bg-default-150 text-default-600">
                             Unverified
@@ -266,14 +297,9 @@ export const AdminUsersTable = ({
                               they cannot edit or delete the record. Super Admin rows are excluded
                               because the API hides them from every other caller. */}
                           {canSendPasswordReset && !isSuperAdminRow && !user.emailConfirmed && (
-                            <button
-                              onClick={() => setResendingUser(user)}
-                              className="btn btn-icon size-8 hover:bg-default-150 rounded-full text-default-500"
-                              aria-label="Resend verification email"
-                              title="Resend verification email"
-                            >
-                              <LuMail className="size-4" />
-                            </button>
+                            <StandardButton variant="secondary" size="sm" icon={LuMail} onClick={() => setResendingUser(user)}>
+                              {user.verificationEmailLastSentAt ? 'Resend again' : 'Resend'}
+                            </StandardButton>
                           )}
                           {canSendPasswordReset && !isSuperAdminRow && user.emailConfirmed && (
                             <button
@@ -404,11 +430,26 @@ export const AdminUsersTable = ({
       />
 
       <ConfirmationModal
+        isOpen={confirmingBulkResend}
+        title="Resend to every unverified account?"
+        message="This emails a new verification link to every account that hasn't verified yet - not just the ones on this page. Check the list first: an address with a typo will bounce."
+        confirmLabel="Send to all"
+        confirmVariant="primary"
+        onConfirm={() => {
+          onResendVerificationToAll()
+          setConfirmingBulkResend(false)
+        }}
+        onCancel={() => setConfirmingBulkResend(false)}
+      />
+
+      <ConfirmationModal
         isOpen={resendingUser !== null}
         title="Resend the verification email?"
         message={
           resendingUser
-            ? `${resendingUser.email} will be emailed a new link to verify their account.`
+            ? resendingUser.verificationEmailLastSentAt
+              ? `A verification email was already sent to ${resendingUser.email} on ${formatSentAt(resendingUser.verificationEmailLastSentAt)}. Send another?`
+              : `${resendingUser.email} will be emailed a new link to verify their account.`
             : undefined
         }
         confirmLabel="Send"
