@@ -16,6 +16,7 @@ export function AdminUsersPage() {
   const [sortDir, setSortDir] = useState<NonNullable<GetUsersParams['sortDir']>>('asc')
   const [loading, setLoading] = useState(true)
   const [resetStatus, setResetStatus] = useState<{ ok: boolean; text: string } | null>(null)
+  const [bulkResending, setBulkResending] = useState(false)
 
   // Gates role-checkbox editing (unchanged) and, as of this change, the per-row Edit/Delete
   // icons too - both hidden entirely for a regular Admin, leaving only Email Verification.
@@ -106,6 +107,32 @@ export function AdminUsersPage() {
       )
   }
 
+  const handleResendVerificationToAll = () => {
+    setBulkResending(true)
+    setResetStatus(null)
+    adminApi
+      .resendVerificationToAllUnverified()
+      .then((result) => {
+        const summary = `Sent ${result.sent} of ${result.total} verification emails${result.failed > 0 ? `, ${result.failed} failed` : ''}.`
+        if (result.stoppedEarly) {
+          setResetStatus({ ok: false, text: `${summary} Stopped early because the email service looks to be down - try again in a few minutes.` })
+        } else if (result.total > result.attempted) {
+          setResetStatus({ ok: false, text: `${summary} ${result.total - result.attempted} more are still unverified - click again to continue.` })
+        } else {
+          setResetStatus({ ok: result.failed === 0, text: summary })
+        }
+      })
+      .catch((err) =>
+        setResetStatus({
+          ok: false,
+          text:
+            (isAxiosError(err) && (err.response?.data as { message?: string } | undefined)?.message) ||
+            'Could not send the verification emails. Please try again.',
+        }),
+      )
+      .finally(() => setBulkResending(false))
+  }
+
   const handleResendVerificationEmail = (userId: string) => {
     // No refetch: sending a link changes nothing on this list until the member clicks it.
     setResetStatus(null)
@@ -158,6 +185,8 @@ export function AdminUsersPage() {
             canSendPasswordReset={canManageUsers}
             onSendPasswordReset={handleSendPasswordReset}
             onResendVerificationEmail={handleResendVerificationEmail}
+            onResendVerificationToAll={handleResendVerificationToAll}
+            bulkResending={bulkResending}
             onToggleRole={handleToggleRole}
             onDelete={handleDelete}
             onVerifyEmail={handleVerifyEmail}

@@ -32,6 +32,9 @@ interface AdminUsersTableProps {
   onSendPasswordReset: (userId: string) => void
   /** Same admin:manage-users gate as the password reset, so the same client-side approximation. */
   onResendVerificationEmail: (userId: string) => void
+  onResendVerificationToAll: () => void
+  /** Disables the bulk button while a bulk send is running, so it can't be started twice. */
+  bulkResending?: boolean
   currentUserEmail?: string
   sortBy: SortableColumn
   sortDir: 'asc' | 'desc'
@@ -90,6 +93,8 @@ export const AdminUsersTable = ({
   canSendPasswordReset,
   onSendPasswordReset,
   onResendVerificationEmail,
+  onResendVerificationToAll,
+  bulkResending = false,
   currentUserEmail,
   sortBy,
   sortDir,
@@ -104,6 +109,7 @@ export const AdminUsersTable = ({
   const [verifyingUser, setVerifyingUser] = useState<UserSummary | null>(null)
   const [resettingUser, setResettingUser] = useState<UserSummary | null>(null)
   const [resendingUser, setResendingUser] = useState<UserSummary | null>(null)
+  const [confirmingBulkResend, setConfirmingBulkResend] = useState(false)
 
   return (
     <div className="card">
@@ -155,6 +161,20 @@ export const AdminUsersTable = ({
             >
               Clear
             </button>
+          )}
+          {canSendPasswordReset && (
+            <div className="ms-auto">
+              <StandardButton
+                variant="secondary"
+                size="sm"
+                icon={LuMail}
+                loading={bulkResending}
+                loadingLabel="Sending…"
+                onClick={() => setConfirmingBulkResend(true)}
+              >
+                Resend to all unverified
+              </StandardButton>
+            </div>
           )}
         </div>
       </div>
@@ -266,14 +286,9 @@ export const AdminUsersTable = ({
                               they cannot edit or delete the record. Super Admin rows are excluded
                               because the API hides them from every other caller. */}
                           {canSendPasswordReset && !isSuperAdminRow && !user.emailConfirmed && (
-                            <button
-                              onClick={() => setResendingUser(user)}
-                              className="btn btn-icon size-8 hover:bg-default-150 rounded-full text-default-500"
-                              aria-label="Resend verification email"
-                              title="Resend verification email"
-                            >
-                              <LuMail className="size-4" />
-                            </button>
+                            <StandardButton variant="secondary" size="sm" icon={LuMail} onClick={() => setResendingUser(user)}>
+                              Resend
+                            </StandardButton>
                           )}
                           {canSendPasswordReset && !isSuperAdminRow && user.emailConfirmed && (
                             <button
@@ -401,6 +416,19 @@ export const AdminUsersTable = ({
           setVerifyingUser(null)
         }}
         onCancel={() => setVerifyingUser(null)}
+      />
+
+      <ConfirmationModal
+        isOpen={confirmingBulkResend}
+        title="Resend to every unverified account?"
+        message="This emails a new verification link to every account that hasn't verified yet - not just the ones on this page. Check the list first: an address with a typo will bounce."
+        confirmLabel="Send to all"
+        confirmVariant="primary"
+        onConfirm={() => {
+          onResendVerificationToAll()
+          setConfirmingBulkResend(false)
+        }}
+        onCancel={() => setConfirmingBulkResend(false)}
       />
 
       <ConfirmationModal

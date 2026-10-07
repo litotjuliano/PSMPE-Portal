@@ -87,9 +87,21 @@ API calls. Backed by ASP.NET Core Identity (`PSMPE.Portal.Domain.Entities.Applic
   - Deliberately **not** counted against the per-address email throttle - that cap would let a
     member's own earlier attempts block the admin trying to help them. Authenticated and
     permission-gated, so not an open amplifier.
-  - Frontend: a mail icon in the Users table's Actions column on unverified, non-Super-Admin rows,
-    behind a confirmation dialog, with the result shown inline. Distinct from the orange **Verify**
-    button, which marks the email verified *without* sending anything.
+  - Frontend: a labeled **Resend** button in the Users table's Actions column on unverified,
+    non-Super-Admin rows, behind a confirmation dialog, with the result shown inline. Distinct from
+    the orange **Verify** button, which marks the email verified *without* sending anything.
+
+- `POST /api/admin/users/resend-verification` — admin-triggered verification email to **every**
+  unverified account (`admin:manage-users`)
+  - Response: `200 { total, attempted, sent, failed, stoppedEarly }`. `total` is every unverified
+    account (Super Admin accounts excluded); `attempted` is how many this call reached.
+  - Sends are sequential inside the request, so a call is capped at 200 accounts; if `total >
+    attempted` the Users page tells the admin to click again to continue.
+  - Gives up after **3 consecutive failures** (`stoppedEarly: true`) so a mail-provider outage
+    doesn't make the request sit through one connection timeout per account.
+  - Same per-address throttle exemption as the single resend. Frontend: a **Resend to all
+    unverified** button in the Users table toolbar, behind a confirmation dialog, with a summary
+    line ("Sent 27 of 28 verification emails, 1 failed.").
 
 - `POST /api/auth/reset-password` — consume a reset link and set a new password
   - Auth: anonymous

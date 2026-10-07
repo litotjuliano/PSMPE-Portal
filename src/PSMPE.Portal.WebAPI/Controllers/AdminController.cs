@@ -495,6 +495,85 @@ public class AdminController(
             });
         }
 
+        if (!await TrySendVerificationEmailAsync(user))
+        {
+            return StatusCode(StatusCodes.Status503ServiceUnavailable, new
+            {
+                message = "We couldn't send the verification email right now. Please try again in a few minutes.",
+            });
+        }
+
+        logger.LogInformation("Verification email resent by {CallerId} for account {TargetId}.", CurrentUserId, user.Id);
+        return NoContent();
+    }
+
+    /// <summary>Most accounts one bulk call will email. Sends are sequential inside the request, so
+    /// this bounds how long it can run; anything beyond is reported in Total and picked up by the
+    /// next click.</summary>
+    private const int MaxBulkResend = 200;
+
+    /// <summary>Consecutive failures after which a bulk send gives up. With the mail provider
+    /// down, every attempt would otherwise sit through its own connection timeout.</summary>
+    private const int MaxConsecutiveBulkFailures = 3;
+
+    public record BulkResendResultDto(int Total, int Attempted, int Sent, int Failed, bool StoppedEarly);
+
+    /// <summary>
+    /// Emails a fresh verification link to every account that hasn't verified yet - the bulk form of
+    /// ResendVerificationEmail, same permission and the same per-address throttle exemption. Super
+    /// Admin accounts are skipped (they are never mutable through this API). Gives up early if the
+    /// mail provider looks to be down rather than timing out once per account.
+    /// </summary>
+    [HttpPost("users/resend-verification")]
+    [RequirePermission(Permissions.Admin.ManageUsers)]
+    public async Task<ActionResult<BulkResendResultDto>> ResendVerificationToAllUnverified(CancellationToken cancellationToken)
+    {
+        var candidates = await userManager.Users
+            .Where(u => !u.EmailConfirmed && u.Email != null)
+            .OrderBy(u => u.CreatedAt)
+            .ToListAsync(cancellationToken);
+
+        var targets = new List<ApplicationUser>();
+        foreach (var candidate in candidates)
+        {
+            if (!await IsSuperAdminAccountAsync(candidate))
+            {
+                targets.Add(candidate);
+            }
+        }
+
+        int sent = 0, failed = 0, consecutiveFailures = 0, attempted = 0;
+        var stoppedEarly = false;
+        foreach (var user in targets.Take(MaxBulkResend))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            attempted++;
+            if (await TrySendVerificationEmailAsync(user))
+            {
+                sent++;
+                consecutiveFailures = 0;
+                continue;
+            }
+
+            failed++;
+            if (++consecutiveFailures >= MaxConsecutiveBulkFailures)
+            {
+                stoppedEarly = true;
+                break;
+            }
+        }
+
+        logger.LogInformation(
+            "Bulk verification resend by {CallerId}: {Sent} sent, {Failed} failed, {Total} unverified in total{Stopped}.",
+            CurrentUserId, sent, failed, targets.Count, stoppedEarly ? " (stopped early - email looks to be down)" : string.Empty);
+
+        return Ok(new BulkResendResultDto(targets.Count, attempted, sent, failed, stoppedEarly));
+    }
+
+    /// <summary>Generates a fresh confirmation token and emails the link; false (and a logged error)
+    /// if the email could not be sent.</summary>
+    private async Task<bool> TrySendVerificationEmailAsync(ApplicationUser user)
+    {
         var token = await userManager.GenerateEmailConfirmationTokenAsync(user);
         var verificationLink = AuthLinks.VerifyEmail(configuration, user.Id, token);
 
@@ -504,18 +583,13 @@ public class AdminController(
                 user.Email!,
                 "Verify your PSMPE Portal account",
                 $"<p>Please verify your email by clicking the link below:</p><p><a href=\"{verificationLink}\">{verificationLink}</a></p>");
+            return true;
         }
         catch (Exception ex)
         {
             logger.LogError(ex, "Verification email requested by {CallerId} for account {TargetId} could not be sent.", CurrentUserId, user.Id);
-            return StatusCode(StatusCodes.Status503ServiceUnavailable, new
-            {
-                message = "We couldn't send the verification email right now. Please try again in a few minutes.",
-            });
+            return false;
         }
-
-        logger.LogInformation("Verification email resent by {CallerId} for account {TargetId}.", CurrentUserId, user.Id);
-        return NoContent();
     }
 
     [HttpPost("users/{id:guid}/verify-email")]

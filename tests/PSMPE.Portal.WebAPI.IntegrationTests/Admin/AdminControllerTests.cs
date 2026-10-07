@@ -743,6 +743,47 @@ public class AdminControllerTests : IClassFixture<CustomWebApplicationFactory>, 
     }
 
     [Fact]
+    public async Task ResendVerificationToAll_EmailsEveryUnverifiedAccountAndNobodyElse()
+    {
+        var unverifiedA = await CreateUserAsync(RoleNames.Member);
+        var unverifiedB = await CreateUserAsync(RoleNames.Member);
+        var verified = await CreateUserAsync(RoleNames.Member);
+        verified.EmailConfirmed = true;
+        await _userManager.UpdateAsync(verified);
+        var sender = new TestSupport.RecordingEmailSender();
+        var controller = CreateController(sender, callerRoles: RoleNames.SuperAdmin);
+
+        var result = await controller.ResendVerificationToAllUnverified(CancellationToken.None);
+
+        var dto = Assert.IsType<AdminController.BulkResendResultDto>(Assert.IsType<OkObjectResult>(result.Result).Value);
+        Assert.Contains(unverifiedA.Email, sender.Recipients);
+        Assert.Contains(unverifiedB.Email, sender.Recipients);
+        Assert.DoesNotContain(verified.Email, sender.Recipients);
+        Assert.Equal(sender.Recipients.Count, dto.Sent);
+        Assert.Equal(0, dto.Failed);
+        Assert.False(dto.StoppedEarly);
+    }
+
+    [Fact]
+    public async Task ResendVerificationToAll_WhenEmailIsDown_StopsAfterThreeFailuresInARow()
+    {
+        for (var i = 0; i < 5; i++)
+        {
+            await CreateUserAsync(RoleNames.Member);
+        }
+
+        var controller = CreateController(new TestSupport.ThrowingEmailSender(), callerRoles: RoleNames.SuperAdmin);
+
+        var result = await controller.ResendVerificationToAllUnverified(CancellationToken.None);
+
+        var dto = Assert.IsType<AdminController.BulkResendResultDto>(Assert.IsType<OkObjectResult>(result.Result).Value);
+        Assert.Equal(0, dto.Sent);
+        Assert.Equal(3, dto.Failed);
+        Assert.True(dto.StoppedEarly);
+        Assert.True(dto.Total > dto.Attempted);
+    }
+
+    [Fact]
     public async Task SendPasswordReset_ForAnUnverifiedAccount_IsRefused()
     {
         // Mirrors ForgotPassword: mailing a reset to an unproven address undermines the reason

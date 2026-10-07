@@ -14,6 +14,16 @@ export interface UserSummary {
   dataPrivacyConsentVersion: string | null
 }
 
+export interface BulkResendResult {
+  /** Every unverified account (Super Admin excluded), whether or not this call reached it. */
+  total: number
+  attempted: number
+  sent: number
+  failed: number
+  /** True when sending gave up after repeated failures - the email provider looks to be down. */
+  stoppedEarly: boolean
+}
+
 export interface RoleSummary {
   id: string
   name: Role
@@ -80,6 +90,8 @@ export const adminApi = {
     apiClient.post(`/api/admin/users/${userId}/password-reset`).then(() => undefined),
   resendVerificationEmail: (userId: string) =>
     apiClient.post(`/api/admin/users/${userId}/resend-verification`).then(() => undefined),
+  resendVerificationToAllUnverified: () =>
+    apiClient.post<BulkResendResult>('/api/admin/users/resend-verification').then((res) => res.data),
 
   getRoles: () => apiClient.get<RoleSummary[]>('/api/admin/roles').then((res) => res.data),
 

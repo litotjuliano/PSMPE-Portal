@@ -8,6 +8,16 @@ running app's own footer/"What's New" card get their copy from (`apps/web/src/co
 
 ## [Unreleased]
 
+### Added
+
+- A "Resend to all unverified" button on the Users page emails a new verification link to every
+  unverified account at once, and reports how many were sent.
+
+### Changed
+
+- The per-account resend action on the Users page is now a labeled "Resend" button instead of an
+  unlabeled mail icon.
+
 ## [1.1.0] - 2026-10-07
 
 ### Added
