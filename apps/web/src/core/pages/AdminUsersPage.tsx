@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { isAxiosError } from 'axios'
 import { adminApi, type GetUsersParams, type UserSummary } from '../api/endpoints/adminApi'
-import { AdminUsersTable, PageBreadcrumb, PageMeta } from '../../integrations/template'
+import { AdminUsersTable, PageBreadcrumb, PageMeta, Toast, type ToastStatus } from '../../integrations/template'
 import { useAuth } from '../auth/useAuth'
 import { Roles, type Role } from '../types/auth'
 
@@ -15,7 +15,10 @@ export function AdminUsersPage() {
   const [sortBy, setSortBy] = useState<NonNullable<GetUsersParams['sortBy']>>('displayName')
   const [sortDir, setSortDir] = useState<NonNullable<GetUsersParams['sortDir']>>('asc')
   const [loading, setLoading] = useState(true)
-  const [resetStatus, setResetStatus] = useState<{ ok: boolean; text: string } | null>(null)
+  // Result of the last send-email action (password reset, resend, bulk resend), shown as a toast.
+  const [resetStatus, setResetStatus] = useState<ToastStatus | null>(null)
+  const [bulkResending, setBulkResending] = useState(false)
+  const [loadError, setLoadError] = useState<string | null>(null)
 
   // Gates role-checkbox editing (unchanged) and, as of this change, the per-row Edit/Delete
   // icons too - both hidden entirely for a regular Admin, leaving only Email Verification.
@@ -60,11 +63,25 @@ export function AdminUsersPage() {
     // filter that is no longer selected - which reads as "the filter is wrong".
     let cancelled = false
     setLoading(true)
+    setLoadError(null)
     fetchUsers()
       .then((result) => {
         if (cancelled) return
         setUsers(result.items)
         setTotalCount(result.totalCount)
+      })
+      .catch((err) => {
+        if (cancelled) return
+        // Without this a failed request left the empty list in place, which reads as "No users
+        // yet." - a wrong answer that hides the real cause (expired session, 403, server down).
+        const status = isAxiosError(err) ? err.response?.status : undefined
+        setLoadError(
+          status === 403
+            ? "You don't have permission to view users."
+            : status
+              ? `Could not load users (error ${status}). Try reloading the page.`
+              : 'Could not reach the server. Check your connection and try again.',
+        )
       })
       .finally(() => {
         if (!cancelled) setLoading(false)
@@ -106,12 +123,43 @@ export function AdminUsersPage() {
       )
   }
 
+  const handleResendVerificationToAll = () => {
+    setBulkResending(true)
+    setResetStatus(null)
+    adminApi
+      .resendVerificationToAllUnverified()
+      .then((result) => {
+        const summary = `Sent ${result.sent} of ${result.total} verification emails${result.failed > 0 ? `, ${result.failed} failed` : ''}.`
+        if (result.stoppedEarly) {
+          setResetStatus({ ok: false, text: `${summary} Stopped early because the email service looks to be down - try again in a few minutes.` })
+        } else if (result.total > result.attempted) {
+          setResetStatus({ ok: false, text: `${summary} ${result.total - result.attempted} more are still unverified - click again to continue.` })
+        } else {
+          setResetStatus({ ok: result.failed === 0, text: summary })
+        }
+        return refetch().catch(() => undefined)
+      })
+      .catch((err) =>
+        setResetStatus({
+          ok: false,
+          text:
+            (isAxiosError(err) && (err.response?.data as { message?: string } | undefined)?.message) ||
+            'Could not send the verification emails. Please try again.',
+        }),
+      )
+      .finally(() => setBulkResending(false))
+  }
+
   const handleResendVerificationEmail = (userId: string) => {
-    // No refetch: sending a link changes nothing on this list until the member clicks it.
     setResetStatus(null)
     adminApi
       .resendVerificationEmail(userId)
-      .then(() => setResetStatus({ ok: true, text: 'Verification email sent.' }))
+      // Refetch so the row picks up its "sent" mark straight away.
+      .then(() => {
+        setResetStatus({ ok: true, text: 'Verification email sent.' })
+        // A failed refresh must not read as a failed send.
+        return refetch().catch(() => undefined)
+      })
       .catch((err) =>
         setResetStatus({
           ok: false,
@@ -122,7 +170,7 @@ export function AdminUsersPage() {
       )
   }
 
-  const handleSortChange =(column: NonNullable<GetUsersParams['sortBy']>) => {
+  const handleSortChange = (column: NonNullable<GetUsersParams['sortBy']>) => {
     if (column === sortBy) {
       setSortDir((current) => (current === 'asc' ? 'desc' : 'asc'))
     } else {
@@ -142,9 +190,11 @@ export function AdminUsersPage() {
       <PageMeta title="Users" />
       <main>
         <PageBreadcrumb title="Users" />
-        {resetStatus && <p className={`text-sm mb-4 ${resetStatus.ok ? 'text-success' : 'text-danger'}`}>{resetStatus.text}</p>}
+        <Toast status={resetStatus} onDismiss={() => setResetStatus(null)} />
         {loading ? (
           <p className="text-sm text-default-500">Loading…</p>
+        ) : loadError ? (
+          <p className="text-sm text-danger">{loadError}</p>
         ) : (
           <AdminUsersTable
             users={users}
@@ -158,6 +208,8 @@ export function AdminUsersPage() {
             canSendPasswordReset={canManageUsers}
             onSendPasswordReset={handleSendPasswordReset}
             onResendVerificationEmail={handleResendVerificationEmail}
+            onResendVerificationToAll={handleResendVerificationToAll}
+            bulkResending={bulkResending}
             onToggleRole={handleToggleRole}
             onDelete={handleDelete}
             onVerifyEmail={handleVerifyEmail}

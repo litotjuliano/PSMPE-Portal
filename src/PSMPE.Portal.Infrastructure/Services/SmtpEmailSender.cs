@@ -32,7 +32,9 @@ public class SmtpEmailSender(IConfiguration configuration) : IEmailSender
         message.To.Add(MailboxAddress.Parse(to));
         message.Subject = subject;
 
-        var bodyBuilder = new BodyBuilder { HtmlBody = htmlBody };
+        // Both parts: HTML-only mail is a spam signal (Outlook.com junked ours), and a text part
+        // is what a text-only client or a screen reader falls back to.
+        var bodyBuilder = new BodyBuilder { HtmlBody = htmlBody, TextBody = EmailText.FromHtml(htmlBody) };
         foreach (var attachment in attachments ?? [])
         {
             bodyBuilder.Attachments.Add(attachment.FileName, attachment.Content, ContentType.Parse(attachment.ContentType));

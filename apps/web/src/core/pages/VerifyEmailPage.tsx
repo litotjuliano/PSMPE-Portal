@@ -104,6 +104,14 @@ export function VerifyEmailPage() {
                   activate your account.
                 </p>
               )}
+              {/* New sender, so some providers (Outlook and Hotmail especially) file this under
+                  Junk at first - say so before the member concludes it never arrived. */}
+              {state.emailSent !== false && (
+                <p className="text-base text-default-500 mb-4">
+                  Can't find it? Check your <span className="font-semibold text-default-800">Junk or Spam</span> folder, and mark
+                  the email as "Not junk" so future emails reach your inbox.
+                </p>
+              )}
               <p className="text-base text-default-500 mb-4">
                 Did you not receive an email?{' '}
                 <button type="button" onClick={handleResend} disabled={resending || !email} className="text-primary disabled:opacity-50">

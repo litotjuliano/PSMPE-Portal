@@ -131,10 +131,13 @@ public class AuthController(
         // quota) must not turn the request into a 500 - the user would think registration failed
         // and retry into a "this email already exists" conflict. Report it instead, and point
         // them at Resend, which works as soon as email is back.
-        var emailSent = await TrySendAsync(
-            user.Email!,
-            "Verify your PSMPE Portal account",
-            $"<p>Welcome to PSMPE Portal. Please verify your email by clicking the link below:</p><p><a href=\"{verificationLink}\">{verificationLink}</a></p>");
+        var (verifySubject, verifyHtml) = AuthEmails.VerifyEmail(user.DisplayName, verificationLink);
+        var emailSent = await TrySendAsync(user.Email!, verifySubject, verifyHtml);
+
+        if (emailSent)
+        {
+            await MarkVerificationSentAsync(user);
+        }
 
         // No token here - the account can't be used until the email is confirmed (see Login).
         return Ok(new RegisterResponse(
@@ -205,10 +208,8 @@ public class AuthController(
 
         var confirmationToken = await userManager.GenerateEmailConfirmationTokenAsync(user);
         var verificationLink = BuildVerificationLink(user.Id, confirmationToken);
-        var emailSent = await TrySendAsync(
-            user.Email!,
-            "Verify your PSMPE Portal account",
-            $"<p>Please verify your email by clicking the link below:</p><p><a href=\"{verificationLink}\">{verificationLink}</a></p>");
+        var (verifySubject, verifyHtml) = AuthEmails.VerifyEmail(user.DisplayName, verificationLink);
+        var emailSent = await TrySendAsync(user.Email!, verifySubject, verifyHtml);
 
         if (!emailSent)
         {
@@ -221,7 +222,17 @@ public class AuthController(
             });
         }
 
+        await MarkVerificationSentAsync(user);
         return Ok(new ResendVerificationEmailResponse(genericMessage, ShowDevVerificationLink ? verificationLink : null));
+    }
+
+    /// <summary>Records that a verification email just went out, for the admin Users list. Called
+    /// only after a successful send. UpdateAsync leaves the security stamp alone, so the emailed
+    /// link stays valid.</summary>
+    private async Task MarkVerificationSentAsync(ApplicationUser user)
+    {
+        user.VerificationEmailLastSentAt = DateTimeOffset.UtcNow;
+        await userManager.UpdateAsync(user);
     }
 
     [HttpPost("forgot-password")]

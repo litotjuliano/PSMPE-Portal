@@ -143,6 +143,17 @@ public class MembersControllerAuthTests : IClassFixture<CustomWebApplicationFact
     }
 
     [Fact]
+    public async Task ResendVerificationToAll_AsPlainMember_IsRefused()
+    {
+        var memberToken = await _client.RegisterAndLoginAsync("Bulk Resend Boundary Tester");
+
+        var response = await _client.SendAsync(
+            Request(HttpMethod.Post, "/api/admin/users/resend-verification", memberToken));
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Fact]
     public async Task UpdateMyProfile_AsAdministrativeAccount_ExplainsWhyRatherThanReturningAnEmptyBody()
     {
         // Administrative accounts have no Member row by design, so this is a deliberate refusal.

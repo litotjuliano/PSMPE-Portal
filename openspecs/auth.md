@@ -87,9 +87,28 @@ API calls. Backed by ASP.NET Core Identity (`PSMPE.Portal.Domain.Entities.Applic
   - Deliberately **not** counted against the per-address email throttle - that cap would let a
     member's own earlier attempts block the admin trying to help them. Authenticated and
     permission-gated, so not an open amplifier.
-  - Frontend: a mail icon in the Users table's Actions column on unverified, non-Super-Admin rows,
-    behind a confirmation dialog, with the result shown inline. Distinct from the orange **Verify**
-    button, which marks the email verified *without* sending anything.
+  - Frontend: a labeled **Resend** button in the Users table's Actions column on unverified,
+    non-Super-Admin rows, behind a confirmation dialog, with the result shown inline. Distinct from
+    the orange **Verify** button, which marks the email verified *without* sending anything.
+  - **"Already sent" mark.** `ApplicationUser.VerificationEmailLastSentAt` (nullable, added by the
+    `AddVerificationEmailLastSentAt` migration) is set after every *successful* verification send -
+    registration, the public resend, and this admin single/bulk resend - and never on a failed one.
+    `UserSummaryDto.verificationEmailLastSentAt` carries it to the Users list, which shows "Email
+    sent <date>" under the Verify button, relabels the button **Resend again**, and has the dialog
+    say a link was already sent. It records a *send*, not a delivery. Accounts whose email went out
+    before this column existed show nothing.
+
+- `POST /api/admin/users/resend-verification` — admin-triggered verification email to **every**
+  unverified account (`admin:manage-users`)
+  - Response: `200 { total, attempted, sent, failed, stoppedEarly }`. `total` is every unverified
+    account (Super Admin accounts excluded); `attempted` is how many this call reached.
+  - Sends are sequential inside the request, so a call is capped at 200 accounts; if `total >
+    attempted` the Users page tells the admin to click again to continue.
+  - Gives up after **3 consecutive failures** (`stoppedEarly: true`) so a mail-provider outage
+    doesn't make the request sit through one connection timeout per account.
+  - Same per-address throttle exemption as the single resend. Frontend: a **Resend to all
+    unverified** button in the Users table toolbar, behind a confirmation dialog, with a summary
+    line ("Sent 27 of 28 verification emails, 1 failed.").
 
 - `POST /api/auth/reset-password` — consume a reset link and set a new password
   - Auth: anonymous
@@ -110,6 +129,16 @@ not skippable. Uses ASP.NET Core Identity's built-in support directly
   sent (same pattern as `IFileStorageService`). `DependencyInjection.AddInfrastructure` picks the
   implementation based on config: **`SmtpEmailSender`** (MailKit) when `Smtp:Host` is set, else
   **`ConsoleEmailSender`** (just logs via `ILogger`) so local dev works without real credentials.
+- **Deliverability.** Outlook.com/Hotmail filed the first verification emails as junk (a new sending
+  domain, plus a bare HTML-only "click the link" body). Two things address the part we control:
+  `SmtpEmailSender` always sends **both an HTML and a plain-text part** (`EmailText.FromHtml` derives
+  the text from the HTML, keeping a link's target when its label differs), and the verification
+  wording lives in one place, `AuthEmails.VerifyEmail` - a greeting, a "Confirm my email" link plus
+  the bare address, why the email was sent, and an "ignore if this wasn't you" line - used by
+  register, the public resend, and the admin single/bulk resend. The `/verify-email` page also tells
+  members to check Junk/Spam and mark the email "Not junk". Sender reputation itself - SES identity
+  DKIM, SPF, DMARC, and a custom MAIL FROM domain so SPF aligns with the From address - is DNS/SES
+  configuration, not code.
 - Regardless of which `IEmailSender` is active, **the verification link is also returned directly
   in API responses** (`Register`, `resend-verification-email`) whenever `!env.IsProduction()` -
   covering Development *and* the `Testing` environment `CustomWebApplicationFactory` uses, so the

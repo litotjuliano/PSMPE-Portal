@@ -21,4 +21,13 @@ public class ApplicationUser : IdentityUser<Guid>
     /// <see cref="DataPrivacyConsentAt"/> - both set together or both null.
     /// </summary>
     public string? DataPrivacyConsentVersion { get; set; }
+
+    /// <summary>
+    /// When a verification email was last successfully handed to the mail provider for this
+    /// account - set by registration, the public resend, and the admin single/bulk resend, and only
+    /// on success. Lets the admin Users list show that a link has already gone out, so an admin
+    /// doesn't send the same person a second one by accident. Null if none has been sent (or the
+    /// account predates this column). It records a send, not a delivery.
+    /// </summary>
+    public DateTimeOffset? VerificationEmailLastSentAt { get; set; }
 }
