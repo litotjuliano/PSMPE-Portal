@@ -700,6 +700,49 @@ public class AdminControllerTests : IClassFixture<CustomWebApplicationFactory>, 
     }
 
     [Fact]
+    public async Task ResendVerificationEmail_ForAnUnverifiedAccount_Succeeds()
+    {
+        var user = await CreateUserAsync(RoleNames.Member);
+
+        var result = await _controller.ResendVerificationEmail(user.Id);
+
+        Assert.IsType<NoContentResult>(result);
+    }
+
+    [Fact]
+    public async Task ResendVerificationEmail_ForAnAlreadyVerifiedAccount_IsRefused()
+    {
+        var user = await CreateUserAsync(RoleNames.Member);
+        user.EmailConfirmed = true;
+        await _userManager.UpdateAsync(user);
+
+        var result = await _controller.ResendVerificationEmail(user.Id);
+
+        var bad = Assert.IsType<BadRequestObjectResult>(result);
+        Assert.Contains("EMAIL_ALREADY_CONFIRMED", System.Text.Json.JsonSerializer.Serialize(bad.Value));
+    }
+
+    [Fact]
+    public async Task ResendVerificationEmail_ForAnUnknownAccount_IsNotFound()
+    {
+        var result = await _controller.ResendVerificationEmail(Guid.NewGuid());
+
+        Assert.IsType<NotFoundResult>(result);
+    }
+
+    [Fact]
+    public async Task ResendVerificationEmail_WhenTheEmailCannotBeSent_ReturnsServiceUnavailableNotA500()
+    {
+        var user = await CreateUserAsync(RoleNames.Member);
+        var controller = CreateController(new TestSupport.ThrowingEmailSender(), callerRoles: RoleNames.SuperAdmin);
+
+        var result = await controller.ResendVerificationEmail(user.Id);
+
+        var objectResult = Assert.IsType<ObjectResult>(result);
+        Assert.Equal(StatusCodes.Status503ServiceUnavailable, objectResult.StatusCode);
+    }
+
+    [Fact]
     public async Task SendPasswordReset_ForAnUnverifiedAccount_IsRefused()
     {
         // Mirrors ForgotPassword: mailing a reset to an unproven address undermines the reason

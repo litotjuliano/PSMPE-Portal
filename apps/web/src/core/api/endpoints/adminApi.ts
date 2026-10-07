@@ -78,6 +78,8 @@ export const adminApi = {
    *  a reset clears the lockout. */
   sendPasswordReset: (userId: string) =>
     apiClient.post(`/api/admin/users/${userId}/password-reset`).then(() => undefined),
+  resendVerificationEmail: (userId: string) =>
+    apiClient.post(`/api/admin/users/${userId}/resend-verification`).then(() => undefined),
 
   getRoles: () => apiClient.get<RoleSummary[]>('/api/admin/roles').then((res) => res.data),
 

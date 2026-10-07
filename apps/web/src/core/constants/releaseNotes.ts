@@ -23,6 +23,17 @@ export interface ReleaseNote {
 
 export const releaseNotes: ReleaseNote[] = [
   {
+    version: '1.1.0',
+    date: '2026-10-07',
+    changes: [
+      {
+        type: 'Added',
+        description:
+          'Admins can resend a verification email to an unverified member from the Users page - look for the mail icon next to each unverified account.',
+      },
+    ],
+  },
+  {
     version: '1.0.2',
     date: '2026-10-07',
     changes: [

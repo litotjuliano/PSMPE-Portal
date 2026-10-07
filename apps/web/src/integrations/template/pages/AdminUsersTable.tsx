@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
-import { LuCheck, LuChevronDown, LuChevronUp, LuKeyRound, LuPlus, LuSquarePen, LuTrash2 } from 'react-icons/lu'
+import { LuCheck, LuChevronDown, LuChevronUp, LuKeyRound, LuMail, LuPlus, LuSquarePen, LuTrash2 } from 'react-icons/lu'
 import type { GetUsersParams, UserSummary } from '../../../core/api/endpoints/adminApi'
 import { AssignableRoles, Roles, type Role } from '../../../core/types/auth'
 import { ConfirmationModal } from '../components/shared/ConfirmationModal'
@@ -30,6 +30,8 @@ interface AdminUsersTableProps {
    *  the token carries roles but not permissions. The API rejects it either way. */
   canSendPasswordReset: boolean
   onSendPasswordReset: (userId: string) => void
+  /** Same admin:manage-users gate as the password reset, so the same client-side approximation. */
+  onResendVerificationEmail: (userId: string) => void
   currentUserEmail?: string
   sortBy: SortableColumn
   sortDir: 'asc' | 'desc'
@@ -87,6 +89,7 @@ export const AdminUsersTable = ({
   onVerifyEmail,
   canSendPasswordReset,
   onSendPasswordReset,
+  onResendVerificationEmail,
   currentUserEmail,
   sortBy,
   sortDir,
@@ -100,6 +103,7 @@ export const AdminUsersTable = ({
   const [deletingUser, setDeletingUser] = useState<UserSummary | null>(null)
   const [verifyingUser, setVerifyingUser] = useState<UserSummary | null>(null)
   const [resettingUser, setResettingUser] = useState<UserSummary | null>(null)
+  const [resendingUser, setResendingUser] = useState<UserSummary | null>(null)
 
   return (
     <div className="card">
@@ -261,6 +265,16 @@ export const AdminUsersTable = ({
                               should be able to help someone back into their account, even though
                               they cannot edit or delete the record. Super Admin rows are excluded
                               because the API hides them from every other caller. */}
+                          {canSendPasswordReset && !isSuperAdminRow && !user.emailConfirmed && (
+                            <button
+                              onClick={() => setResendingUser(user)}
+                              className="btn btn-icon size-8 hover:bg-default-150 rounded-full text-default-500"
+                              aria-label="Resend verification email"
+                              title="Resend verification email"
+                            >
+                              <LuMail className="size-4" />
+                            </button>
+                          )}
                           {canSendPasswordReset && !isSuperAdminRow && user.emailConfirmed && (
                             <button
                               onClick={() => setResettingUser(user)}
@@ -387,6 +401,23 @@ export const AdminUsersTable = ({
           setVerifyingUser(null)
         }}
         onCancel={() => setVerifyingUser(null)}
+      />
+
+      <ConfirmationModal
+        isOpen={resendingUser !== null}
+        title="Resend the verification email?"
+        message={
+          resendingUser
+            ? `${resendingUser.email} will be emailed a new link to verify their account.`
+            : undefined
+        }
+        confirmLabel="Send"
+        confirmVariant="primary"
+        onConfirm={() => {
+          if (resendingUser) onResendVerificationEmail(resendingUser.id)
+          setResendingUser(null)
+        }}
+        onCancel={() => setResendingUser(null)}
       />
 
       <ConfirmationModal
