@@ -23,6 +23,17 @@ export interface ReleaseNote {
 
 export const releaseNotes: ReleaseNote[] = [
   {
+    version: '1.0.2',
+    date: '2026-10-07',
+    changes: [
+      {
+        type: 'Fixed',
+        description:
+          'Forgot password and the admin Send password reset action now say clearly when the email could not be sent, instead of a generic error. Approving a member no longer shows an error when only the approval email fails - the approval itself had already gone through.',
+      },
+    ],
+  },
+  {
     version: '1.0.1',
     date: '2026-10-06',
     changes: [

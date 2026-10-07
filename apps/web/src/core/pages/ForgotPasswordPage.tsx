@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from 'react'
 import { Link } from 'react-router-dom'
+import { isAxiosError } from 'axios'
 import { LuChevronLeft } from 'react-icons/lu'
 import { authApi } from '../api/endpoints/authApi'
 import { AuthSplitLayout, AuthTextInput, PageMeta } from '../../integrations/template'
@@ -17,8 +18,11 @@ export function ForgotPasswordPage() {
       const response = await authApi.forgotPassword(email)
       setMessage(response.message)
       setDevLink(response.devResetLink ?? null)
-    } catch {
-      setMessage('Could not process your request right now. Please try again in a moment.')
+    } catch (err) {
+      setMessage(
+        (isAxiosError(err) && (err.response?.data as { message?: string } | undefined)?.message) ||
+          'Could not process your request right now. Please try again in a moment.',
+      )
     } finally {
       setSubmitting(false)
     }

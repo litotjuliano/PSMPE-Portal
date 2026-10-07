@@ -8,6 +8,14 @@ running app's own footer/"What's New" card get their copy from (`apps/web/src/co
 
 ## [Unreleased]
 
+## [1.0.2] - 2026-10-07
+
+### Fixed
+
+- "Forgot password" and the admin "Send password reset" action now report a temporary email
+  failure clearly instead of a generic error, and approving a member no longer shows an error
+  when only the approval email fails — the approval itself had already succeeded.
+
 ## [1.0.1] - 2026-10-06
 
 ### Fixed
