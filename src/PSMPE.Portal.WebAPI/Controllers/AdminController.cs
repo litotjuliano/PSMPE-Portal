@@ -468,6 +468,56 @@ public class AdminController(
         return NoContent();
     }
 
+    /// <summary>
+    /// Emails an unverified account a fresh verification link - the admin counterpart of the public
+    /// resend-verification-email, for helping someone who never got (or lost) the original. Same
+    /// permission as the password reset, and likewise not routed through IEmailSendThrottle: that cap
+    /// is per address, so counting an administrator's send against it would let the member's own
+    /// earlier attempts block the person trying to help them. Authenticated and permission-gated, so
+    /// not an open amplifier.
+    /// </summary>
+    [HttpPost("users/{id:guid}/resend-verification")]
+    [RequirePermission(Permissions.Admin.ManageUsers)]
+    public async Task<IActionResult> ResendVerificationEmail(Guid id)
+    {
+        var user = await userManager.FindByIdAsync(id.ToString());
+        if (user is null || await IsHiddenFromCallerAsync(user))
+        {
+            return NotFound();
+        }
+
+        if (user.EmailConfirmed)
+        {
+            return BadRequest(new
+            {
+                message = "This account's email is already verified.",
+                code = "EMAIL_ALREADY_CONFIRMED",
+            });
+        }
+
+        var token = await userManager.GenerateEmailConfirmationTokenAsync(user);
+        var verificationLink = AuthLinks.VerifyEmail(configuration, user.Id, token);
+
+        try
+        {
+            await emailSender.SendEmailAsync(
+                user.Email!,
+                "Verify your PSMPE Portal account",
+                $"<p>Please verify your email by clicking the link below:</p><p><a href=\"{verificationLink}\">{verificationLink}</a></p>");
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Verification email requested by {CallerId} for account {TargetId} could not be sent.", CurrentUserId, user.Id);
+            return StatusCode(StatusCodes.Status503ServiceUnavailable, new
+            {
+                message = "We couldn't send the verification email right now. Please try again in a few minutes.",
+            });
+        }
+
+        logger.LogInformation("Verification email resent by {CallerId} for account {TargetId}.", CurrentUserId, user.Id);
+        return NoContent();
+    }
+
     [HttpPost("users/{id:guid}/verify-email")]
     [Authorize(Policy = PolicyNames.RequireAdmin)]
     public async Task<IActionResult> VerifyEmail(Guid id)

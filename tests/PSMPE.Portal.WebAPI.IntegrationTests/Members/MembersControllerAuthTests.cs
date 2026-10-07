@@ -130,6 +130,19 @@ public class MembersControllerAuthTests : IClassFixture<CustomWebApplicationFact
     }
 
     [Fact]
+    public async Task ResendVerificationEmail_AsPlainMember_IsRefused()
+    {
+        // Same gate as the password reset: admin:manage-users, which a Member does not hold.
+        var memberToken = await _client.RegisterAndLoginAsync("Resend Boundary Tester");
+        var target = Guid.NewGuid();
+
+        var response = await _client.SendAsync(
+            Request(HttpMethod.Post, $"/api/admin/users/{target}/resend-verification", memberToken));
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Fact]
     public async Task UpdateMyProfile_AsAdministrativeAccount_ExplainsWhyRatherThanReturningAnEmptyBody()
     {
         // Administrative accounts have no Member row by design, so this is a deliberate refusal.
