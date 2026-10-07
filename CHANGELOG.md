@@ -8,6 +8,8 @@ running app's own footer/"What's New" card get their copy from (`apps/web/src/co
 
 ## [Unreleased]
 
+## [1.0.2] - 2026-10-07
+
 ### Fixed
 
 - "Forgot password" and the admin "Send password reset" action now report a temporary email
