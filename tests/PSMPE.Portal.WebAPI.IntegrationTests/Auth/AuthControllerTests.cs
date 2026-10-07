@@ -168,6 +168,21 @@ public class AuthControllerTests : IClassFixture<CustomWebApplicationFactory>, I
     }
 
     [Fact]
+    public async Task ForgotPassword_WhenTheEmailCannotBeSent_ReturnsServiceUnavailableNotA500()
+    {
+        var (email, userId, token) = await RegisterAsync();
+        var verify = await _client.PostAsJsonFromNewClientIpAsync("/api/auth/verify-email", new VerifyEmailRequest(userId, token));
+        Assert.Equal(HttpStatusCode.OK, verify.StatusCode);
+        var client = CreateClientWithFailingEmail();
+
+        var response = await client.PostAsJsonFromNewClientIpAsync("/api/auth/forgot-password", new ForgotPasswordRequest(email));
+
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, response.StatusCode);
+        var body = await response.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>();
+        Assert.Contains("try again", body.GetProperty("message").GetString());
+    }
+
+    [Fact]
     public async Task ResendVerificationEmail_ForNonexistentEmail_StillReturnsGenericOk()
     {
         var response = await _client.PostAsJsonFromNewClientIpAsync("/api/auth/resend-verification-email",

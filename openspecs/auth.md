@@ -71,6 +71,12 @@ API calls. Backed by ASP.NET Core Identity (`PSMPE.Portal.Domain.Entities.Applic
     email exists or is verified — same anti-enumeration approach as `resend-verification-email`.
     An unverified account is treated the same as a nonexistent one (no reset link before the email
     is even confirmed).
+  - Exception, same as `resend-verification-email`: for a verified account whose email **cannot be
+    sent**, returns `503 { message }` and logs the failure rather than a `500` or a false "sent".
+
+- `POST /api/admin/users/{id}/password-reset` — admin-triggered reset email (`admin:manage-users`)
+  - Returns `503 { message }` (and logs) if the email cannot be sent, so the admin knows to retry
+    instead of seeing a bare `500`. The Users page shows the result inline.
 
 - `POST /api/auth/reset-password` — consume a reset link and set a new password
   - Auth: anonymous

@@ -26,7 +26,8 @@ namespace PSMPE.Portal.WebAPI.Controllers;
 public class MembersController(
     IMemberService memberService, IMemberUploadService memberUploadService,
     IMemberCertificateService memberCertificateService, UserManager<ApplicationUser> userManager,
-    IEmailSender emailSender, IPaymentService paymentService, IEventService eventService) : ControllerBase
+    IEmailSender emailSender, IPaymentService paymentService, IEventService eventService,
+    ILogger<MembersController> logger) : ControllerBase
 {
     [HttpGet]
     [RequirePermission(Permissions.Members.View)]
@@ -243,7 +244,17 @@ public class MembersController(
             var approvedMember = await memberService.GetByIdAsync(id, cancellationToken);
             if (approvedMember is not null)
             {
-                await IssueApprovalReceiptAsync(approvedMember, cancellationToken);
+                try
+                {
+                    await IssueApprovalReceiptAsync(approvedMember, cancellationToken);
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    // The approval is already committed and, being idempotent, can't re-trigger this
+                    // - so letting it become a 500 would only tell the admin the approval failed
+                    // when it didn't. The receipt stays re-fetchable from the member's dashboard.
+                    logger.LogError(ex, "Member {MemberId} was approved, but the approval receipt/email could not be issued.", id);
+                }
             }
         }
 

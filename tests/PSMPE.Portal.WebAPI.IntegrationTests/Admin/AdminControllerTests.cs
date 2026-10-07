@@ -65,14 +65,17 @@ public class AdminControllerTests : IClassFixture<CustomWebApplicationFactory>, 
         return Task.CompletedTask;
     }
 
-    private AdminController CreateController(Guid? callerId = null, params string[] callerRoles)
+    private AdminController CreateController(Guid? callerId = null, params string[] callerRoles) =>
+        CreateController(_emailSender, callerId, callerRoles);
+
+    private AdminController CreateController(IEmailSender emailSender, Guid? callerId = null, params string[] callerRoles)
     {
         var claims = new List<Claim> { new(ClaimTypes.NameIdentifier, (callerId ?? Guid.NewGuid()).ToString()) };
         claims.AddRange(callerRoles.Select(r => new Claim(ClaimTypes.Role, r)));
         var httpContext = new DefaultHttpContext { User = new ClaimsPrincipal(new ClaimsIdentity(claims, "TestAuth")) };
         return new AdminController(
             _userManager, _roleManager, NullLogger<AdminController>.Instance,
-            _memberService, _memberUploadService, _memberCertificateService, _emailSender, _configuration)
+            _memberService, _memberUploadService, _memberCertificateService, emailSender, _configuration)
         {
             ControllerContext = new ControllerContext { HttpContext = httpContext }
         };
@@ -680,6 +683,20 @@ public class AdminControllerTests : IClassFixture<CustomWebApplicationFactory>, 
         var result = await _controller.SendPasswordReset(user.Id);
 
         Assert.IsType<NoContentResult>(result);
+    }
+
+    [Fact]
+    public async Task SendPasswordReset_WhenTheEmailCannotBeSent_ReturnsServiceUnavailableNotA500()
+    {
+        var user = await CreateUserAsync(RoleNames.Member);
+        user.EmailConfirmed = true;
+        await _userManager.UpdateAsync(user);
+        var controller = CreateController(new TestSupport.ThrowingEmailSender(), callerRoles: RoleNames.SuperAdmin);
+
+        var result = await controller.SendPasswordReset(user.Id);
+
+        var objectResult = Assert.IsType<ObjectResult>(result);
+        Assert.Equal(StatusCodes.Status503ServiceUnavailable, objectResult.StatusCode);
     }
 
     [Fact]

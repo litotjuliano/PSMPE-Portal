@@ -443,10 +443,23 @@ public class AdminController(
         // administrator sends against it would let a member's own earlier attempts block the person
         // trying to help them - the worse failure. This endpoint is authenticated and
         // permission-gated, so it is not an open amplifier.
-        await emailSender.SendEmailAsync(
-            user.Email!,
-            "Reset your PSMPE Portal password",
-            $"<p>An administrator has started a password reset for your PSMPE Portal account. Click the link below to choose a new password:</p><p><a href=\"{resetLink}\">{resetLink}</a></p><p>If you weren't expecting this, you can safely ignore this email - your current password still works.</p>");
+        try
+        {
+            await emailSender.SendEmailAsync(
+                user.Email!,
+                "Reset your PSMPE Portal password",
+                $"<p>An administrator has started a password reset for your PSMPE Portal account. Click the link below to choose a new password:</p><p><a href=\"{resetLink}\">{resetLink}</a></p><p>If you weren't expecting this, you can safely ignore this email - your current password still works.</p>");
+        }
+        catch (Exception ex)
+        {
+            // The admin is acting on someone else's account, so they need to know it didn't go out
+            // - and to retry - rather than see a bare 500 or, worse, assume it was sent.
+            logger.LogError(ex, "Password reset email requested by {CallerId} for account {TargetId} could not be sent.", CurrentUserId, user.Id);
+            return StatusCode(StatusCodes.Status503ServiceUnavailable, new
+            {
+                message = "We couldn't send the password reset email right now. Please try again in a few minutes.",
+            });
+        }
 
         // The closest thing to an audit trail this system has (see the audit logging item in the
         // backlog). An administrator acting on someone else's credentials should leave a trace.
