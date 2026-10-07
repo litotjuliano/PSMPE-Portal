@@ -136,6 +136,11 @@ public class AuthController(
             "Verify your PSMPE Portal account",
             $"<p>Welcome to PSMPE Portal. Please verify your email by clicking the link below:</p><p><a href=\"{verificationLink}\">{verificationLink}</a></p>");
 
+        if (emailSent)
+        {
+            await MarkVerificationSentAsync(user);
+        }
+
         // No token here - the account can't be used until the email is confirmed (see Login).
         return Ok(new RegisterResponse(
             user.Email!,
@@ -221,7 +226,17 @@ public class AuthController(
             });
         }
 
+        await MarkVerificationSentAsync(user);
         return Ok(new ResendVerificationEmailResponse(genericMessage, ShowDevVerificationLink ? verificationLink : null));
+    }
+
+    /// <summary>Records that a verification email just went out, for the admin Users list. Called
+    /// only after a successful send. UpdateAsync leaves the security stamp alone, so the emailed
+    /// link stays valid.</summary>
+    private async Task MarkVerificationSentAsync(ApplicationUser user)
+    {
+        user.VerificationEmailLastSentAt = DateTimeOffset.UtcNow;
+        await userManager.UpdateAsync(user);
     }
 
     [HttpPost("forgot-password")]

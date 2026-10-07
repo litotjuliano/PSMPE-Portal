@@ -12,6 +12,9 @@ export interface UserSummary {
    *  consent on record", not "refused". */
   dataPrivacyConsentAt: string | null
   dataPrivacyConsentVersion: string | null
+  /** When a verification email was last handed to the mail provider for this account, or null if
+   *  none has been sent. A send, not a delivery - it can still be in spam or have bounced. */
+  verificationEmailLastSentAt: string | null
 }
 
 export interface BulkResendResult {

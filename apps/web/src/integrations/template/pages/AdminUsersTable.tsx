@@ -8,6 +8,10 @@ import { StandardButton } from '../components/shared/StandardButton'
 
 type SortableColumn = NonNullable<GetUsersParams['sortBy']>
 
+/** "Oct 7, 2:02 PM" - the year is dropped since a pending link is always recent. */
+const formatSentAt = (iso: string) =>
+  new Date(iso).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
+
 interface AdminUsersTableProps {
   users: UserSummary[]
   canManageRoles: boolean
@@ -247,9 +251,16 @@ export const AdminUsersTable = ({
                             Verified
                           </span>
                         ) : canManageUsers ? (
-                          <StandardButton variant="warning" size="sm" icon={LuCheck} onClick={() => setVerifyingUser(user)}>
-                            Verify
-                          </StandardButton>
+                          <div className="flex flex-col items-start gap-1">
+                            <StandardButton variant="warning" size="sm" icon={LuCheck} onClick={() => setVerifyingUser(user)}>
+                              Verify
+                            </StandardButton>
+                            {user.verificationEmailLastSentAt && (
+                              <span className="text-xs text-success" title="A send, not a delivery - it may still be in spam.">
+                                Email sent {formatSentAt(user.verificationEmailLastSentAt)}
+                              </span>
+                            )}
+                          </div>
                         ) : (
                           <span className="py-0.5 px-2.5 inline-flex items-center text-xs font-medium rounded bg-default-150 text-default-600">
                             Unverified
@@ -287,7 +298,7 @@ export const AdminUsersTable = ({
                               because the API hides them from every other caller. */}
                           {canSendPasswordReset && !isSuperAdminRow && !user.emailConfirmed && (
                             <StandardButton variant="secondary" size="sm" icon={LuMail} onClick={() => setResendingUser(user)}>
-                              Resend
+                              {user.verificationEmailLastSentAt ? 'Resend again' : 'Resend'}
                             </StandardButton>
                           )}
                           {canSendPasswordReset && !isSuperAdminRow && user.emailConfirmed && (
@@ -436,7 +447,9 @@ export const AdminUsersTable = ({
         title="Resend the verification email?"
         message={
           resendingUser
-            ? `${resendingUser.email} will be emailed a new link to verify their account.`
+            ? resendingUser.verificationEmailLastSentAt
+              ? `A verification email was already sent to ${resendingUser.email} on ${formatSentAt(resendingUser.verificationEmailLastSentAt)}. Send another?`
+              : `${resendingUser.email} will be emailed a new link to verify their account.`
             : undefined
         }
         confirmLabel="Send"

@@ -50,7 +50,8 @@ public class AdminController(
         DateTimeOffset CreatedAt,
         bool EmailConfirmed,
         DateTimeOffset? DataPrivacyConsentAt = null,
-        string? DataPrivacyConsentVersion = null);
+        string? DataPrivacyConsentVersion = null,
+        DateTimeOffset? VerificationEmailLastSentAt = null);
 
     public record AssignRoleRequest(string Role);
 
@@ -157,7 +158,7 @@ public class AdminController(
         {
             var userRoles = await userManager.GetRolesAsync(user);
             summaries.Add(new UserSummaryDto(user.Id, user.Email ?? string.Empty, user.DisplayName, userRoles.ToList(), user.CreatedAt, user.EmailConfirmed,
-                user.DataPrivacyConsentAt, user.DataPrivacyConsentVersion));
+                user.DataPrivacyConsentAt, user.DataPrivacyConsentVersion, user.VerificationEmailLastSentAt));
         }
 
         return Ok(new PagedResult<UserSummaryDto>(summaries, totalCount, page, pageSize));
@@ -177,7 +178,7 @@ public class AdminController(
 
         var roles = await userManager.GetRolesAsync(user);
         return Ok(new UserSummaryDto(user.Id, user.Email ?? string.Empty, user.DisplayName, roles.ToList(), user.CreatedAt, user.EmailConfirmed,
-            user.DataPrivacyConsentAt, user.DataPrivacyConsentVersion));
+            user.DataPrivacyConsentAt, user.DataPrivacyConsentVersion, user.VerificationEmailLastSentAt));
     }
 
     [HttpPost("users")]
@@ -583,13 +584,19 @@ public class AdminController(
                 user.Email!,
                 "Verify your PSMPE Portal account",
                 $"<p>Please verify your email by clicking the link below:</p><p><a href=\"{verificationLink}\">{verificationLink}</a></p>");
-            return true;
         }
         catch (Exception ex)
         {
             logger.LogError(ex, "Verification email requested by {CallerId} for account {TargetId} could not be sent.", CurrentUserId, user.Id);
             return false;
         }
+
+        // After the send, never before: the Users list shows this as "already sent", so a failed
+        // send must not leave one behind. UpdateAsync leaves the security stamp alone, so the link
+        // just emailed stays valid.
+        user.VerificationEmailLastSentAt = DateTimeOffset.UtcNow;
+        await userManager.UpdateAsync(user);
+        return true;
     }
 
     [HttpPost("users/{id:guid}/verify-email")]

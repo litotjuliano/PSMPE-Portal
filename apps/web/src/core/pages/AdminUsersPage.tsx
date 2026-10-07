@@ -121,6 +121,7 @@ export function AdminUsersPage() {
         } else {
           setResetStatus({ ok: result.failed === 0, text: summary })
         }
+        return refetch().catch(() => undefined)
       })
       .catch((err) =>
         setResetStatus({
@@ -134,11 +135,15 @@ export function AdminUsersPage() {
   }
 
   const handleResendVerificationEmail = (userId: string) => {
-    // No refetch: sending a link changes nothing on this list until the member clicks it.
     setResetStatus(null)
     adminApi
       .resendVerificationEmail(userId)
-      .then(() => setResetStatus({ ok: true, text: 'Verification email sent.' }))
+      // Refetch so the row picks up its "sent" mark straight away.
+      .then(() => {
+        setResetStatus({ ok: true, text: 'Verification email sent.' })
+        // A failed refresh must not read as a failed send.
+        return refetch().catch(() => undefined)
+      })
       .catch((err) =>
         setResetStatus({
           ok: false,
@@ -149,7 +154,7 @@ export function AdminUsersPage() {
       )
   }
 
-  const handleSortChange =(column: NonNullable<GetUsersParams['sortBy']>) => {
+  const handleSortChange = (column: NonNullable<GetUsersParams['sortBy']>) => {
     if (column === sortBy) {
       setSortDir((current) => (current === 'asc' ? 'desc' : 'asc'))
     } else {

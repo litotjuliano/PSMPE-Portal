@@ -710,6 +710,33 @@ public class AdminControllerTests : IClassFixture<CustomWebApplicationFactory>, 
     }
 
     [Fact]
+    public async Task ResendVerificationEmail_RecordsWhenItWasSent_SoTheListCanShowIt()
+    {
+        var user = await CreateUserAsync(RoleNames.Member);
+        Assert.Null(user.VerificationEmailLastSentAt);
+        var before = DateTimeOffset.UtcNow;
+
+        await _controller.ResendVerificationEmail(user.Id);
+
+        var summary = Assert.IsType<AdminController.UserSummaryDto>(
+            Assert.IsType<OkObjectResult>((await _controller.GetUserById(user.Id)).Result).Value);
+        Assert.NotNull(summary.VerificationEmailLastSentAt);
+        Assert.True(summary.VerificationEmailLastSentAt >= before);
+    }
+
+    [Fact]
+    public async Task ResendVerificationEmail_WhenTheEmailCannotBeSent_DoesNotMarkItAsSent()
+    {
+        var user = await CreateUserAsync(RoleNames.Member);
+        var controller = CreateController(new TestSupport.ThrowingEmailSender(), callerRoles: RoleNames.SuperAdmin);
+
+        await controller.ResendVerificationEmail(user.Id);
+
+        var reloaded = await _userManager.FindByIdAsync(user.Id.ToString());
+        Assert.Null(reloaded!.VerificationEmailLastSentAt);
+    }
+
+    [Fact]
     public async Task ResendVerificationEmail_ForAnAlreadyVerifiedAccount_IsRefused()
     {
         var user = await CreateUserAsync(RoleNames.Member);
@@ -759,6 +786,8 @@ public class AdminControllerTests : IClassFixture<CustomWebApplicationFactory>, 
         Assert.Contains(unverifiedA.Email, sender.Recipients);
         Assert.Contains(unverifiedB.Email, sender.Recipients);
         Assert.DoesNotContain(verified.Email, sender.Recipients);
+        Assert.NotNull((await _userManager.FindByIdAsync(unverifiedA.Id.ToString()))!.VerificationEmailLastSentAt);
+        Assert.Null((await _userManager.FindByIdAsync(verified.Id.ToString()))!.VerificationEmailLastSentAt);
         Assert.Equal(sender.Recipients.Count, dto.Sent);
         Assert.Equal(0, dto.Failed);
         Assert.False(dto.StoppedEarly);
