@@ -106,7 +106,23 @@ export function AdminUsersPage() {
       )
   }
 
-  const handleSortChange = (column: NonNullable<GetUsersParams['sortBy']>) => {
+  const handleResendVerificationEmail = (userId: string) => {
+    // No refetch: sending a link changes nothing on this list until the member clicks it.
+    setResetStatus(null)
+    adminApi
+      .resendVerificationEmail(userId)
+      .then(() => setResetStatus({ ok: true, text: 'Verification email sent.' }))
+      .catch((err) =>
+        setResetStatus({
+          ok: false,
+          text:
+            (isAxiosError(err) && (err.response?.data as { message?: string } | undefined)?.message) ||
+            'Could not send the verification email. Please try again.',
+        }),
+      )
+  }
+
+  const handleSortChange =(column: NonNullable<GetUsersParams['sortBy']>) => {
     if (column === sortBy) {
       setSortDir((current) => (current === 'asc' ? 'desc' : 'asc'))
     } else {
@@ -141,6 +157,7 @@ export function AdminUsersPage() {
             onRoleFilterToggle={handleRoleFilterToggle}
             canSendPasswordReset={canManageUsers}
             onSendPasswordReset={handleSendPasswordReset}
+            onResendVerificationEmail={handleResendVerificationEmail}
             onToggleRole={handleToggleRole}
             onDelete={handleDelete}
             onVerifyEmail={handleVerifyEmail}

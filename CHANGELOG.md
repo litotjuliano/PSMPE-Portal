@@ -8,6 +8,11 @@ running app's own footer/"What's New" card get their copy from (`apps/web/src/co
 
 ## [Unreleased]
 
+### Added
+
+- Admins can now resend a verification email to an unverified member from the Users page (a mail
+  icon next to each unverified account), instead of the member having to request it themselves.
+
 ## [1.0.2] - 2026-10-07
 
 ### Fixed

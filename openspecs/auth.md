@@ -78,6 +78,19 @@ API calls. Backed by ASP.NET Core Identity (`PSMPE.Portal.Domain.Entities.Applic
   - Returns `503 { message }` (and logs) if the email cannot be sent, so the admin knows to retry
     instead of seeing a bare `500`. The Users page shows the result inline.
 
+- `POST /api/admin/users/{id}/resend-verification` — admin-triggered verification email
+  (`admin:manage-users`, so Admin and Super Admin hold it by default)
+  - The admin counterpart of the public `resend-verification-email`, for someone who never got the
+    original link. `404` for an unknown or hidden account; `400` with code `EMAIL_ALREADY_CONFIRMED`
+    if the email is already verified; `204` on success; `503 { message }` (and logs) if the email
+    cannot be sent.
+  - Deliberately **not** counted against the per-address email throttle - that cap would let a
+    member's own earlier attempts block the admin trying to help them. Authenticated and
+    permission-gated, so not an open amplifier.
+  - Frontend: a mail icon in the Users table's Actions column on unverified, non-Super-Admin rows,
+    behind a confirmation dialog, with the result shown inline. Distinct from the orange **Verify**
+    button, which marks the email verified *without* sending anything.
+
 - `POST /api/auth/reset-password` — consume a reset link and set a new password
   - Auth: anonymous
   - Request: `{ userId, token, newPassword }` (both `userId`/`token` come from the emailed link)
