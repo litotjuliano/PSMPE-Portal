@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { isAxiosError } from 'axios'
 import { adminApi, type GetUsersParams, type UserSummary } from '../api/endpoints/adminApi'
-import { AdminUsersTable, PageBreadcrumb, PageMeta } from '../../integrations/template'
+import { AdminUsersTable, PageBreadcrumb, PageMeta, Toast, type ToastStatus } from '../../integrations/template'
 import { useAuth } from '../auth/useAuth'
 import { Roles, type Role } from '../types/auth'
 
@@ -15,7 +15,8 @@ export function AdminUsersPage() {
   const [sortBy, setSortBy] = useState<NonNullable<GetUsersParams['sortBy']>>('displayName')
   const [sortDir, setSortDir] = useState<NonNullable<GetUsersParams['sortDir']>>('asc')
   const [loading, setLoading] = useState(true)
-  const [resetStatus, setResetStatus] = useState<{ ok: boolean; text: string } | null>(null)
+  // Result of the last send-email action (password reset, resend, bulk resend), shown as a toast.
+  const [resetStatus, setResetStatus] = useState<ToastStatus | null>(null)
   const [bulkResending, setBulkResending] = useState(false)
   const [loadError, setLoadError] = useState<string | null>(null)
 
@@ -189,7 +190,7 @@ export function AdminUsersPage() {
       <PageMeta title="Users" />
       <main>
         <PageBreadcrumb title="Users" />
-        {resetStatus && <p className={`text-sm mb-4 ${resetStatus.ok ? 'text-success' : 'text-danger'}`}>{resetStatus.text}</p>}
+        <Toast status={resetStatus} onDismiss={() => setResetStatus(null)} />
         {loading ? (
           <p className="text-sm text-default-500">Loading…</p>
         ) : loadError ? (

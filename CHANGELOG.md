@@ -19,6 +19,9 @@ running app's own footer/"What's New" card get their copy from (`apps/web/src/co
 
 ### Changed
 
+- The result of sending an email from the Users page (password reset, resend, bulk resend) now
+  appears as a pop-up notification in the corner that disappears on its own, instead of a line of
+  text at the top of the page.
 - The per-account resend action on the Users page is now a labeled "Resend" button instead of an
   unlabeled mail icon.
 - The verification email is now a proper message - a greeting, a "Confirm my email" button, and a
