@@ -251,10 +251,21 @@ public class AuthController(
 
         var token = await userManager.GeneratePasswordResetTokenAsync(user);
         var resetLink = BuildResetPasswordLink(user.Id, token);
-        await emailSender.SendEmailAsync(
+        var emailSent = await TrySendAsync(
             user.Email!,
             "Reset your PSMPE Portal password",
             $"<p>We received a request to reset your PSMPE Portal password. Click the link below to choose a new one:</p><p><a href=\"{resetLink}\">{resetLink}</a></p><p>If you didn't request this, you can safely ignore this email.</p>");
+
+        if (!emailSent)
+        {
+            // Same trade-off as ResendVerificationEmail: only reachable for a verified account,
+            // and only during an outage - but saying "sent" would leave the user waiting on an
+            // email that never comes.
+            return StatusCode(StatusCodes.Status503ServiceUnavailable, new
+            {
+                message = "We couldn't send the email right now. Please try again in a few minutes.",
+            });
+        }
 
         return Ok(new ForgotPasswordResponse(genericMessage, ShowDevVerificationLink ? resetLink : null));
     }

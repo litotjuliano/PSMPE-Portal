@@ -102,6 +102,10 @@ see Open questions/TODO for what's deferred.
     approved; idempotent (approving an already-approved application is a no-op success and
     **does not** re-assign `MembershipNo` — a repeat call, e.g. from the receipt/email retry path,
     must never silently renumber a live member).
+  - The approval receipt/email is **best-effort**: if generating the receipt or sending the email
+    fails, the failure is logged and the approval still returns success. The approval is already
+    committed and idempotent, so a `500` here would only misreport it as failed. The receipt stays
+    re-fetchable from the member's dashboard.
   - **Also accepts the registration payment, in the same transaction** — see "Approval and payment
     are one act" below. `Status` therefore becomes `Active` as part of approving, and the request
     carries an optional `payment` block for members who have none on record.

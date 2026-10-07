@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { isAxiosError } from 'axios'
 import { adminApi, type GetUsersParams, type UserSummary } from '../api/endpoints/adminApi'
 import { AdminUsersTable, PageBreadcrumb, PageMeta } from '../../integrations/template'
 import { useAuth } from '../auth/useAuth'
@@ -14,6 +15,7 @@ export function AdminUsersPage() {
   const [sortBy, setSortBy] = useState<NonNullable<GetUsersParams['sortBy']>>('displayName')
   const [sortDir, setSortDir] = useState<NonNullable<GetUsersParams['sortDir']>>('asc')
   const [loading, setLoading] = useState(true)
+  const [resetStatus, setResetStatus] = useState<{ ok: boolean; text: string } | null>(null)
 
   // Gates role-checkbox editing (unchanged) and, as of this change, the per-row Edit/Delete
   // icons too - both hidden entirely for a regular Admin, leaving only Email Verification.
@@ -90,7 +92,18 @@ export function AdminUsersPage() {
   const handleSendPasswordReset = (userId: string) => {
     // No refetch: sending a reset changes nothing on this list. The account keeps its current
     // password until the member actually uses the emailed link.
-    adminApi.sendPasswordReset(userId)
+    setResetStatus(null)
+    adminApi
+      .sendPasswordReset(userId)
+      .then(() => setResetStatus({ ok: true, text: 'Password reset email sent.' }))
+      .catch((err) =>
+        setResetStatus({
+          ok: false,
+          text:
+            (isAxiosError(err) && (err.response?.data as { message?: string } | undefined)?.message) ||
+            'Could not send the password reset email. Please try again.',
+        }),
+      )
   }
 
   const handleSortChange = (column: NonNullable<GetUsersParams['sortBy']>) => {
@@ -113,6 +126,7 @@ export function AdminUsersPage() {
       <PageMeta title="Users" />
       <main>
         <PageBreadcrumb title="Users" />
+        {resetStatus && <p className={`text-sm mb-4 ${resetStatus.ok ? 'text-success' : 'text-danger'}`}>{resetStatus.text}</p>}
         {loading ? (
           <p className="text-sm text-default-500">Loading…</p>
         ) : (

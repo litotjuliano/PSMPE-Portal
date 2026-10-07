@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging.Abstractions;
 using PSMPE.Portal.Application.Common.Interfaces;
 using PSMPE.Portal.Application.Common.Models;
 using PSMPE.Portal.Application.Events;
@@ -58,11 +59,11 @@ public class MembersControllerTests : IClassFixture<CustomWebApplicationFactory>
         return Task.CompletedTask;
     }
 
-    private MembersController CreateController(Guid? callerId = null)
+    private MembersController CreateController(Guid? callerId = null, IEmailSender? emailSender = null)
     {
         var claims = new List<Claim> { new(ClaimTypes.NameIdentifier, (callerId ?? Guid.NewGuid()).ToString()) };
         var httpContext = new DefaultHttpContext { User = new ClaimsPrincipal(new ClaimsIdentity(claims, "TestAuth")) };
-        return new MembersController(_memberService, _memberUploadService, _memberCertificateService, _userManager, _emailSender, _paymentService, _eventService)
+        return new MembersController(_memberService, _memberUploadService, _memberCertificateService, _userManager, emailSender ?? _emailSender, _paymentService, _eventService, NullLogger<MembersController>.Instance)
         {
             ControllerContext = new ControllerContext { HttpContext = httpContext }
         };
@@ -441,6 +442,23 @@ public class MembersControllerTests : IClassFixture<CustomWebApplicationFactory>
         // The second call passed a different number on purpose: a repeat approval must not
         // renumber a live member.
         Assert.Equal("A-0001", afterSecondDto.MembershipNo);
+    }
+
+    [Fact]
+    public async Task Approve_WhenTheApprovalEmailCannotBeSent_StillApprovesInsteadOfThrowing()
+    {
+        var user = await CreateUserAsync();
+        var controller = CreateController(emailSender: new TestSupport.ThrowingEmailSender());
+        var created = await controller.Create(BuildCreateRequest(user.Id), CancellationToken.None);
+        var createdDto = Assert.IsType<MemberDto>(Assert.IsType<OkObjectResult>(created.Result).Value);
+        await VerifyRmpAsync(controller, createdDto.Id);
+
+        var approve = await controller.Approve(createdDto.Id, ApproveWithPayment("A-0099"), CancellationToken.None);
+
+        Assert.IsType<NoContentResult>(approve);
+        var after = await controller.GetById(createdDto.Id, CancellationToken.None);
+        var afterDto = Assert.IsType<MemberDto>(Assert.IsType<OkObjectResult>(after.Result).Value);
+        Assert.NotNull(afterDto.ApprovedAt);
     }
 
     /// <summary>
