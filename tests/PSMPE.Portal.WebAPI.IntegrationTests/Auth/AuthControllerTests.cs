@@ -5,7 +5,9 @@ using System.Net.Http.Json;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using PSMPE.Portal.Application.Auth;
+using PSMPE.Portal.Application.Common.Interfaces;
 using PSMPE.Portal.Domain.Entities;
 using PSMPE.Portal.Domain.Enums;
 using PSMPE.Portal.WebAPI.IntegrationTests.TestSupport;
@@ -111,6 +113,58 @@ public class AuthControllerTests : IClassFixture<CustomWebApplicationFactory>, I
         var (userId, token) = ParseVerificationLink(body.DevVerificationLink!);
         var verify = await _client.PostAsJsonFromNewClientIpAsync("/api/auth/verify-email", new VerifyEmailRequest(userId, token));
         Assert.Equal(HttpStatusCode.OK, verify.StatusCode);
+    }
+
+    private HttpClient CreateClientWithFailingEmail() =>
+        _factory.WithWebHostBuilder(builder => builder.ConfigureServices(services =>
+        {
+            services.RemoveAll<IEmailSender>();
+            services.AddScoped<IEmailSender, ThrowingEmailSender>();
+        })).CreateClient();
+
+    [Fact]
+    public async Task Register_WhenTheVerificationEmailCannotBeSent_StillCreatesTheAccountAndSaysSo()
+    {
+        var client = CreateClientWithFailingEmail();
+        var email = $"{Guid.NewGuid()}@example.com";
+
+        var response = await client.PostAsJsonFromNewClientIpAsync("/api/auth/register",
+            new RegisterRequest(email, "Password123!", "Test User", DataPrivacyConsent: true));
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var body = await response.Content.ReadFromJsonAsync<RegisterResponse>();
+        Assert.False(body!.EmailSent);
+        Assert.Equal(email, body.Email);
+        Assert.Contains("Resend", body.Message);
+
+        using var scope = _factory.Services.CreateScope();
+        var user = await scope.ServiceProvider.GetRequiredService<UserManager<ApplicationUser>>().FindByEmailAsync(email);
+        Assert.NotNull(user);
+        Assert.False(user!.EmailConfirmed);
+    }
+
+    [Fact]
+    public async Task Register_WhenTheEmailIsSent_ReportsEmailSent()
+    {
+        var response = await _client.PostAsJsonFromNewClientIpAsync("/api/auth/register",
+            new RegisterRequest($"{Guid.NewGuid()}@example.com", "Password123!", "Test User", DataPrivacyConsent: true));
+
+        var body = await response.Content.ReadFromJsonAsync<RegisterResponse>();
+        Assert.True(body!.EmailSent);
+    }
+
+    [Fact]
+    public async Task ResendVerificationEmail_WhenTheEmailCannotBeSent_ReturnsServiceUnavailableNotA500()
+    {
+        var (email, _, _) = await RegisterAsync();
+        var client = CreateClientWithFailingEmail();
+
+        var response = await client.PostAsJsonFromNewClientIpAsync("/api/auth/resend-verification-email",
+            new ResendVerificationEmailRequest(email));
+
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, response.StatusCode);
+        var body = await response.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>();
+        Assert.Contains("try again", body.GetProperty("message").GetString());
     }
 
     [Fact]

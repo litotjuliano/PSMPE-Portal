@@ -10,8 +10,13 @@ API calls. Backed by ASP.NET Core Identity (`PSMPE.Portal.Domain.Entities.Applic
 - `POST /api/auth/register` — create an account
   - Auth: anonymous
   - Request: `{ email, password, displayName, username?, dataPrivacyConsent }`
-  - Response: `{ email, message, devVerificationLink? }` — **not** a JWT. The account exists but
-    can't be used until the email is confirmed (see "Email verification" below).
+  - Response: `{ email, message, devVerificationLink?, emailSent }` — **not** a JWT. The account
+    exists but can't be used until the email is confirmed (see "Email verification" below).
+  - `emailSent` is `false` when the account was created but the verification email could not be
+    sent (SMTP outage, exhausted provider quota). That is still a `200`, not a `500`: the account
+    exists, so reporting failure would send the user back into a "this email already exists"
+    `409`. The failure is logged server-side, `message` points the user at "Resend verification
+    email", and the frontend's `/verify-email` page shows a warning instead of "we sent a link".
   - `username` is optional — omitting it preserves the original behavior of `UserName` mirroring
     `Email`. If provided, `409` if already taken. The frontend's `/register` sign-up form collects
     it with a live check backed by `GET /api/auth/username-available`.
@@ -54,6 +59,10 @@ API calls. Backed by ASP.NET Core Identity (`PSMPE.Portal.Domain.Entities.Applic
   - Request: `{ email }`
   - Response: always `200` with a generic `{ message, devVerificationLink? }`, regardless of
     whether the email exists or is already verified — avoids leaking account existence.
+  - Exception: if the account exists, is unverified, and the email **cannot be sent**, returns
+    `503 { message }` ("We couldn't send the email right now…") and logs the failure. Saying
+    "sent" during an outage would have the user waiting on an email that never comes; the only
+    thing this reveals is that the address is registered and unverified, and only during an outage.
 
 - `POST /api/auth/forgot-password` — request a password reset link
   - Auth: anonymous

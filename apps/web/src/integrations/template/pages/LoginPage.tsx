@@ -84,6 +84,11 @@ export const LoginPage = () => {
     try {
       await authApi.resendVerificationEmail(email)
       navigate('/verify-email', { state: { email } })
+    } catch (err) {
+      setError(
+        (isAxiosError(err) && (err.response?.data as { message?: string } | undefined)?.message) ||
+          'Could not resend the verification email. Please try again in a moment.',
+      )
     } finally {
       setResending(false)
     }

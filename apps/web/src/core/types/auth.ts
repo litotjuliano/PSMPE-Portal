@@ -43,6 +43,7 @@ export interface RegisterResponse {
   email: string
   message: string
   devVerificationLink?: string
+  emailSent: boolean
 }
 
 export interface VerifyEmailRequest {
