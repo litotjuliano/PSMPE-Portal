@@ -22,7 +22,8 @@ public class AuthController(
     IEmailSendThrottle emailSendThrottle,
     IAuditLogService auditLogService,
     IConfiguration configuration,
-    IWebHostEnvironment env) : ControllerBase
+    IWebHostEnvironment env,
+    ILogger<AuthController> logger) : ControllerBase
 {
     /// <summary>Verification links must be exercisable without a real email provider - see
     /// ConsoleEmailSender's Open Questions. !IsProduction (not IsDevelopment) so this also
@@ -125,7 +126,12 @@ public class AuthController(
 
         var confirmationToken = await userManager.GenerateEmailConfirmationTokenAsync(user);
         var verificationLink = BuildVerificationLink(user.Id, confirmationToken);
-        await emailSender.SendEmailAsync(
+
+        // The account already exists by this point, so a mail outage (e.g. an exhausted provider
+        // quota) must not turn the request into a 500 - the user would think registration failed
+        // and retry into a "this email already exists" conflict. Report it instead, and point
+        // them at Resend, which works as soon as email is back.
+        var emailSent = await TrySendAsync(
             user.Email!,
             "Verify your PSMPE Portal account",
             $"<p>Welcome to PSMPE Portal. Please verify your email by clicking the link below:</p><p><a href=\"{verificationLink}\">{verificationLink}</a></p>");
@@ -133,8 +139,25 @@ public class AuthController(
         // No token here - the account can't be used until the email is confirmed (see Login).
         return Ok(new RegisterResponse(
             user.Email!,
-            "Account created. Please check your email to verify your account before signing in.",
-            ShowDevVerificationLink ? verificationLink : null));
+            emailSent
+                ? "Account created. Please check your email to verify your account before signing in."
+                : "Account created, but we couldn't send the verification email right now. Please use \"Resend verification email\" in a few minutes.",
+            ShowDevVerificationLink ? verificationLink : null,
+            emailSent));
+    }
+
+    private async Task<bool> TrySendAsync(string to, string subject, string htmlBody)
+    {
+        try
+        {
+            await emailSender.SendEmailAsync(to, subject, htmlBody);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Failed to send '{Subject}' email to {Recipient}", subject, to);
+            return false;
+        }
     }
 
     [HttpPost("verify-email")]
@@ -182,10 +205,21 @@ public class AuthController(
 
         var confirmationToken = await userManager.GenerateEmailConfirmationTokenAsync(user);
         var verificationLink = BuildVerificationLink(user.Id, confirmationToken);
-        await emailSender.SendEmailAsync(
+        var emailSent = await TrySendAsync(
             user.Email!,
             "Verify your PSMPE Portal account",
             $"<p>Please verify your email by clicking the link below:</p><p><a href=\"{verificationLink}\">{verificationLink}</a></p>");
+
+        if (!emailSent)
+        {
+            // Only reachable for an existing, unverified account, so this does reveal that much -
+            // but an outage is the one case where saying "sent" would be a lie the user acts on
+            // (waiting for an email that never comes).
+            return StatusCode(StatusCodes.Status503ServiceUnavailable, new
+            {
+                message = "We couldn't send the email right now. Please try again in a few minutes.",
+            });
+        }
 
         return Ok(new ResendVerificationEmailResponse(genericMessage, ShowDevVerificationLink ? verificationLink : null));
     }

@@ -9,6 +9,9 @@ import emailImg from '../../integrations/template/assets/images/auth-email.png'
 interface LocationState {
   email?: string
   devVerificationLink?: string
+  // false only when registration succeeded but the server couldn't send the email; undefined
+  // (e.g. arriving from the login page's resend link) is treated as sent.
+  emailSent?: boolean
 }
 
 export function VerifyEmailPage() {
@@ -52,8 +55,11 @@ export function VerifyEmailPage() {
       const response = await authApi.resendVerificationEmail(email)
       setResendMessage(response.message)
       setDevLink(response.devVerificationLink ?? null)
-    } catch {
-      setResendMessage('Could not resend the verification email. Please try again in a moment.')
+    } catch (err) {
+      setResendMessage(
+        (isAxiosError(err) && (err.response?.data as { message?: string } | undefined)?.message) ||
+          'Could not resend the verification email. Please try again in a moment.',
+      )
     } finally {
       setResending(false)
     }
@@ -86,7 +92,13 @@ export function VerifyEmailPage() {
             <>
               {/* Only rendered when we know the address - without it this would just restate the
                   subheading verbatim. */}
-              {email && (
+              {email && state.emailSent === false && (
+                <p className="text-base text-danger mb-4">
+                  Your account was created, but we couldn't send the verification email to{' '}
+                  <span className="font-semibold">{email}</span> just now. Please use "Try again" below in a few minutes.
+                </p>
+              )}
+              {email && state.emailSent !== false && (
                 <p className="text-base text-default-500 mb-4">
                   We sent a verification link to <span className="font-semibold text-default-800">{email}</span>. Click it to
                   activate your account.

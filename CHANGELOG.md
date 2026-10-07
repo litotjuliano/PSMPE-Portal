@@ -8,6 +8,15 @@ running app's own footer/"What's New" card get their copy from (`apps/web/src/co
 
 ## [Unreleased]
 
+## [1.0.1] - 2026-10-06
+
+### Fixed
+
+- If the verification email can't be sent when someone registers (e.g. the email provider is
+  down), they now see a clear "your account was created, but we couldn't send the email — try
+  again shortly" message instead of a generic error, and "Resend verification email" reports a
+  temporary failure instead of silently doing nothing.
+
 ## [1.0.0] - 2026-08-31
 
 First tagged release — the app was already live in production before this; this establishes

@@ -27,7 +27,7 @@ public record AuthResponse(
 /// confirmed. DevVerificationLink is only populated outside Production, so the whole flow is
 /// testable without a real email provider (see IEmailSender's Open Questions).
 /// </summary>
-public record RegisterResponse(string Email, string Message, string? DevVerificationLink = null);
+public record RegisterResponse(string Email, string Message, string? DevVerificationLink = null, bool EmailSent = true);
 
 public record VerifyEmailRequest(Guid UserId, string Token);
 
