@@ -21,6 +21,14 @@ running app's own footer/"What's New" card get their copy from (`apps/web/src/co
 
 - The per-account resend action on the Users page is now a labeled "Resend" button instead of an
   unlabeled mail icon.
+- The verification email is now a proper message - a greeting, a "Confirm my email" button, and a
+  line explaining why it was sent - with a plain-text version alongside, so it is less likely to be
+  filed as junk. The "check your email" page also reminds members to look in their Junk or Spam
+  folder.
+
+### Fixed
+
+- The Users page showed "No users yet." when the list failed to load; it now says what went wrong.
 
 ## [1.1.0] - 2026-10-07
 

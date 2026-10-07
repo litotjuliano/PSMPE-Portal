@@ -131,10 +131,8 @@ public class AuthController(
         // quota) must not turn the request into a 500 - the user would think registration failed
         // and retry into a "this email already exists" conflict. Report it instead, and point
         // them at Resend, which works as soon as email is back.
-        var emailSent = await TrySendAsync(
-            user.Email!,
-            "Verify your PSMPE Portal account",
-            $"<p>Welcome to PSMPE Portal. Please verify your email by clicking the link below:</p><p><a href=\"{verificationLink}\">{verificationLink}</a></p>");
+        var (verifySubject, verifyHtml) = AuthEmails.VerifyEmail(user.DisplayName, verificationLink);
+        var emailSent = await TrySendAsync(user.Email!, verifySubject, verifyHtml);
 
         if (emailSent)
         {
@@ -210,10 +208,8 @@ public class AuthController(
 
         var confirmationToken = await userManager.GenerateEmailConfirmationTokenAsync(user);
         var verificationLink = BuildVerificationLink(user.Id, confirmationToken);
-        var emailSent = await TrySendAsync(
-            user.Email!,
-            "Verify your PSMPE Portal account",
-            $"<p>Please verify your email by clicking the link below:</p><p><a href=\"{verificationLink}\">{verificationLink}</a></p>");
+        var (verifySubject, verifyHtml) = AuthEmails.VerifyEmail(user.DisplayName, verificationLink);
+        var emailSent = await TrySendAsync(user.Email!, verifySubject, verifyHtml);
 
         if (!emailSent)
         {

@@ -578,12 +578,10 @@ public class AdminController(
         var token = await userManager.GenerateEmailConfirmationTokenAsync(user);
         var verificationLink = AuthLinks.VerifyEmail(configuration, user.Id, token);
 
+        var (subject, html) = AuthEmails.VerifyEmail(user.DisplayName, verificationLink);
         try
         {
-            await emailSender.SendEmailAsync(
-                user.Email!,
-                "Verify your PSMPE Portal account",
-                $"<p>Please verify your email by clicking the link below:</p><p><a href=\"{verificationLink}\">{verificationLink}</a></p>");
+            await emailSender.SendEmailAsync(user.Email!, subject, html);
         }
         catch (Exception ex)
         {

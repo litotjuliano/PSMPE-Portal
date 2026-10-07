@@ -129,6 +129,16 @@ not skippable. Uses ASP.NET Core Identity's built-in support directly
   sent (same pattern as `IFileStorageService`). `DependencyInjection.AddInfrastructure` picks the
   implementation based on config: **`SmtpEmailSender`** (MailKit) when `Smtp:Host` is set, else
   **`ConsoleEmailSender`** (just logs via `ILogger`) so local dev works without real credentials.
+- **Deliverability.** Outlook.com/Hotmail filed the first verification emails as junk (a new sending
+  domain, plus a bare HTML-only "click the link" body). Two things address the part we control:
+  `SmtpEmailSender` always sends **both an HTML and a plain-text part** (`EmailText.FromHtml` derives
+  the text from the HTML, keeping a link's target when its label differs), and the verification
+  wording lives in one place, `AuthEmails.VerifyEmail` - a greeting, a "Confirm my email" link plus
+  the bare address, why the email was sent, and an "ignore if this wasn't you" line - used by
+  register, the public resend, and the admin single/bulk resend. The `/verify-email` page also tells
+  members to check Junk/Spam and mark the email "Not junk". Sender reputation itself - SES identity
+  DKIM, SPF, DMARC, and a custom MAIL FROM domain so SPF aligns with the From address - is DNS/SES
+  configuration, not code.
 - Regardless of which `IEmailSender` is active, **the verification link is also returned directly
   in API responses** (`Register`, `resend-verification-email`) whenever `!env.IsProduction()` -
   covering Development *and* the `Testing` environment `CustomWebApplicationFactory` uses, so the
