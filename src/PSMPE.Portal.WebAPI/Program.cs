@@ -160,6 +160,9 @@ if (builder.Configuration.GetValue<bool>("Seed:Enabled"))
     var userManager = services.GetRequiredService<UserManager<ApplicationUser>>();
     await IdentitySeeder.SeedAsync(roleManager, userManager, builder.Configuration, logger);
     await SystemConfigSeeder.SeedAsync(db, logger);
+    // Right after MigrateAsync (which only runs here), so the table is guaranteed to exist. Fills an
+    // empty table only - Super Admin edits are never overwritten.
+    await LocationSeeder.SeedAsync(db, logger);
 
     var memberService = services.GetRequiredService<IMemberService>();
     var memberUploadService = services.GetRequiredService<IMemberUploadService>();

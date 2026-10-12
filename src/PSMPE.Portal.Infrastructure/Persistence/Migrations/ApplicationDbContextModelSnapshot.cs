@@ -1054,6 +1054,94 @@ namespace PSMPE.Portal.Infrastructure.Persistence.Migrations
                     b.ToTable("Payments");
                 });
 
+            modelBuilder.Entity("PSMPE.Portal.Domain.Entities.PhCity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(160)
+                        .HasColumnType("character varying(160)");
+
+                    b.Property<Guid>("ProvinceId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("ZipCode")
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ProvinceId", "Name")
+                        .IsUnique();
+
+                    b.ToTable("PhCities");
+                });
+
+            modelBuilder.Entity("PSMPE.Portal.Domain.Entities.PhProvince", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
+
+                    b.Property<Guid>("RegionId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("RegionId", "Name")
+                        .IsUnique();
+
+                    b.ToTable("PhProvinces");
+                });
+
+            modelBuilder.Entity("PSMPE.Portal.Domain.Entities.PhRegion", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
+
+                    b.Property<int>("SortOrder")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Name")
+                        .IsUnique();
+
+                    b.ToTable("PhRegions");
+                });
+
             modelBuilder.Entity("PSMPE.Portal.Domain.Entities.PrcVerificationHistory", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1318,6 +1406,28 @@ namespace PSMPE.Portal.Infrastructure.Persistence.Migrations
                     b.Navigation("Member");
                 });
 
+            modelBuilder.Entity("PSMPE.Portal.Domain.Entities.PhCity", b =>
+                {
+                    b.HasOne("PSMPE.Portal.Domain.Entities.PhProvince", "Province")
+                        .WithMany("Cities")
+                        .HasForeignKey("ProvinceId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Province");
+                });
+
+            modelBuilder.Entity("PSMPE.Portal.Domain.Entities.PhProvince", b =>
+                {
+                    b.HasOne("PSMPE.Portal.Domain.Entities.PhRegion", "Region")
+                        .WithMany("Provinces")
+                        .HasForeignKey("RegionId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Region");
+                });
+
             modelBuilder.Entity("PSMPE.Portal.Domain.Entities.PrcVerificationHistory", b =>
                 {
                     b.HasOne("PSMPE.Portal.Domain.Entities.Member", null)
@@ -1339,6 +1449,16 @@ namespace PSMPE.Portal.Infrastructure.Persistence.Migrations
             modelBuilder.Entity("PSMPE.Portal.Domain.Entities.Event", b =>
                 {
                     b.Navigation("Sessions");
+                });
+
+            modelBuilder.Entity("PSMPE.Portal.Domain.Entities.PhProvince", b =>
+                {
+                    b.Navigation("Cities");
+                });
+
+            modelBuilder.Entity("PSMPE.Portal.Domain.Entities.PhRegion", b =>
+                {
+                    b.Navigation("Provinces");
                 });
 #pragma warning restore 612, 618
         }
