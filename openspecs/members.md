@@ -367,7 +367,7 @@ wrapper over a native `<datalist>`); picking a city auto-fills ZIP.
   knows their province shouldn't have to work out its region first. City still needs a province.
 
 - **Reference data is bundled, not an API.** `apps/web/src/data/ph-locations.json` (PSGC-derived:
-  17 regions, 87 provinces, 1,647 cities/municipalities) plus a ~216-entry `countries.json`, both
+  17 regions, 87 provinces, 1,646 cities/municipalities; Zamboanga Del Sur = 27: Pagadian + 26 municipalities, the independent Zamboanga City row removed; province lookups in `getCities`/`getZipCode` are case-insensitive) plus a ~216-entry `countries.json`, both
   behind a dynamic `import()` in `core/utils/phLocations.ts` so they build as separate chunks
   (~19KB gzipped for locations, ~1.3KB for countries) fetched only when an address form renders —
   an admin browsing `/members` never pays for them. There is no `GET /api/locations/*` endpoint;
