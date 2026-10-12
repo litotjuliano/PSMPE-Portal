@@ -8,6 +8,15 @@ running app's own footer/"What's New" card get their copy from (`apps/web/src/co
 
 ## [Unreleased]
 
+## [1.2.1] - 2026-10-12
+
+### Fixed
+
+- Typing a province by hand (for example "zamboanga del sur" or "iloilo") no longer leaves the City
+  or Municipality list empty, so Pagadian City, Iloilo City and the rest can be picked.
+- Zamboanga Del Sur now lists exactly 27 places - Pagadian City and its 26 municipalities - instead
+  of also showing the independent Zamboanga City.
+
 ## [1.2.0] - 2026-10-07
 
 ### Added
