@@ -87,16 +87,29 @@ export async function getAllProvinces(): Promise<string[]> {
   return [...all].sort((a, b) => a.localeCompare(b))
 }
 
+const norm = (v: string) => v.trim().toLowerCase()
+
+/** The dataset's spelling of a province within a region, matched case- and whitespace-insensitively.
+ *  A hand-typed "zamboanga del sur" must still find its cities. */
+function canonicalProvince(index: PhLocationIndex, region: string, province: string): string | null {
+  return (index.provinces.get(region) ?? []).find((p) => norm(p) === norm(province)) ?? null
+}
+
 export async function getCities(region: string, province: string): Promise<string[]> {
   if (!region || !province) return []
-  return (await loadIndex()).cities.get(`${region}|${province}`) ?? []
+  const index = await loadIndex()
+  const canonical = canonicalProvince(index, region, province)
+  return canonical ? (index.cities.get(`${region}|${canonical}`) ?? []) : []
 }
 
 /** Null both when the city genuinely has no mapped ZIP and when the city isn't found at all -
  *  callers treat both the same way (leave whatever the user typed alone). */
 export async function getZipCode(region: string, province: string, city: string): Promise<string | null> {
   if (!region || !province || !city) return null
-  return (await loadIndex()).zips.get(`${region}|${province}|${city}`) ?? null
+  const index = await loadIndex()
+  const canonical = canonicalProvince(index, region, province)
+  if (!canonical) return null
+  return index.zips.get(`${region}|${canonical}|${city}`) ?? null
 }
 
 export async function getCountries(): Promise<string[]> {
@@ -114,7 +127,6 @@ export async function getCountries(): Promise<string[]> {
 export async function findRegionFor(province: string, city: string): Promise<string | null> {
   if (!province) return null
   const index = await loadIndex()
-  const norm = (v: string) => v.trim().toLowerCase()
 
   for (const region of index.regions) {
     const provinceNames = index.provinces.get(region) ?? []
