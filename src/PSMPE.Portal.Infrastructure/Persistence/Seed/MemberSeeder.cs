@@ -46,9 +46,9 @@ public static class MemberSeeder
     /// </summary>
     private static readonly (string Email, string DisplayName, string FirstName, string LastName, string Chapter)[] ApprovedSeedMembers =
     [
-        ("juan.delacruz@psmpe.local", "Juan Dela Cruz", "Juan", "Dela Cruz", Chapters.Ncr),
-        ("maria.fernandez@psmpe.local", "Maria Fernandez", "Maria", "Fernandez", Chapters.Cebu),
-        ("pedro.bautista@psmpe.local", "Pedro Bautista", "Pedro", "Bautista", Chapters.Davao),
+        ("juan.delacruz@psmpe.local", "Juan Dela Cruz", "Juan", "Dela Cruz", "NCR"),
+        ("maria.fernandez@psmpe.local", "Maria Fernandez", "Maria", "Fernandez", "Cebu"),
+        ("pedro.bautista@psmpe.local", "Pedro Bautista", "Pedro", "Bautista", "Davao"),
     ];
 
     public static async Task SeedAsync(
@@ -93,7 +93,7 @@ public static class MemberSeeder
         }
 
         var member = await EnsureMemberAsync(
-            db, user.Id, await NextMembershipNoAsync(db), "Demo", "Member", Chapters.Ncr, "MP-100000", logger, cancellationToken);
+            db, user.Id, await NextMembershipNoAsync(db), "Demo", "Member", "NCR", "MP-100000", logger, cancellationToken);
         await EnsureDocumentsAsync(db, member, memberService, uploadService, paymentService, cancellationToken);
     }
 
@@ -152,7 +152,10 @@ public static class MemberSeeder
         var member = await db.Members.FirstOrDefaultAsync(m => m.UserId == userId, cancellationToken);
         if (member is null)
         {
-            member = BuildSeededMember(userId, membershipNo, firstName, lastName, chapter, prcLicenseNo);
+            // Chapter rows come from the AddChapters migration; a demo member simply has none if an
+            // admin has since deleted that chapter.
+            var chapterId = await db.Chapters.Where(c => c.Name == chapter).Select(c => (Guid?)c.Id).FirstOrDefaultAsync(cancellationToken);
+            member = BuildSeededMember(userId, membershipNo, firstName, lastName, chapterId, prcLicenseNo);
             db.Members.Add(member);
             await db.SaveChangesAsync(cancellationToken);
             logger.LogInformation("Seeded Member profile {MembershipNo} ({FirstName} {LastName})", membershipNo, firstName, lastName);
@@ -179,7 +182,7 @@ public static class MemberSeeder
     /// fields and made the RMP queue list every seeded member forever.
     /// </summary>
     private static Member BuildSeededMember(
-        Guid userId, string membershipNo, string firstName, string lastName, string chapter, string prcLicenseNo)
+        Guid userId, string membershipNo, string firstName, string lastName, Guid? chapterId, string prcLicenseNo)
     {
         var approvedAt = DateTimeOffset.UtcNow;
         return new Member
@@ -188,7 +191,7 @@ public static class MemberSeeder
             MembershipNo = membershipNo,
             FirstName = firstName,
             LastName = lastName,
-            Chapter = chapter,
+            ChapterId = chapterId,
             MemberType = MemberTypes.Regular,
             PrcLicenseNo = prcLicenseNo,
             PrcRegistrationDate = DateOnly.FromDateTime(DateTime.UtcNow.AddYears(-2)),

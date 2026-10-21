@@ -174,7 +174,7 @@ public class MemberUploadsTests : IClassFixture<CustomWebApplicationFactory>, IA
             gender = (string?)null,
             address = (string?)null,
             prcLicenseNo = (string?)null,
-            chapter = Chapters.Ncr,
+            chapterId = TestChapters.Ncr,
             company = (string?)null,
             memberType = MemberTypes.Regular
         });
@@ -208,7 +208,7 @@ public class MemberUploadsTests : IClassFixture<CustomWebApplicationFactory>, IA
             gender = (string?)null,
             address = (string?)null,
             prcLicenseNo = (string?)null,
-            chapter = Chapters.Ncr,
+            chapterId = TestChapters.Ncr,
             company = (string?)null,
             memberType = MemberTypes.Regular
         });

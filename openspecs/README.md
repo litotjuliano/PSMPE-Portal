@@ -39,6 +39,7 @@ Anything deliberately deferred.
 - [members.md](./members.md) — PSMPE membership profiles (distinct from Users)
 - [payments.md](./payments.md) — membership payments, renewals, and event registration payments
 - [locations.md](./locations.md) — Philippine regions/provinces/cities for the address picker, Super Admin CRUD
+- [chapters.md](./chapters.md) — chapter list for member/event forms, Super Admin CRUD, deactivate instead of delete
 - [events.md](./events.md) — event management and CPD credit tracking
 - [system-logs.md](./system-logs.md) — audit trail and error log, System Logs admin page
 

@@ -35,3 +35,12 @@ public class PhCityConfiguration : IEntityTypeConfiguration<PhCity>
             .HasForeignKey(c => c.ProvinceId).OnDelete(DeleteBehavior.Restrict);
     }
 }
+
+public class ChapterConfiguration : IEntityTypeConfiguration<Chapter>
+{
+    public void Configure(EntityTypeBuilder<Chapter> builder)
+    {
+        builder.Property(c => c.Name).IsRequired().HasMaxLength(64);
+        builder.HasIndex(c => c.Name).IsUnique();
+    }
+}

@@ -22,7 +22,7 @@ public class PaymentServiceTests
             User = user,
             FirstName = "Juan",
             LastName = "Dela Cruz",
-            Chapter = Chapters.Ncr,
+            ChapterId = TestChapters.Ncr,
             MemberType = MemberTypes.Regular,
             PrcLicenseNo = "MP-1",
             PrcIdVerified = true,
@@ -624,7 +624,7 @@ public class PaymentServiceTests
     {
         var user = new ApplicationUser { UserName = $"{Guid.NewGuid()}@example.com", Email = $"{Guid.NewGuid()}@example.com" };
         db.Add(user);
-        var member = new Member { UserId = user.Id, User = user, FirstName = "Ana", LastName = "Reyes", Chapter = Chapters.Ncr, MemberType = MemberTypes.Regular };
+        var member = new Member { UserId = user.Id, User = user, FirstName = "Ana", LastName = "Reyes", ChapterId = TestChapters.Ncr, MemberType = MemberTypes.Regular };
         db.Members.Add(member);
 
         var @event = new Event { Title = "Seminar", StartsAt = DateTimeOffset.UtcNow.AddDays(5), EndsAt = DateTimeOffset.UtcNow.AddDays(5).AddHours(4), FeeOnsite = 500m, FeeOnline = 200m };

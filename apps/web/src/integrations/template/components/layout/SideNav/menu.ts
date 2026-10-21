@@ -2,6 +2,7 @@ import type { IconType } from 'react-icons/lib'
 import {
   LuBanknote,
   LuBellRing,
+  LuBuilding2,
   LuCalendarClock,
   LuFileClock,
   LuMapPin,
@@ -132,6 +133,13 @@ export const menuItemsData: MenuItemType[] = [
     label: 'Locations',
     icon: LuMapPin,
     href: '/admin/locations',
+    requiredRoles: ['Super Admin'],
+  },
+  {
+    key: 'Chapters',
+    label: 'Chapters',
+    icon: LuBuilding2,
+    href: '/admin/chapters',
     requiredRoles: ['Super Admin'],
   },
 ]

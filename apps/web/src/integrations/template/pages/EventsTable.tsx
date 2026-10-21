@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import { LuCalendar, LuMapPin, LuPlus, LuSearch } from 'react-icons/lu'
 import type { Event, EventRegistrationStatusValue } from '../../../core/api/endpoints/eventApi'
 import { eventApi } from '../../../core/api/endpoints/eventApi'
-import { Chapters, type ChapterValue } from '../../../core/types/member'
+import { useChapters } from '../../../core/utils/chapters'
 import { StandardButton } from '../components/shared/StandardButton'
 
 interface EventsTableProps {
@@ -11,8 +11,8 @@ interface EventsTableProps {
   canManageEvents: boolean
   searchInput: string
   onSearchInputChange: (value: string) => void
-  chapterFilter: ChapterValue | null
-  onChapterFilterChange: (chapter: ChapterValue | null) => void
+  chapterFilter: string | null
+  onChapterFilterChange: (chapterId: string | null) => void
   upcomingOnly: boolean
   onUpcomingOnlyChange: (value: boolean) => void
   page: number
@@ -65,6 +65,7 @@ export function EventsTable({
   onSelectEvent,
 }: EventsTableProps) {
   const totalPages = Math.max(1, Math.ceil(totalCount / pageSize))
+  const chapters = useChapters(chapterFilter)
 
   // Fetches a poster thumbnail for each event that has one, keyed by event id so a slow/failed
   // fetch for one event doesn't block the others. Revokes every blob URL on cleanup/re-run,
@@ -115,12 +116,13 @@ export function EventsTable({
         <select
           className="form-input max-w-48"
           value={chapterFilter ?? ''}
-          onChange={(e) => onChapterFilterChange((e.target.value || null) as ChapterValue | null)}
+          onChange={(e) => onChapterFilterChange(e.target.value || null)}
         >
           <option value="">All chapters</option>
-          {Object.values(Chapters).map((c) => (
-            <option key={c} value={c}>
-              {c}
+          {chapters.all.map((c) => (
+            <option key={c.id} value={c.id}>
+              {c.name}
+              {c.isActive ? '' : ' (inactive)'}
             </option>
           ))}
         </select>
@@ -156,7 +158,9 @@ export function EventsTable({
                       </p>
                       <p className="flex items-center gap-1 text-xs text-default-500 mt-1">
                         <LuCalendar className="size-3.5" />
-                        {new Date(event.startsAt).toLocaleDateString()} - {new Date(event.endsAt).toLocaleDateString()}
+                        {event.startsAt && event.endsAt
+                          ? `${new Date(event.startsAt).toLocaleDateString()} - ${new Date(event.endsAt).toLocaleDateString()}`
+                          : 'Date to be set'}
                       </p>
                       {event.venue && (
                         <p className="flex items-center gap-1 text-xs text-default-500">

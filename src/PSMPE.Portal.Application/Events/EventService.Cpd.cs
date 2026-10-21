@@ -39,7 +39,7 @@ public partial class EventService
             var totalSessions = sessionCounts.GetValueOrDefault(r.EventId);
             var credit = CpdCredit.For(r, r.Event, sessionsAttended, totalSessions);
             return new MyCpdRegistrationDto(
-                r.Id, r.EventId, r.Event.Title, r.Event.StartsAt, r.Mode.ToString(), r.Status.ToString(),
+                r.Id, r.EventId, r.Event.Title, r.Event.StartsAt.GetValueOrDefault(), r.Mode.ToString(), r.Status.ToString(),
                 sessionsAttended, totalSessions, credit);
         }).ToList();
 

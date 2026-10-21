@@ -25,10 +25,16 @@ public class Event : BaseEntity
     /// EventTypes.All.</summary>
     public string? Type { get; set; }
 
-    public string? Chapter { get; set; }
+    /// <summary>Null means a national / all-chapters event.</summary>
+    public Guid? ChapterId { get; set; }
+    public Chapter? Chapter { get; set; }
     public string? Venue { get; set; }
-    public DateTimeOffset StartsAt { get; set; }
-    public DateTimeOffset EndsAt { get; set; }
+
+    /// <summary>Null only while the event is a Draft - EventService.ValidateCore requires both to
+    /// publish, so every Published event (the only kind members, registrations, attendance, CPD and
+    /// certificates ever touch) has them.</summary>
+    public DateTimeOffset? StartsAt { get; set; }
+    public DateTimeOffset? EndsAt { get; set; }
 
     /// <summary>PRC's declared hour count for the program - a single value shared across both
     /// modalities (PRC's own data shows the same hour count regardless of Onsite/Online).</summary>

@@ -276,6 +276,37 @@ namespace PSMPE.Portal.Infrastructure.Persistence.Migrations
                     b.ToTable("AuditLogs");
                 });
 
+            modelBuilder.Entity("PSMPE.Portal.Domain.Entities.Chapter", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<int>("SortOrder")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Name")
+                        .IsUnique();
+
+                    b.ToTable("Chapters");
+                });
+
             modelBuilder.Entity("PSMPE.Portal.Domain.Entities.ContentItem", b =>
                 {
                     b.Property<Guid>("Id")
@@ -385,9 +416,8 @@ namespace PSMPE.Portal.Infrastructure.Persistence.Migrations
                     b.Property<int?>("Capacity")
                         .HasColumnType("integer");
 
-                    b.Property<string>("Chapter")
-                        .HasMaxLength(64)
-                        .HasColumnType("character varying(64)");
+                    b.Property<Guid?>("ChapterId")
+                        .HasColumnType("uuid");
 
                     b.Property<string>("CpdCodeOnline")
                         .HasMaxLength(64)
@@ -412,7 +442,7 @@ namespace PSMPE.Portal.Infrastructure.Persistence.Migrations
                         .HasMaxLength(4000)
                         .HasColumnType("character varying(4000)");
 
-                    b.Property<DateTimeOffset>("EndsAt")
+                    b.Property<DateTimeOffset?>("EndsAt")
                         .HasColumnType("timestamp with time zone");
 
                     b.Property<decimal>("FeeOnline")
@@ -435,7 +465,7 @@ namespace PSMPE.Portal.Infrastructure.Persistence.Migrations
                         .HasMaxLength(512)
                         .HasColumnType("character varying(512)");
 
-                    b.Property<DateTimeOffset>("StartsAt")
+                    b.Property<DateTimeOffset?>("StartsAt")
                         .HasColumnType("timestamp with time zone");
 
                     b.Property<string>("Status")
@@ -460,6 +490,8 @@ namespace PSMPE.Portal.Infrastructure.Persistence.Migrations
                         .HasColumnType("character varying(256)");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("ChapterId");
 
                     b.HasIndex("StartsAt");
 
@@ -682,10 +714,8 @@ namespace PSMPE.Portal.Infrastructure.Persistence.Migrations
                         .HasMaxLength(512)
                         .HasColumnType("character varying(512)");
 
-                    b.Property<string>("Chapter")
-                        .IsRequired()
-                        .HasMaxLength(64)
-                        .HasColumnType("character varying(64)");
+                    b.Property<Guid?>("ChapterId")
+                        .HasColumnType("uuid");
 
                     b.Property<string>("ChapterPosition")
                         .HasMaxLength(128)
@@ -895,6 +925,8 @@ namespace PSMPE.Portal.Infrastructure.Persistence.Migrations
                         .HasColumnType("character varying(8)");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("ChapterId");
 
                     b.HasIndex("UserId")
                         .IsUnique();
@@ -1318,6 +1350,16 @@ namespace PSMPE.Portal.Infrastructure.Persistence.Migrations
                     b.Navigation("Owner");
                 });
 
+            modelBuilder.Entity("PSMPE.Portal.Domain.Entities.Event", b =>
+                {
+                    b.HasOne("PSMPE.Portal.Domain.Entities.Chapter", "Chapter")
+                        .WithMany()
+                        .HasForeignKey("ChapterId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.Navigation("Chapter");
+                });
+
             modelBuilder.Entity("PSMPE.Portal.Domain.Entities.EventAttendance", b =>
                 {
                     b.HasOne("PSMPE.Portal.Domain.Entities.EventRegistration", "EventRegistration")
@@ -1379,11 +1421,18 @@ namespace PSMPE.Portal.Infrastructure.Persistence.Migrations
 
             modelBuilder.Entity("PSMPE.Portal.Domain.Entities.Member", b =>
                 {
+                    b.HasOne("PSMPE.Portal.Domain.Entities.Chapter", "Chapter")
+                        .WithMany()
+                        .HasForeignKey("ChapterId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.HasOne("PSMPE.Portal.Domain.Entities.ApplicationUser", "User")
                         .WithOne()
                         .HasForeignKey("PSMPE.Portal.Domain.Entities.Member", "UserId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
+
+                    b.Navigation("Chapter");
 
                     b.Navigation("User");
                 });

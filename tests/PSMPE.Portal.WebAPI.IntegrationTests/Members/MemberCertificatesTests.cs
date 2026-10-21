@@ -195,7 +195,7 @@ public class MemberCertificatesTests : IClassFixture<CustomWebApplicationFactory
             prcLicenseNo = (string?)null,
             ptrNumber = (string?)null,
             tin = (string?)null,
-            chapter = Chapters.Ncr,
+            chapterId = TestChapters.Ncr,
             employmentStatus = (string?)null,
             company = (string?)null,
             position = (string?)null,

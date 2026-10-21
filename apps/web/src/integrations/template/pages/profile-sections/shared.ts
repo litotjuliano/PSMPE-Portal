@@ -46,7 +46,7 @@ export function buildFullProfileRequest(member: Member, overrides: Partial<Updat
     ptrPlaceIssued: member.ptrPlaceIssued,
     ptrDateIssued: member.ptrDateIssued,
     tin: member.tin,
-    chapter: member.chapter,
+    chapterId: member.chapterId ?? '',
     chapterYear: member.chapterYear,
     chapterPosition: member.chapterPosition,
     employmentStatus: member.employmentStatus,

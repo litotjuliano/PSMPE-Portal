@@ -64,7 +64,7 @@ public class MembersControllerAuthTests : IClassFixture<CustomWebApplicationFact
             birthdate = (string?)null, gender = (string?)null, civilStatus = (string?)null, address = (string?)null,
             mobileNumber = (string?)null, housePhone = (string?)null,
             prcLicenseNo = (string?)null, ptrNumber = (string?)null, tin = (string?)null,
-            chapter = Chapters.Ncr, employmentStatus = (string?)null, company = (string?)null, position = (string?)null,
+            chapterId = TestChapters.Ncr, employmentStatus = (string?)null, company = (string?)null, position = (string?)null,
             businessAddress = (string?)null, yearsOfPractice = (int?)null, specialization = (string?)null, skills = (string?)null,
             memberType = MemberTypes.Regular, status = 0, renewalDueDate = (string?)null, nationalDuesReferenceNo = (string?)null
         }];
@@ -164,7 +164,7 @@ public class MembersControllerAuthTests : IClassFixture<CustomWebApplicationFact
         var body = new
         {
             firstName = "Admin", lastName = "Account",
-            chapter = Chapters.Ncr, memberType = MemberTypes.Regular,
+            chapterId = TestChapters.Ncr, memberType = MemberTypes.Regular,
         };
 
         var response = await _client.SendAsync(Request(HttpMethod.Put, "/api/members/me", adminToken, body));

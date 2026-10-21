@@ -10,7 +10,10 @@ import { EventRegisterModal } from '../../pages/EventRegisterModal'
 
 const PAGE_SIZE = 3
 
-function formatDateRange(startsAt: string, endsAt: string) {
+/** Upcoming events shown to members are always Published, so they always have dates; the null
+ *  guard just keeps the type honest for a Draft that hasn't been scheduled. */
+function formatDateRange(startsAt: string | null, endsAt: string | null) {
+  if (!startsAt || !endsAt) return 'Date to be set'
   const start = new Date(startsAt)
   const end = new Date(endsAt)
   const startLabel = start.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
