@@ -89,7 +89,7 @@ npm run dev
 ```
 
 Vite serves the app at `http://localhost:5173` and proxies API calls to
-`VITE_API_BASE_URL` (default `http://localhost:5000`).
+`VITE_API_BASE_URL` (default `http://localhost:5100`).
 
 ## PostgreSQL configuration
 
