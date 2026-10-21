@@ -56,7 +56,7 @@ export interface CreateMemberRequest {
   ptrPlaceIssued: string | null
   ptrDateIssued: string | null
   tin: string | null
-  chapter: string
+  chapterId: string | null
   chapterYear: number | null
   chapterPosition: string | null
   employmentStatus: string | null
@@ -111,7 +111,7 @@ export interface UpdateMemberRequest {
   ptrPlaceIssued: string | null
   ptrDateIssued: string | null
   tin: string | null
-  chapter: string
+  chapterId: string | null
   chapterYear: number | null
   chapterPosition: string | null
   employmentStatus: string | null
@@ -162,7 +162,7 @@ export interface UpdateMyProfileRequest {
   ptrPlaceIssued: string | null
   ptrDateIssued: string | null
   tin: string | null
-  chapter: string
+  chapterId: string | null
   chapterYear: number | null
   chapterPosition: string | null
   employmentStatus: string | null

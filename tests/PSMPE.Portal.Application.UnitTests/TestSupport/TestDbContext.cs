@@ -11,6 +11,7 @@ public class TestDbContext(DbContextOptions<TestDbContext> options) : DbContext(
     public DbSet<ContentItem> ContentItems => Set<ContentItem>();
     public DbSet<Layout> Layouts => Set<Layout>();
     public DbSet<PhRegion> PhRegions => Set<PhRegion>();
+    public DbSet<Chapter> Chapters => Set<Chapter>();
     public DbSet<PhProvince> PhProvinces => Set<PhProvince>();
     public DbSet<PhCity> PhCities => Set<PhCity>();
     public DbSet<SystemConfig> SystemConfigs => Set<SystemConfig>();
@@ -33,6 +34,9 @@ public class TestDbContext(DbContextOptions<TestDbContext> options) : DbContext(
         var options = new DbContextOptionsBuilder<TestDbContext>()
             .UseInMemoryDatabase(Guid.NewGuid().ToString())
             .Options;
-        return new TestDbContext(options);
+        var db = new TestDbContext(options);
+        db.Chapters.AddRange(TestChapters.BuildAll());
+        db.SaveChanges();
+        return db;
     }
 }

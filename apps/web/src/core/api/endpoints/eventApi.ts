@@ -65,9 +65,11 @@ export interface Event {
   objectives: string | null
   type: string | null
   chapter: string | null
+  chapterId: string | null
   venue: string | null
-  startsAt: string
-  endsAt: string
+  /** Null only for a Draft that hasn't been scheduled yet - publishing requires both. */
+  startsAt: string | null
+  endsAt: string | null
   hours: number | null
   capacity: number | null
   registeredCount: number
@@ -91,10 +93,10 @@ export interface Event {
 export interface CreateEventRequest {
   title: string
   description: string | null
-  chapter: string | null
+  chapterId: string | null
   venue: string | null
-  startsAt: string
-  endsAt: string
+  startsAt: string | null
+  endsAt: string | null
   capacity: number | null
   feeOnsite: number
   feeOnline: number
@@ -173,7 +175,7 @@ export interface MyCpdSummary {
 }
 
 export const eventApi = {
-  getEvents: (params: { page?: number; pageSize?: number; search?: string; chapter?: string; upcomingOnly?: boolean } = {}) =>
+  getEvents: (params: { page?: number; pageSize?: number; search?: string; chapterId?: string; upcomingOnly?: boolean } = {}) =>
     apiClient.get<PagedResult<Event>>('/api/events', { params }).then((res) => res.data),
 
   getEvent: (id: string) => apiClient.get<Event>(`/api/events/${id}`).then((res) => res.data),

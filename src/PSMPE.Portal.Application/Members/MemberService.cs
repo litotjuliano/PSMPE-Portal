@@ -87,7 +87,7 @@ public class MemberService(IApplicationDbContext db, ICacheService? cache = null
         m.MembershipNo, m.PrcLicenseNo, m.PrcRegistrationDate, m.PrcValidUntilDate,
         m.PtrNumber, m.PtrPlaceIssued, m.PtrDateIssued, m.Tin, m.PrcIdVerified,
         m.PendingPrcLicenseNo, m.PendingPrcRegistrationDate, m.PendingPrcValidUntilDate, m.PrcVerificationRejectedReason,
-        m.Chapter, m.ChapterYear, m.ChapterPosition,
+        m.Chapter?.Name ?? string.Empty, m.ChapterId, m.ChapterYear, m.ChapterPosition,
         m.EmploymentStatus, m.Company, m.Position, m.BusinessAddress, m.YearsOfPractice, m.Specialization, m.Skills,
         m.MemberType,
         m.Status, m.RenewalDueDate, m.HasPortalAccess, m.NationalDuesReferenceNo, m.ApprovedAt, m.SubmittedAt,
@@ -103,7 +103,7 @@ public class MemberService(IApplicationDbContext db, ICacheService? cache = null
 
         // Drafts (SubmittedAt == null, still mid-wizard via the per-step autosave) are invisible
         // to admins entirely - a half-filled application isn't a "member" yet.
-        IQueryable<Member> query = db.Members.AsNoTracking().Include(m => m.User).Where(m => m.SubmittedAt != null);
+        IQueryable<Member> query = db.Members.AsNoTracking().Include(m => m.User).Include(m => m.Chapter).Where(m => m.SubmittedAt != null);
 
         if (excludeUserIds is { Count: > 0 })
         {
@@ -148,7 +148,7 @@ public class MemberService(IApplicationDbContext db, ICacheService? cache = null
         query = sortBy.ToLowerInvariant() switch
         {
             "membershipno" => descending ? query.OrderByDescending(m => m.MembershipNo) : query.OrderBy(m => m.MembershipNo),
-            "chapter" => descending ? query.OrderByDescending(m => m.Chapter) : query.OrderBy(m => m.Chapter),
+            "chapter" => descending ? query.OrderByDescending(m => m.Chapter!.Name) : query.OrderBy(m => m.Chapter!.Name),
             "status" => descending ? query.OrderByDescending(m => m.Status) : query.OrderBy(m => m.Status),
             // Oldest application first is the natural order for the approval queue - it has always
             // shown an "Applied" column but had no way to sort by it.
@@ -205,11 +205,20 @@ public class MemberService(IApplicationDbContext db, ICacheService? cache = null
         }
 
         var chapterGroups = await baseQuery
-            .GroupBy(m => m.Chapter)
-            .Select(g => new { Chapter = g.Key, Count = g.Count() })
+            .Where(m => m.ChapterId != null)
+            .GroupBy(m => m.ChapterId!.Value)
+            .Select(g => new { ChapterId = g.Key, Count = g.Count() })
             .ToListAsync(cancellationToken);
-        var chapterLookup = chapterGroups.ToDictionary(g => g.Chapter, g => g.Count);
-        var byChapter = Chapters.All.Select(c => new NamedCountDto(c, chapterLookup.GetValueOrDefault(c))).ToList();
+        var chapterLookup = chapterGroups.ToDictionary(g => g.ChapterId, g => g.Count);
+        var allChapters = await db.Chapters.AsNoTracking()
+            .OrderBy(c => c.SortOrder).ThenBy(c => c.Name)
+            .ToListAsync(cancellationToken);
+        // Every active chapter shows (zero-filled), in the admin-set order; an inactive one only
+        // while members still belong to it, so deactivating a chapter never drops people off the chart.
+        var byChapter = allChapters
+            .Where(c => c.IsActive || chapterLookup.ContainsKey(c.Id))
+            .Select(c => new NamedCountDto(c.Name, chapterLookup.GetValueOrDefault(c.Id)))
+            .ToList();
 
         var typeGroups = await baseQuery
             .GroupBy(m => m.MemberType)
@@ -237,7 +246,7 @@ public class MemberService(IApplicationDbContext db, ICacheService? cache = null
 
     public async Task<MemberDto?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default)
     {
-        var member = await db.Members.AsNoTracking().Include(m => m.User).FirstOrDefaultAsync(m => m.Id == id, cancellationToken);
+        var member = await db.Members.AsNoTracking().Include(m => m.User).Include(m => m.Chapter).FirstOrDefaultAsync(m => m.Id == id, cancellationToken);
         if (member is null)
         {
             return null;
@@ -249,7 +258,7 @@ public class MemberService(IApplicationDbContext db, ICacheService? cache = null
 
     public async Task<MemberDto?> GetByUserIdAsync(Guid userId, CancellationToken cancellationToken = default)
     {
-        var member = await db.Members.AsNoTracking().Include(m => m.User).FirstOrDefaultAsync(m => m.UserId == userId, cancellationToken);
+        var member = await db.Members.AsNoTracking().Include(m => m.User).Include(m => m.Chapter).FirstOrDefaultAsync(m => m.UserId == userId, cancellationToken);
         if (member is null)
         {
             return null;
@@ -293,7 +302,7 @@ public class MemberService(IApplicationDbContext db, ICacheService? cache = null
 
         var lengthError = ValidateMemberFieldLengths(
             request.FirstName, request.MiddleName, request.LastName, request.Suffix,
-            request.CivilStatus, request.Chapter, request.MemberType,
+            request.CivilStatus, request.MemberType,
             request.EducationLevel, request.SchoolName, request.CourseYearGraduated, request.SpecifiedProfession,
             request.HouseNo, request.Street, request.Barangay, request.CityMunicipality, request.Province, request.ZipCode, request.Country,
             request.MailingHouseNo, request.MailingStreet, request.MailingBarangay, request.MailingCityMunicipality, request.MailingProvince, request.MailingZipCode, request.MailingCountry,
@@ -303,6 +312,12 @@ public class MemberService(IApplicationDbContext db, ICacheService? cache = null
         if (lengthError is not null)
         {
             return Result<MemberDto>.Failure(lengthError);
+        }
+
+        var chapterError = await ValidateChapterAsync(request.ChapterId, null, required: true, cancellationToken);
+        if (chapterError is not null)
+        {
+            return Result<MemberDto>.Failure(chapterError);
         }
 
         var member = new Member
@@ -343,7 +358,7 @@ public class MemberService(IApplicationDbContext db, ICacheService? cache = null
             PtrPlaceIssued = request.PtrPlaceIssued,
             PtrDateIssued = request.PtrDateIssued,
             Tin = request.Tin,
-            Chapter = request.Chapter,
+            ChapterId = request.ChapterId,
             ChapterYear = request.ChapterYear,
             ChapterPosition = request.ChapterPosition,
             EmploymentStatus = request.EmploymentStatus,
@@ -373,7 +388,7 @@ public class MemberService(IApplicationDbContext db, ICacheService? cache = null
     {
         var lengthError = ValidateMemberFieldLengths(
             request.FirstName, request.MiddleName, request.LastName, request.Suffix,
-            request.CivilStatus, request.Chapter, request.MemberType,
+            request.CivilStatus, request.MemberType,
             request.EducationLevel, request.SchoolName, request.CourseYearGraduated, request.SpecifiedProfession,
             request.HouseNo, request.Street, request.Barangay, request.CityMunicipality, request.Province, request.ZipCode, request.Country,
             request.MailingHouseNo, request.MailingStreet, request.MailingBarangay, request.MailingCityMunicipality, request.MailingProvince, request.MailingZipCode, request.MailingCountry,
@@ -389,6 +404,12 @@ public class MemberService(IApplicationDbContext db, ICacheService? cache = null
         if (member is null)
         {
             return Result.NotFound($"Member '{id}' was not found.");
+        }
+
+        var chapterError = await ValidateChapterAsync(request.ChapterId, member.ChapterId, required: true, cancellationToken);
+        if (chapterError is not null)
+        {
+            return Result.Failure(chapterError);
         }
 
         // The correction path for a control number mistyped at approval. Without it a typo would be
@@ -447,7 +468,7 @@ public class MemberService(IApplicationDbContext db, ICacheService? cache = null
         member.PtrPlaceIssued = request.PtrPlaceIssued;
         member.PtrDateIssued = request.PtrDateIssued;
         member.Tin = request.Tin;
-        member.Chapter = request.Chapter;
+        member.ChapterId = request.ChapterId;
         member.ChapterYear = request.ChapterYear;
         member.ChapterPosition = request.ChapterPosition;
         member.EmploymentStatus = request.EmploymentStatus;
@@ -771,7 +792,7 @@ public class MemberService(IApplicationDbContext db, ICacheService? cache = null
         var missing = new List<(string Label, string Step)>();
         if (string.IsNullOrWhiteSpace(member.FirstName)) missing.Add(("First name", personalInfoStep));
         if (string.IsNullOrWhiteSpace(member.LastName)) missing.Add(("Last name", personalInfoStep));
-        if (string.IsNullOrWhiteSpace(member.Chapter)) missing.Add(("Chapter", personalInfoStep));
+        if (member.ChapterId is null) missing.Add(("Chapter", personalInfoStep));
         if (string.IsNullOrWhiteSpace(member.MemberType)) missing.Add(("Member type", personalInfoStep));
         if (string.IsNullOrWhiteSpace(member.PrcLicenseNo)) missing.Add(("RMP License No.", personalInfoStep));
         if (member.PrcRegistrationDate is null) missing.Add(("RMP License Registration Date", personalInfoStep));
@@ -863,7 +884,7 @@ public class MemberService(IApplicationDbContext db, ICacheService? cache = null
     /// </summary>
     private static string? ValidateMemberFieldLengths(
         string firstName, string? middleName, string lastName, string? suffix,
-        string? civilStatus, string chapter, string memberType,
+        string? civilStatus, string memberType,
         string? educationLevel, string? schoolName, string? courseYearGraduated, string? specifiedProfession,
         string? houseNo, string? street, string? barangay, string? cityMunicipality, string? province, string? zipCode, string? country,
         string? mailingHouseNo, string? mailingStreet, string? mailingBarangay, string? mailingCityMunicipality, string? mailingProvince, string? mailingZipCode, string? mailingCountry,
@@ -879,7 +900,6 @@ public class MemberService(IApplicationDbContext db, ICacheService? cache = null
         if (middleName?.Length > 128) return "Middle name must be 128 characters or fewer.";
         if (suffix?.Length > 32) return "Suffix must be 32 characters or fewer.";
         if (civilStatus?.Length > 32) return "Civil status must be 32 characters or fewer.";
-        if (chapter.Length > 64) return "Chapter must be 64 characters or fewer.";
         if (memberType.Length > 64) return "Member type must be 64 characters or fewer.";
         if (educationLevel?.Length > 32) return "Educational record must be 32 characters or fewer.";
         if (schoolName?.Length > 256) return "Name of school/institution must be 256 characters or fewer.";
@@ -906,6 +926,29 @@ public class MemberService(IApplicationDbContext db, ICacheService? cache = null
             if (value?.Length > maxLength) return $"{label} must be {maxLength} characters or fewer.";
         }
 
+        return null;
+    }
+
+    /// <summary>Chapters used to be a free string with no server-side whitelist; now the id must
+    /// reference a real row. An inactive chapter can't be newly picked, but a member already on it
+    /// (<paramref name="currentChapterId"/>) can be re-saved without being forced to move.</summary>
+    private async Task<string?> ValidateChapterAsync(
+        Guid? chapterId, Guid? currentChapterId, bool required, CancellationToken cancellationToken)
+    {
+        if (chapterId is null)
+        {
+            return required ? "Chapter is required." : null;
+        }
+
+        var chapter = await db.Chapters.AsNoTracking().FirstOrDefaultAsync(c => c.Id == chapterId, cancellationToken);
+        if (chapter is null)
+        {
+            return "The selected chapter was not found.";
+        }
+        if (!chapter.IsActive && chapterId != currentChapterId)
+        {
+            return $"Chapter '{chapter.Name}' is no longer available.";
+        }
         return null;
     }
 
@@ -941,7 +984,7 @@ public class MemberService(IApplicationDbContext db, ICacheService? cache = null
 
         var lengthError = ValidateMemberFieldLengths(
             request.FirstName, request.MiddleName, request.LastName, request.Suffix,
-            request.CivilStatus, request.Chapter, request.MemberType,
+            request.CivilStatus, request.MemberType,
             request.EducationLevel, request.SchoolName, request.CourseYearGraduated, request.SpecifiedProfession,
             request.HouseNo, request.Street, request.Barangay, request.CityMunicipality, request.Province, request.ZipCode, request.Country,
             request.MailingHouseNo, request.MailingStreet, request.MailingBarangay, request.MailingCityMunicipality, request.MailingProvince, request.MailingZipCode, request.MailingCountry,
@@ -955,6 +998,16 @@ public class MemberService(IApplicationDbContext db, ICacheService? cache = null
 
         var member = await db.Members.FirstOrDefaultAsync(m => m.UserId == userId, cancellationToken);
         var isDraft = member is null || member.SubmittedAt is null;
+        if (isDraft)
+        {
+            // Not required here - a wizard autosave legitimately has no chapter yet; submission
+            // enforces it. Past submission the chapter is locked (checked below), so nothing to validate.
+            var chapterError = await ValidateChapterAsync(request.ChapterId, member?.ChapterId, required: false, cancellationToken);
+            if (chapterError is not null)
+            {
+                return Result<MemberDto>.Failure(chapterError);
+            }
+        }
         // Captured before any mutation below - this save's own UpdatedAt must never be used as the
         // baseline a re-upload has to beat, or a genuinely fresh upload would always look stale.
         var baselineAt = member is null ? (DateTimeOffset?)null : member.UpdatedAt ?? member.CreatedAt;
@@ -977,7 +1030,7 @@ public class MemberService(IApplicationDbContext db, ICacheService? cache = null
             // Once submitted, Member Type and Chapter become admin-managed only - the member could
             // freely choose them while still completing the wizard, but not after. Checked before
             // any mutation so a rejection never partially applies.
-            if (!isDraft && (request.MemberType != member.MemberType || request.Chapter != member.Chapter))
+            if (!isDraft && (request.MemberType != member.MemberType || request.ChapterId != member.ChapterId))
             {
                 return Result<MemberDto>.Failure("Member Type and Chapter can only be changed by an administrator.");
             }
@@ -1070,7 +1123,7 @@ public class MemberService(IApplicationDbContext db, ICacheService? cache = null
             member.PrcLicenseNo = request.PrcLicenseNo;
             member.PrcRegistrationDate = request.PrcRegistrationDate;
             member.PrcValidUntilDate = request.PrcValidUntilDate;
-            member.Chapter = request.Chapter;
+            member.ChapterId = request.ChapterId;
             member.MemberType = request.MemberType;
         }
 

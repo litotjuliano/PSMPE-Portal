@@ -54,7 +54,7 @@ function buildEmptyWizardState(displayName: string): MembershipApplicationState 
     birthdate: '',
     gender: '',
     civilStatus: '',
-    chapter: '',
+    chapterId: '',
     chapterYear: '',
     chapterPosition: '',
     memberType: MemberTypes.Regular,
@@ -102,7 +102,7 @@ function toWizardState(member: Member): MembershipApplicationState {
     birthdate: member.birthdate ?? '',
     gender: member.gender ?? '',
     civilStatus: member.civilStatus ?? '',
-    chapter: member.chapter,
+    chapterId: member.chapterId ?? '',
     chapterYear: member.chapterYear !== null ? String(member.chapterYear) : '',
     chapterPosition: member.chapterPosition ?? '',
     memberType: member.memberType || MemberTypes.Regular,
@@ -153,7 +153,7 @@ function hasCompletedPersonalInfo(member: Member): boolean {
   return Boolean(
     member.firstName &&
       member.lastName &&
-      member.chapter &&
+      member.chapterId &&
       member.memberType &&
       member.birthdate &&
       member.gender &&
@@ -322,7 +322,7 @@ export function MyProfilePage() {
       ptrDateIssued: wizardState.ptrDateIssued || null,
       tin: wizardState.tin || null,
       company: wizardState.company || null,
-      chapter: wizardState.chapter,
+      chapterId: wizardState.chapterId || null,
       chapterYear: wizardState.chapterYear !== '' ? Number(wizardState.chapterYear) : null,
       chapterPosition: wizardState.chapterPosition || null,
       employmentStatus: existing?.employmentStatus ?? null,

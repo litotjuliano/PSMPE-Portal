@@ -1,3 +1,4 @@
+using PSMPE.Portal.WebAPI.IntegrationTests.TestSupport;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -55,7 +56,7 @@ public class SystemAccountMemberCleanupTests : IClassFixture<CustomWebApplicatio
             MembershipNo = Guid.NewGuid().ToString("N")[..8],
             FirstName = "Test",
             LastName = "User",
-            Chapter = Chapters.Ncr,
+            ChapterId = TestChapters.Ncr,
             MemberType = MemberTypes.Regular,
             Status = MembershipStatus.Pending,
             SubmittedAt = DateTimeOffset.UtcNow

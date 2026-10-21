@@ -106,7 +106,10 @@ public class Member : BaseEntity
     /// </summary>
     public string? PrcVerificationRejectedReason { get; set; }
 
-    public string Chapter { get; set; } = string.Empty;
+    /// <summary>Null only for a draft application that hasn't picked a chapter yet - submission
+    /// requires one (see MemberService's missing-fields check).</summary>
+    public Guid? ChapterId { get; set; }
+    public Chapter? Chapter { get; set; }
     public string MemberType { get; set; } = string.Empty;
 
     /// <summary>

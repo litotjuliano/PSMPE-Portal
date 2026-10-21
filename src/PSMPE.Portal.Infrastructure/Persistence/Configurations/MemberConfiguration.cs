@@ -16,7 +16,8 @@ public class MemberConfiguration : IEntityTypeConfiguration<Member>
         // below still applies - Postgres treats NULLs as distinct, so applicants awaiting a number
         // don't conflict.
         builder.Property(m => m.MembershipNo).HasMaxLength(32);
-        builder.Property(m => m.Chapter).IsRequired().HasMaxLength(64);
+        builder.HasOne(m => m.Chapter).WithMany()
+            .HasForeignKey(m => m.ChapterId).OnDelete(DeleteBehavior.Restrict);
         builder.Property(m => m.MemberType).IsRequired().HasMaxLength(64);
         builder.Property(m => m.ChapterPosition).HasMaxLength(128);
         builder.Property(m => m.PrcLicenseNo).HasMaxLength(64);

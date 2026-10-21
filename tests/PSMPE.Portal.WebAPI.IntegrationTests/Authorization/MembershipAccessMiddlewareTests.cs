@@ -67,7 +67,7 @@ public class MembershipAccessMiddlewareTests : IClassFixture<CustomWebApplicatio
             UserId = userId,
             FirstName = "Juan",
             LastName = "Dela Cruz",
-            Chapter = "NCR",
+            ChapterId = TestChapters.Ncr,
             MemberType = "Regular",
             Status = status,
             SubmittedAt = DateTimeOffset.UtcNow.AddYears(-1),

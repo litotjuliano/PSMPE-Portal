@@ -32,9 +32,9 @@ public class EventsController(IEventService eventService, IPaymentService paymen
     [HttpGet]
     [AllowExpiredMember]
     public async Task<ActionResult<PagedResult<EventDto>>> GetAll(
-        int page = 1, int pageSize = 20, string? search = null, string? chapter = null, bool upcomingOnly = false,
+        int page = 1, int pageSize = 20, string? search = null, Guid? chapterId = null, bool upcomingOnly = false,
         CancellationToken cancellationToken = default) =>
-        Ok(await eventService.GetAllAsync(page, pageSize, search, chapter, upcomingOnly, CurrentUserId, IsEventsStaff, cancellationToken));
+        Ok(await eventService.GetAllAsync(page, pageSize, search, chapterId, upcomingOnly, CurrentUserId, IsEventsStaff, cancellationToken));
 
     /// <summary>See GetAll's comment - same browsable-regardless-of-restriction reasoning.</summary>
     [HttpGet("{id:guid}")]

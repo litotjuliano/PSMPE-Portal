@@ -13,7 +13,7 @@ namespace PSMPE.Portal.Application.UnitTests.Events;
 public class EventServiceTests
 {
     private static CreateEventRequest ValidCreateRequest(string title = "Water Sanitation Workshop") =>
-        new(title, "Cross-connection control", Chapters.Ncr, "PICC", DateTimeOffset.UtcNow.AddDays(10),
+        new(title, "Cross-connection control", TestChapters.Ncr, "PICC", DateTimeOffset.UtcNow.AddDays(10),
             DateTimeOffset.UtcNow.AddDays(10).AddHours(4), Capacity: 100, FeeOnsite: 500m, FeeOnline: 200m,
             Status: EventStatus.Published);
 
@@ -138,7 +138,7 @@ public class EventServiceTests
         var created = (await service.CreateAsync(ValidCreateRequest())).Value!;
         var updateRequest = ToUpdateRequest(created) with
         {
-            Sessions = [new EventSessionRequest(Guid.NewGuid(), "Bogus Session", created.StartsAt, created.EndsAt, 1)],
+            Sessions = [new EventSessionRequest(Guid.NewGuid(), "Bogus Session", created.StartsAt!.Value, created.EndsAt!.Value, 1)],
         };
 
         var result = await service.UpdateAsync(created.Id, updateRequest);
@@ -162,7 +162,7 @@ public class EventServiceTests
         // Replaces the only session with a brand new one, which would drop the attended session.
         var updateRequest = ToUpdateRequest(created) with
         {
-            Sessions = [new EventSessionRequest(null, "Replacement Session", created.StartsAt, created.EndsAt, 1)],
+            Sessions = [new EventSessionRequest(null, "Replacement Session", created.StartsAt!.Value, created.EndsAt!.Value, 1)],
         };
 
         var result = await service.UpdateAsync(created.Id, updateRequest);
@@ -171,7 +171,7 @@ public class EventServiceTests
     }
 
     [Fact]
-    public async Task UpdateAsync_NoSessions_Fails()
+    public async Task UpdateAsync_NoSessions_OnADatedEvent_KeepsOneSessionSpanningTheEvent()
     {
         using var db = TestDbContext.CreateInMemory();
         var service = new EventService(db);
@@ -180,7 +180,102 @@ public class EventServiceTests
 
         var result = await service.UpdateAsync(created.Id, updateRequest);
 
+        Assert.True(result.Succeeded);
+        var session = Assert.Single(result.Value!.Sessions);
+        Assert.Equal(created.StartsAt, session.StartsAt);
+        Assert.Equal(created.EndsAt, session.EndsAt);
+    }
+
+    [Fact]
+    public async Task CreateAsync_WithoutDescription_Fails()
+    {
+        using var db = TestDbContext.CreateInMemory();
+        var service = new EventService(db);
+
+        var result = await service.CreateAsync(ValidCreateRequest() with { Description = "  " });
+
         Assert.False(result.Succeeded);
+        Assert.Contains("Description", result.Error);
+    }
+
+    [Fact]
+    public async Task CreateAsync_DraftWithoutDates_SucceedsWithNoSessions()
+    {
+        using var db = TestDbContext.CreateInMemory();
+        var service = new EventService(db);
+
+        var result = await service.CreateAsync(
+            ValidCreateRequest() with { StartsAt = null, EndsAt = null, Status = EventStatus.Draft });
+
+        Assert.True(result.Succeeded);
+        Assert.Null(result.Value!.StartsAt);
+        Assert.Null(result.Value.EndsAt);
+        Assert.Empty(result.Value.Sessions);
+    }
+
+    [Fact]
+    public async Task CreateAsync_PublishedWithoutDates_Fails()
+    {
+        using var db = TestDbContext.CreateInMemory();
+        var service = new EventService(db);
+
+        var result = await service.CreateAsync(
+            ValidCreateRequest() with { StartsAt = null, EndsAt = null, Status = EventStatus.Published });
+
+        Assert.False(result.Succeeded);
+        Assert.Contains("required to publish", result.Error);
+    }
+
+    [Fact]
+    public async Task UpdateAsync_AddingDatesToAnUndatedDraft_CreatesTheDefaultSession()
+    {
+        using var db = TestDbContext.CreateInMemory();
+        var service = new EventService(db);
+        var created = (await service.CreateAsync(
+            ValidCreateRequest() with { StartsAt = null, EndsAt = null, Status = EventStatus.Draft })).Value!;
+        var start = DateTimeOffset.UtcNow.AddDays(20);
+
+        var result = await service.UpdateAsync(created.Id, ToUpdateRequest(created) with
+        {
+            StartsAt = start,
+            EndsAt = start.AddHours(8),
+            Status = EventStatus.Published,
+            Sessions = [],
+        });
+
+        Assert.True(result.Succeeded);
+        var session = Assert.Single(result.Value!.Sessions);
+        Assert.Equal(start, session.StartsAt);
+    }
+
+    [Fact]
+    public async Task CreateAsync_UnknownChapter_Fails()
+    {
+        using var db = TestDbContext.CreateInMemory();
+        var service = new EventService(db);
+
+        var result = await service.CreateAsync(ValidCreateRequest() with { ChapterId = Guid.NewGuid() });
+
+        Assert.False(result.Succeeded);
+        Assert.Contains("chapter", result.Error, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task CreateAsync_InactiveChapter_FailsButAnEventAlreadyOnItCanBeResaved()
+    {
+        using var db = TestDbContext.CreateInMemory();
+        var service = new EventService(db);
+        var created = (await service.CreateAsync(ValidCreateRequest())).Value!;
+        var chapter = await db.Chapters.FindAsync(TestChapters.Ncr);
+        chapter!.IsActive = false;
+        await db.SaveChangesAsync();
+
+        var another = await service.CreateAsync(ValidCreateRequest("Another"));
+        var resave = await service.UpdateAsync(created.Id, ToUpdateRequest(created));
+
+        Assert.False(another.Succeeded);
+        Assert.True(resave.Succeeded);
+        Assert.Equal(TestChapters.NcrName, resave.Value!.Chapter);
     }
 
     /// <summary>
@@ -202,7 +297,7 @@ public class EventServiceTests
         });
         await db.SaveChangesAsync();
 
-        var page = await service.GetAllAsync(1, 20, search: null, chapter: null, upcomingOnly: false);
+        var page = await service.GetAllAsync(1, 20, search: null, chapterId: null, upcomingOnly: false);
 
         Assert.Equal(0, page.Items.Single().RegisteredCount);
     }
@@ -215,7 +310,7 @@ public class EventServiceTests
         await service.CreateAsync(ValidCreateRequest("National Convention"));
         await service.CreateAsync(ValidCreateRequest("Plumbing Code Seminar"));
 
-        var page = await service.GetAllAsync(1, 20, search: "seminar", chapter: null, upcomingOnly: false);
+        var page = await service.GetAllAsync(1, 20, search: "seminar", chapterId: null, upcomingOnly: false);
 
         Assert.Equal(["Plumbing Code Seminar"], page.Items.Select(e => e.Title));
     }
@@ -239,7 +334,7 @@ public class EventServiceTests
         await service.CreateAsync(ValidCreateRequest("Draft Event") with { Status = EventStatus.Draft });
         await service.CreateAsync(ValidCreateRequest("Published Event"));
 
-        var page = await service.GetAllAsync(1, 20, search: null, chapter: null, upcomingOnly: false);
+        var page = await service.GetAllAsync(1, 20, search: null, chapterId: null, upcomingOnly: false);
 
         Assert.Equal(["Published Event"], page.Items.Select(e => e.Title));
     }
@@ -252,7 +347,7 @@ public class EventServiceTests
         await service.CreateAsync(ValidCreateRequest("Draft Event") with { Status = EventStatus.Draft });
         await service.CreateAsync(ValidCreateRequest("Published Event"));
 
-        var page = await service.GetAllAsync(1, 20, search: null, chapter: null, upcomingOnly: false, includeDrafts: true);
+        var page = await service.GetAllAsync(1, 20, search: null, chapterId: null, upcomingOnly: false, includeDrafts: true);
 
         Assert.Equal(2, page.TotalCount);
     }
@@ -309,7 +404,7 @@ public class EventServiceTests
         db.EventRegistrations.Add(registration);
         await db.SaveChangesAsync();
 
-        var page = await service.GetAllAsync(1, 20, search: null, chapter: null, upcomingOnly: false, currentUserId: member.UserId);
+        var page = await service.GetAllAsync(1, 20, search: null, chapterId: null, upcomingOnly: false, currentUserId: member.UserId);
 
         var dto = page.Items.Single();
         Assert.Equal(registration.Id, dto.MyRegistrationId);
@@ -325,7 +420,7 @@ public class EventServiceTests
         await service.CreateAsync(ValidCreateRequest());
         var member = await SeedMemberForEventTestsAsync(db);
 
-        var page = await service.GetAllAsync(1, 20, search: null, chapter: null, upcomingOnly: false, currentUserId: member.UserId);
+        var page = await service.GetAllAsync(1, 20, search: null, chapterId: null, upcomingOnly: false, currentUserId: member.UserId);
 
         var dto = page.Items.Single();
         Assert.Null(dto.MyRegistrationId);
@@ -347,7 +442,7 @@ public class EventServiceTests
         });
         await db.SaveChangesAsync();
 
-        var page = await service.GetAllAsync(1, 20, search: null, chapter: null, upcomingOnly: false, currentUserId: member.UserId);
+        var page = await service.GetAllAsync(1, 20, search: null, chapterId: null, upcomingOnly: false, currentUserId: member.UserId);
 
         Assert.Null(page.Items.Single().MyMode);
     }
@@ -362,7 +457,7 @@ public class EventServiceTests
         db.EventRegistrations.Add(new EventRegistration { EventId = created.Id, MemberId = member.Id, Mode = EventMode.Onsite });
         await db.SaveChangesAsync();
 
-        var page = await service.GetAllAsync(1, 20, search: null, chapter: null, upcomingOnly: false);
+        var page = await service.GetAllAsync(1, 20, search: null, chapterId: null, upcomingOnly: false);
 
         Assert.Null(page.Items.Single().MyMode);
     }
@@ -386,7 +481,7 @@ public class EventServiceTests
     }
 
     private static UpdateEventRequest ToUpdateRequest(EventDto e) =>
-        new(e.Title, e.Description, e.Chapter, e.Venue, e.StartsAt, e.EndsAt, e.Capacity, e.FeeOnsite, e.FeeOnline,
+        new(e.Title, e.Description, e.ChapterId, e.Venue, e.StartsAt, e.EndsAt, e.Capacity, e.FeeOnsite, e.FeeOnline,
             e.CpdUnitsOnsite, e.CpdUnitsOnline,
             e.Sessions.Select(s => new EventSessionRequest(s.Id, s.Title, s.StartsAt, s.EndsAt, s.Order, s.Venue)).ToList(),
             Status: e.Status);
@@ -537,7 +632,7 @@ public class EventServiceTests
         email ??= $"{Guid.NewGuid()}@example.com";
         var user = new ApplicationUser { UserName = email, Email = email };
         db.Add(user);
-        var member = new Member { UserId = user.Id, User = user, FirstName = "Juan", LastName = "Dela Cruz", Chapter = Chapters.Ncr, MemberType = MemberTypes.Regular };
+        var member = new Member { UserId = user.Id, User = user, FirstName = "Juan", LastName = "Dela Cruz", ChapterId = TestChapters.Ncr, MemberType = MemberTypes.Regular };
         db.Members.Add(member);
         await db.SaveChangesAsync();
         return member;
@@ -590,7 +685,7 @@ public class EventServiceTests
         var service = new EventService(db);
         var created = (await service.CreateAsync(ValidCreateRequest())).Value!;
         var sixSessions = Enumerable.Range(1, 6)
-            .Select(i => new EventSessionRequest(i == 1 ? created.Sessions[0].Id : null, $"Lecture {i}", created.StartsAt.AddHours(i), created.StartsAt.AddHours(i + 1), i))
+            .Select(i => new EventSessionRequest(i == 1 ? created.Sessions[0].Id : null, $"Lecture {i}", created.StartsAt!.Value.AddHours(i), created.StartsAt!.Value.AddHours(i + 1), i))
             .ToList();
         var @event = (await service.UpdateAsync(created.Id, ToUpdateRequest(created) with { Sessions = sixSessions })).Value!;
         var member = await SeedMemberForEventTestsAsync(db);
@@ -634,8 +729,8 @@ public class EventServiceTests
         var created = (await service.CreateAsync(ValidCreateRequest())).Value!;
         var twoSessions = new List<EventSessionRequest>
         {
-            new(created.Sessions[0].Id, "Lecture 1", created.StartsAt, created.StartsAt.AddHours(1), 1),
-            new(null, "Lecture 2", created.StartsAt.AddHours(1), created.EndsAt, 2),
+            new(created.Sessions[0].Id, "Lecture 1", created.StartsAt!.Value, created.StartsAt!.Value.AddHours(1), 1),
+            new(null, "Lecture 2", created.StartsAt!.Value.AddHours(1), created.EndsAt!.Value, 2),
         };
         var @event = (await service.UpdateAsync(created.Id, ToUpdateRequest(created) with { Sessions = twoSessions })).Value!;
         var member = await SeedMemberForEventTestsAsync(db);
@@ -661,8 +756,8 @@ public class EventServiceTests
         var created = (await service.CreateAsync(ValidCreateRequest())).Value!;
         var twoSessions = new List<EventSessionRequest>
         {
-            new(created.Sessions[0].Id, "Lecture 1", created.StartsAt, created.StartsAt.AddHours(1), 1),
-            new(null, "Lecture 2", created.StartsAt.AddHours(1), created.EndsAt, 2),
+            new(created.Sessions[0].Id, "Lecture 1", created.StartsAt!.Value, created.StartsAt!.Value.AddHours(1), 1),
+            new(null, "Lecture 2", created.StartsAt!.Value.AddHours(1), created.EndsAt!.Value, 2),
         };
         var @event = (await service.UpdateAsync(created.Id, ToUpdateRequest(created) with { Sessions = twoSessions })).Value!;
         var member1 = await SeedMemberForEventTestsAsync(db);
@@ -954,7 +1049,7 @@ public class EventServiceTests
         var service = new EventService(db);
         var created = (await service.CreateAsync(ValidCreateRequest())).Value!;
         var sixSessions = Enumerable.Range(1, 6)
-            .Select(i => new EventSessionRequest(i == 1 ? created.Sessions[0].Id : null, $"Lecture {i}", created.StartsAt.AddHours(i), created.StartsAt.AddHours(i + 1), i))
+            .Select(i => new EventSessionRequest(i == 1 ? created.Sessions[0].Id : null, $"Lecture {i}", created.StartsAt!.Value.AddHours(i), created.StartsAt!.Value.AddHours(i + 1), i))
             .ToList();
         var @event = (await service.UpdateAsync(created.Id, ToUpdateRequest(created) with { Sessions = sixSessions, CpdUnitsOnsite = 8m })).Value!;
         var member = await SeedMemberForEventTestsAsync(db);

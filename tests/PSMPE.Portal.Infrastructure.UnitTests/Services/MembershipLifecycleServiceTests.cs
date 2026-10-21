@@ -39,7 +39,6 @@ public class MembershipLifecycleServiceTests : IDisposable
         },
         FirstName = "Juan",
         LastName = "Dela Cruz",
-        Chapter = "NCR",
         MemberType = "Regular",
         Status = MembershipStatus.Active,
         SubmittedAt = DateTimeOffset.UtcNow.AddYears(-1),

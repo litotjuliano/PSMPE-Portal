@@ -1,3 +1,4 @@
+using PSMPE.Portal.WebAPI.IntegrationTests.TestSupport;
 using System.Security.Claims;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
@@ -441,7 +442,7 @@ public class AdminControllerTests : IClassFixture<CustomWebApplicationFactory>, 
         PrcValidUntilDate: null,
         PtrNumber: null, PtrPlaceIssued: null, PtrDateIssued: null,
         Tin: null,
-        Chapter: Chapters.Ncr, ChapterYear: null, ChapterPosition: null,
+        ChapterId: TestChapters.Ncr, ChapterYear: null, ChapterPosition: null,
         EmploymentStatus: null,
         Company: null,
         Position: null,

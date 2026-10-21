@@ -37,8 +37,9 @@ see Open questions/TODO for what's deferred.
     (submitted, non-draft members, with system/staff accounts excluded)
   - Response: `MemberStatsDto` — `StatusCounts` (Pending/Active/Expired/Deactivated, all four
     always present even at zero), `RegistrationTrend` (last 12 calendar months, oldest first,
-    zero-filled gaps), `ByChapter`/`ByMemberType` (one row per `Chapters.All`/`MemberTypes.All`
-    constant, in that declared order, zero-filled), and `ActionItems` (`PendingApprovals` —
+    zero-filled gaps), `ByChapter`/`ByMemberType` (`ByChapter`: one row per active `Chapters` table row in
+    its admin-set order, zero-filled, plus any inactive chapter that still has members; `ByMemberType`: one row per
+    `MemberTypes.All` constant, in that declared order, zero-filled), and `ActionItems` (`PendingApprovals` —
     `ApprovedAt == null`; `PendingPrcVerification` — same predicate as `pendingPrcVerificationOnly`
     above; `RenewalsDueSoon` — Active members whose `RenewalDueDate` falls within 60 days)
   - Not cached — this is one dashboard load, not a hot path like the grace-period lookup
@@ -131,7 +132,7 @@ Four separate axes on the same row, easy to conflate:
   half-filled form.
 - **`ApprovedAt`** — has an admin reviewed a *submitted* application? `null` until a
   `POST /api/members/{id}/approve` call. Independent of `Status`.
-- **`MemberType`** (`Domain.Enums.MemberTypes`, const list like `Chapters`) — a category chosen at
+- **`MemberType`** (`Domain.Enums.MemberTypes`, a const list) — a category chosen at
   registration (currently only `"Regular Member"`). Purely descriptive, not a workflow state.
 - **`Status`** (`MembershipStatus`: `Pending`/`Active`/`Expired`/`Deactivated`) — payment-gated.
   Per the business rule: approved members who pay dues become `Active`; approved-but-unpaid
@@ -577,9 +578,10 @@ repeat call doesn't regenerate/resend):
   won't survive a redeploy/restart in production. A `DigitalOceanSpacesFileStorageService` is the
   intended next implementation once real Spaces credentials exist; the interface seam makes that
   a contained addition, not a rewrite.
-- **Chapter is a fixed const list** (`Domain.Enums.Chapters`, mirrors `RoleNames`/`Permissions`'s
-  style), not a database-editable entity — no mockup or requirement showed chapter CRUD.
-  Revisit as a real entity+table if admins ever need to add/rename chapters without a deploy.
+- ~~**Chapter is a fixed const list**~~ — **now a real entity**, see `chapters.md`. `Member.ChapterId`
+  (nullable for drafts) points at a Super-Admin-managed `Chapters` row; requests send `chapterId`, DTOs
+  return `chapterId` and the name in `chapter`. The id is validated on every write path (inactive
+  chapters can't be newly chosen), and the post-submit lock compares ids.
 - ~~**Payments/Dues domain doesn't exist yet**~~ — **built**, see `payments.md`. Verifying a payment
   is now the only thing that sets `Status = Active` or moves `RenewalDueDate`. `Status` also now
   auto-transitions `Active → Expired` once the grace period ends (`MembershipLifecycleService`,

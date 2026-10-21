@@ -10,7 +10,7 @@ set ROOT=%~dp0
 echo ============================================
 echo  PSMPE Portal - freeing dev ports
 echo ============================================
-call :killport 5000
+call :killport 5100
 REM Vite silently increments past a busy port instead of failing, so orphaned dev
 REM servers from earlier runs pile up on 5174, 5175, etc. Clear a range, not just 5173.
 for /L %%p in (5173,1,5182) do call :killport %%p
@@ -36,6 +36,9 @@ REM reach Postgres via localhost, not the "postgres" hostname used by docker-com
 REM Rebuilding the connection string from the .env pieces guarantees the password
 REM always matches whatever the postgres container was actually initialized with.
 if not defined POSTGRES_PORT set POSTGRES_PORT=5432
+REM Local dev backend listens on 5100, not 5000: 5000 is commonly taken by other Docker apps and
+REM the frontend would silently talk to the wrong server. Overrides the compose-oriented .env value.
+set "VITE_API_BASE_URL=http://localhost:5100"
 set "ConnectionStrings__DefaultConnection=Host=localhost;Port=%POSTGRES_PORT%;Database=%POSTGRES_DB%;Username=%POSTGRES_USER%;Password=%POSTGRES_PASSWORD%"
 
 echo.
@@ -126,11 +129,11 @@ echo ============================================
 echo  Ready - launching dev servers
 echo ============================================
 
-start "PSMPE Backend (:5000)" cmd /k "cd /d "%ROOT%src\PSMPE.Portal.WebAPI" && dotnet run --urls http://localhost:5000"
+start "PSMPE Backend (:5100)" cmd /k "cd /d "%ROOT%src\PSMPE.Portal.WebAPI" && dotnet run --urls http://localhost:5100"
 start "PSMPE Frontend (:5173)" cmd /k "cd /d "%ROOT%apps\web" && npm run dev"
 
 echo.
-echo Backend:  http://localhost:5000/swagger
+echo Backend:  http://localhost:5100/swagger
 echo Frontend: http://localhost:5173
 echo Each service is running in its own window - close a window to stop it.
 

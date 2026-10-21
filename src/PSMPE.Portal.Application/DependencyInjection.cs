@@ -1,4 +1,5 @@
 using Microsoft.Extensions.DependencyInjection;
+using PSMPE.Portal.Application.Chapters;
 using PSMPE.Portal.Application.Content;
 using PSMPE.Portal.Application.Events;
 using PSMPE.Portal.Application.Layouts;
@@ -15,6 +16,7 @@ public static class DependencyInjection
         services.AddScoped<IContentService, ContentService>();
         services.AddScoped<ILayoutService, LayoutService>();
         services.AddScoped<ILocationService, LocationService>();
+        services.AddScoped<IChapterService, ChapterService>();
         services.AddScoped<IMemberService, MemberService>();
         services.AddScoped<IMemberUploadService, MemberUploadService>();
         services.AddScoped<IMemberCertificateService, MemberCertificateService>();

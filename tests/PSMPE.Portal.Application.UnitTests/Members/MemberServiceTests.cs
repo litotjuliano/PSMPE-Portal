@@ -13,7 +13,7 @@ namespace PSMPE.Portal.Application.UnitTests.Members;
 public class MemberServiceTests
 {
     private static UpdateMyProfileRequest BuildRequest(
-        string chapter = Chapters.Ncr, string memberType = MemberTypes.Regular,
+        Guid? chapterId = null, string memberType = MemberTypes.Regular,
         string? prcLicenseNo = null, DateOnly? prcRegistrationDate = null, DateOnly? prcValidUntilDate = null, bool prcIdReuploaded = false,
         string firstName = "Juan", string lastName = "Dela Cruz", string? address = "123 Main St",
         string? company = null,
@@ -27,7 +27,7 @@ public class MemberServiceTests
         MailingHouseNo: null, MailingStreet: null, MailingBarangay: null, MailingCityMunicipality: null, MailingProvince: null, MailingZipCode: null, MailingCountry: null,
         HousePhone: null,
         PrcLicenseNo: prcLicenseNo, PrcRegistrationDate: prcRegistrationDate, PrcValidUntilDate: prcValidUntilDate, PtrNumber: "PTR-0012345", PtrPlaceIssued: ptrPlaceIssued, PtrDateIssued: ptrDateIssued, Tin: null,
-        Chapter: chapter, ChapterYear: chapterYear, ChapterPosition: chapterPosition,
+        ChapterId: chapterId ?? TestChapters.Ncr, ChapterYear: chapterYear, ChapterPosition: chapterPosition,
         EmploymentStatus: null, Company: company, Position: null, BusinessAddress: null, YearsOfPractice: null, Specialization: null, Skills: null,
         MemberType: memberType,
         PrcIdReuploaded: prcIdReuploaded);
@@ -41,7 +41,7 @@ public class MemberServiceTests
             MembershipNo = "000001",
             FirstName = "Juan",
             LastName = "Dela Cruz",
-            Chapter = Chapters.Ncr,
+            ChapterId = TestChapters.Ncr,
             MemberType = MemberTypes.Regular,
             PrcLicenseNo = prcLicenseNo,
             Status = MembershipStatus.Pending,
@@ -61,7 +61,7 @@ public class MemberServiceTests
             MembershipNo = "000001",
             FirstName = "Juan",
             LastName = "Dela Cruz",
-            Chapter = Chapters.Ncr,
+            ChapterId = TestChapters.Ncr,
             MemberType = MemberTypes.Regular,
             PrcLicenseNo = prcLicenseNo,
             Status = MembershipStatus.Pending,
@@ -80,10 +80,42 @@ public class MemberServiceTests
         var service = new MemberService(db);
         var member = await SeedDraftMemberAsync(db);
 
-        var result = await service.UpsertMyProfileAsync(member.UserId, BuildRequest(chapter: Chapters.Cebu, memberType: MemberTypes.Regular));
+        var result = await service.UpsertMyProfileAsync(member.UserId, BuildRequest(chapterId: TestChapters.Cebu, memberType: MemberTypes.Regular));
 
         Assert.True(result.Succeeded);
-        Assert.Equal(Chapters.Cebu, result.Value!.Chapter);
+        Assert.Equal(TestChapters.CebuName, result.Value!.Chapter);
+    }
+
+    [Fact]
+    public async Task UpsertMyProfileAsync_Draft_UnknownChapter_Fails()
+    {
+        using var db = TestDbContext.CreateInMemory();
+        var service = new MemberService(db);
+        var member = await SeedDraftMemberAsync(db);
+
+        var result = await service.UpsertMyProfileAsync(member.UserId, BuildRequest(chapterId: Guid.NewGuid()));
+
+        Assert.False(result.Succeeded);
+        Assert.Contains("chapter", result.Error, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task UpsertMyProfileAsync_Draft_InactiveChapter_FailsUnlessAlreadyAssigned()
+    {
+        using var db = TestDbContext.CreateInMemory();
+        var service = new MemberService(db);
+        var member = await SeedDraftMemberAsync(db);
+        (await db.Chapters.FindAsync(TestChapters.Cebu))!.IsActive = false;
+        (await db.Chapters.FindAsync(TestChapters.Ncr))!.IsActive = false;
+        await db.SaveChangesAsync();
+
+        // Cebu is inactive and not the member's current chapter, so it can't be newly picked...
+        var picked = await service.UpsertMyProfileAsync(member.UserId, BuildRequest(chapterId: TestChapters.Cebu));
+        // ...but NCR, though also inactive, is what the draft already has, so re-saving is fine.
+        var kept = await service.UpsertMyProfileAsync(member.UserId, BuildRequest(chapterId: TestChapters.Ncr));
+
+        Assert.False(picked.Succeeded);
+        Assert.True(kept.Succeeded);
     }
 
     [Fact]
@@ -93,11 +125,11 @@ public class MemberServiceTests
         var service = new MemberService(db);
         var member = await SeedSubmittedMemberAsync(db);
 
-        var result = await service.UpsertMyProfileAsync(member.UserId, BuildRequest(chapter: Chapters.Cebu));
+        var result = await service.UpsertMyProfileAsync(member.UserId, BuildRequest(chapterId: TestChapters.Cebu));
 
         Assert.False(result.Succeeded);
         var unchanged = await service.GetByUserIdAsync(member.UserId);
-        Assert.Equal(Chapters.Ncr, unchanged!.Chapter);
+        Assert.Equal(TestChapters.NcrName, unchanged!.Chapter);
     }
 
     [Fact]
@@ -128,7 +160,7 @@ public class MemberServiceTests
         MailingHouseNo: null, MailingStreet: null, MailingBarangay: null, MailingCityMunicipality: null, MailingProvince: null, MailingZipCode: null, MailingCountry: null,
         HousePhone: null,
         PrcLicenseNo: null, PrcRegistrationDate: null, PrcValidUntilDate: null, PtrNumber: "PTR-0012345", PtrPlaceIssued: null, PtrDateIssued: null, Tin: tin,
-        Chapter: Chapters.Ncr, ChapterYear: null, ChapterPosition: null,
+        ChapterId: TestChapters.Ncr, ChapterYear: null, ChapterPosition: null,
         EmploymentStatus: null, Company: null, Position: null, BusinessAddress: null, YearsOfPractice: null, Specialization: null, Skills: null,
         MemberType: MemberTypes.Regular);
 
@@ -410,7 +442,7 @@ public class MemberServiceTests
             MembershipNo = "000042",
             FirstName = "Maria",
             LastName = "Santos",
-            Chapter = Chapters.Ncr,
+            ChapterId = TestChapters.Ncr,
             MemberType = MemberTypes.Regular,
             Status = MembershipStatus.Active,
             SubmittedAt = DateTimeOffset.UtcNow.AddDays(-1),
@@ -422,7 +454,7 @@ public class MemberServiceTests
             MembershipNo = "000099",
             FirstName = "Pedro",
             LastName = "Reyes",
-            Chapter = Chapters.Cebu,
+            ChapterId = TestChapters.Cebu,
             MemberType = MemberTypes.Regular,
             Status = MembershipStatus.Active,
             SubmittedAt = DateTimeOffset.UtcNow.AddDays(-1),
@@ -499,7 +531,7 @@ public class MemberServiceTests
         MailingHouseNo: null, MailingStreet: null, MailingBarangay: null, MailingCityMunicipality: null, MailingProvince: null, MailingZipCode: null, MailingCountry: null,
         HousePhone: housePhone,
         PrcLicenseNo: null, PrcRegistrationDate: null, PrcValidUntilDate: null, PtrNumber: "PTR-0012345", PtrPlaceIssued: null, PtrDateIssued: null, Tin: null,
-        Chapter: Chapters.Ncr, ChapterYear: null, ChapterPosition: null,
+        ChapterId: TestChapters.Ncr, ChapterYear: null, ChapterPosition: null,
         EmploymentStatus: null, Company: null, Position: null, BusinessAddress: null, YearsOfPractice: null, Specialization: null, Skills: null,
         MemberType: MemberTypes.Regular);
 
@@ -544,7 +576,7 @@ public class MemberServiceTests
         MailingHouseNo: null, MailingStreet: null, MailingBarangay: null, MailingCityMunicipality: null, MailingProvince: null, MailingZipCode: null, MailingCountry: null,
         HousePhone: null,
         PrcLicenseNo: null, PrcRegistrationDate: null, PrcValidUntilDate: null, PtrNumber: "PTR-0012345", PtrPlaceIssued: null, PtrDateIssued: null, Tin: null,
-        Chapter: Chapters.Ncr, ChapterYear: null, ChapterPosition: null,
+        ChapterId: TestChapters.Ncr, ChapterYear: null, ChapterPosition: null,
         EmploymentStatus: null, Company: null, Position: null, BusinessAddress: null, YearsOfPractice: yearsOfPractice, Specialization: null, Skills: null,
         MemberType: MemberTypes.Regular);
 
@@ -632,7 +664,7 @@ public class MemberServiceTests
         await db.SaveChangesAsync();
 
         var result = await service.UpsertMyProfileAsync(member.UserId, BuildRequest(
-            chapter: member.Chapter, memberType: member.MemberType,
+            chapterId: member.ChapterId, memberType: member.MemberType,
             chapterYear: 2025, chapterPosition: "Treasurer"));
 
         Assert.True(result.Succeeded);
@@ -649,7 +681,7 @@ public class MemberServiceTests
             MembershipNo = "000001",
             FirstName = "Juan",
             LastName = "Dela Cruz",
-            Chapter = Chapters.Ncr,
+            ChapterId = TestChapters.Ncr,
             MemberType = MemberTypes.Regular,
             PrcLicenseNo = "MP 99999",
             PrcRegistrationDate = new DateOnly(2020, 1, 1),
@@ -995,7 +1027,7 @@ public class MemberServiceTests
         MailingHouseNo: null, MailingStreet: null, MailingBarangay: null, MailingCityMunicipality: null, MailingProvince: null, MailingZipCode: null, MailingCountry: null,
         HousePhone: null,
         PrcLicenseNo: prcLicenseNo, PrcRegistrationDate: null, PrcValidUntilDate: null, PtrNumber: null, PtrPlaceIssued: null, PtrDateIssued: null, Tin: null,
-        Chapter: Chapters.Ncr, ChapterYear: null, ChapterPosition: null,
+        ChapterId: TestChapters.Ncr, ChapterYear: null, ChapterPosition: null,
         EmploymentStatus: null, Company: null, Position: null, BusinessAddress: null, YearsOfPractice: null, Specialization: null, Skills: null,
         MemberType: MemberTypes.Regular, RenewalDueDate: null, NationalDuesReferenceNo: null);
 
@@ -1054,7 +1086,7 @@ public class MemberServiceTests
         MailingHouseNo: null, MailingStreet: null, MailingBarangay: null, MailingCityMunicipality: null, MailingProvince: null, MailingZipCode: null, MailingCountry: null,
         HousePhone: null,
         PrcLicenseNo: null, PrcRegistrationDate: null, PrcValidUntilDate: null, PtrNumber: null, PtrPlaceIssued: null, PtrDateIssued: null, Tin: null,
-        Chapter: Chapters.Ncr, ChapterYear: null, ChapterPosition: null,
+        ChapterId: TestChapters.Ncr, ChapterYear: null, ChapterPosition: null,
         EmploymentStatus: null, Company: null, Position: null, BusinessAddress: null, YearsOfPractice: null, Specialization: null, Skills: null,
         MemberType: MemberTypes.Regular, Status: MembershipStatus.Pending, RenewalDueDate: null, NationalDuesReferenceNo: null);
 

@@ -24,6 +24,8 @@ export { ContentListCard } from './pages/ContentListCard'
 export { ContentEditCard } from './pages/ContentEditCard'
 export { AuditLogTable } from './pages/AuditLogTable'
 export { LocationsTable } from './pages/LocationsTable'
+export { ChaptersTable, type ChapterStatusFilter } from './pages/ChaptersTable'
+export { ChapterFormModal, type ChapterFormInitial, type ChapterFormValues } from './pages/ChapterFormModal'
 export {
   LocationFormModal,
   type LocationFormInitial,
