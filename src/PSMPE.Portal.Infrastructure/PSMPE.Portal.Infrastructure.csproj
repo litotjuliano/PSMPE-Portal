@@ -23,6 +23,7 @@
 
   <ItemGroup>
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <EmbeddedResource Include="Persistence/Seed/ph-locations.json" LogicalName="ph-locations.json" />
   </ItemGroup>
 
 </Project>

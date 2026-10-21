@@ -23,6 +23,22 @@ export interface ReleaseNote {
 
 export const releaseNotes: ReleaseNote[] = [
   {
+    version: '1.3.0',
+    date: '2026-10-12',
+    changes: [
+      {
+        type: 'Added',
+        description:
+          'A new Locations page (Super Admin only) to add, rename and remove regions, provinces and cities/municipalities, including their zip codes, with search and region/province filters. Changes show up in every address form right away, without a software update.',
+      },
+      {
+        type: 'Changed',
+        description:
+          'The address forms now read their regions, provinces and cities from the portal instead of a fixed list. Addresses members already saved are not changed.',
+      },
+    ],
+  },
+  {
     version: '1.2.1',
     date: '2026-10-12',
     changes: [

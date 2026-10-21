@@ -8,6 +8,19 @@ running app's own footer/"What's New" card get their copy from (`apps/web/src/co
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-10-12
+
+### Added
+
+- A new Locations page (Super Admin only) to add, rename and remove regions, provinces and
+  cities/municipalities, including their zip codes, with search and region/province filters. Changes
+  show up in every address form right away, without a software update.
+
+### Changed
+
+- The address forms now read their regions, provinces and cities from the portal instead of a fixed
+  list. Addresses members already saved are not changed.
+
 ## [1.2.1] - 2026-10-12
 
 ### Fixed

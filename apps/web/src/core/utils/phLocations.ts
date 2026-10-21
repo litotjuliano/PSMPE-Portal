@@ -1,11 +1,7 @@
-export interface PhLocationRow {
-  region: string
-  province: string
-  city: string
-  /** Null for 76 of 1,647 entries - mostly newer/BARMM-area municipalities with no
-   *  well-documented ZIP. Expected data, not a defect: the UI leaves ZIP blank and editable. */
-  zip_code: string | null
-}
+import { locationsApi } from '../api/endpoints/locationsApi'
+
+/* A city's zipCode is null when it has no well-documented ZIP. Expected data, not a defect: the UI
+ * leaves ZIP blank and editable. */
 
 interface PhLocationIndex {
   regions: string[]
@@ -22,19 +18,17 @@ interface PhLocationIndex {
 let indexPromise: Promise<PhLocationIndex> | null = null
 
 /**
- * Loads and indexes the bundled PSGC-derived location data.
+ * Loads and indexes the Philippine locations, which a Super Admin maintains in the database
+ * (GET /api/locations). Countries stay a bundled file.
  *
- * Dynamic import, not a static one, so the ~168KB dataset is a separate chunk fetched only when an
- * address form actually renders - an admin browsing /members never pays for it. The promise is
- * cached, so concurrent callers (residence + mailing rendering together) share one fetch.
+ * The promise is cached, so concurrent callers (residence + mailing rendering together) share one
+ * fetch. A failed load clears the cache so the next call retries instead of staying broken, and
+ * `invalidateLocations` clears it after a Super Admin edit so the picker isn't stale.
  */
 function loadIndex(): Promise<PhLocationIndex> {
-  indexPromise ??= (async () => {
-    const [locationsModule, countriesModule] = await Promise.all([
-      import('../../data/ph-locations.json'),
-      import('../../data/countries.json'),
-    ])
-    const rows = locationsModule.default as PhLocationRow[]
+  if (indexPromise) return indexPromise
+  const promise = (async () => {
+    const [rows, countriesModule] = await Promise.all([locationsApi.getAll(), import('../../data/countries.json')])
     const countries = countriesModule.default as string[]
 
     const regions: string[] = []
@@ -54,12 +48,21 @@ function loadIndex(): Promise<PhLocationIndex> {
         cities.set(provinceKey, [])
       }
       cities.get(provinceKey)!.push(row.city)
-      zips.set(`${provinceKey}|${row.city}`, row.zip_code)
+      zips.set(`${provinceKey}|${row.city}`, row.zipCode)
     }
 
     return { regions, provinces, cities, zips, countries }
   })()
-  return indexPromise
+  indexPromise = promise
+  promise.catch(() => {
+    if (indexPromise === promise) indexPromise = null
+  })
+  return promise
+}
+
+/** Drops the cached index so the next lookup refetches - call after editing locations. */
+export function invalidateLocations(): void {
+  indexPromise = null
 }
 
 export async function getRegions(): Promise<string[]> {

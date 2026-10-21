@@ -4,6 +4,7 @@ import {
   LuBellRing,
   LuCalendarClock,
   LuFileClock,
+  LuMapPin,
   LuFileText,
   LuMonitorDot,
   LuShieldCheck,
@@ -124,6 +125,13 @@ export const menuItemsData: MenuItemType[] = [
     label: 'System Logs',
     icon: LuFileClock,
     href: '/admin/system-logs',
+    requiredRoles: ['Super Admin'],
+  },
+  {
+    key: 'Locations',
+    label: 'Locations',
+    icon: LuMapPin,
+    href: '/admin/locations',
     requiredRoles: ['Super Admin'],
   },
 ]

@@ -23,6 +23,13 @@ export {
 export { ContentListCard } from './pages/ContentListCard'
 export { ContentEditCard } from './pages/ContentEditCard'
 export { AuditLogTable } from './pages/AuditLogTable'
+export { LocationsTable } from './pages/LocationsTable'
+export {
+  LocationFormModal,
+  type LocationFormInitial,
+  type LocationFormValues,
+  type LocationKind,
+} from './pages/LocationFormModal'
 export { ErrorLogTable } from './pages/ErrorLogTable'
 export { default as PageBreadcrumb } from './components/shared/PageBreadcrumb'
 export { default as PageMeta } from './components/shared/PageMeta'
