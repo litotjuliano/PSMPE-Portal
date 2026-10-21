@@ -8,6 +8,28 @@ running app's own footer/"What's New" card get their copy from (`apps/web/src/co
 
 ## [Unreleased]
 
+## [1.4.0] - 2026-10-21
+
+### Added
+
+- A new Chapters page (Super Admin only) to add, rename, reorder and deactivate chapters, with search and
+  an Active/Inactive filter. A chapter that members or events still use can't be deleted, only
+  deactivated, and renaming one updates everyone on it.
+- Events can be saved as a Draft with just a title and description. Dates, venue, capacity, fees and the
+  rest can be filled in later; the start and end dates are only required to publish.
+
+### Changed
+
+- Chapter lists on member forms, the membership application, events and event filters now come from the
+  Chapters page instead of a fixed list.
+- The Venue field on the event form is a larger multi-line box.
+- An event's description is now required.
+
+### Fixed
+
+- Saving an event with the start or end date left blank no longer freezes the form on "Saving…"; it now
+  says what is missing.
+
 ## [1.3.0] - 2026-10-12
 
 ### Added

@@ -12,6 +12,7 @@ public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options
     public DbSet<ContentItem> ContentItems => Set<ContentItem>();
     public DbSet<Layout> Layouts => Set<Layout>();
     public DbSet<PhRegion> PhRegions => Set<PhRegion>();
+    public DbSet<Chapter> Chapters => Set<Chapter>();
     public DbSet<PhProvince> PhProvinces => Set<PhProvince>();
     public DbSet<PhCity> PhCities => Set<PhCity>();
     public DbSet<SystemConfig> SystemConfigs => Set<SystemConfig>();

@@ -12,7 +12,8 @@ public class EventConfiguration : IEntityTypeConfiguration<Event>
         builder.Property(e => e.Description).HasMaxLength(4000);
         builder.Property(e => e.Objectives).HasMaxLength(4000);
         builder.Property(e => e.Type).HasMaxLength(64);
-        builder.Property(e => e.Chapter).HasMaxLength(64);
+        builder.HasOne(e => e.Chapter).WithMany()
+            .HasForeignKey(e => e.ChapterId).OnDelete(DeleteBehavior.Restrict);
         builder.Property(e => e.Venue).HasMaxLength(256);
         builder.Property(e => e.Hours).HasPrecision(6, 2);
         builder.Property(e => e.FeeOnsite).HasPrecision(12, 2);

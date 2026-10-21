@@ -12,6 +12,7 @@ public interface IApplicationDbContext
     DbSet<ContentItem> ContentItems { get; }
     DbSet<Layout> Layouts { get; }
     DbSet<PhRegion> PhRegions { get; }
+    DbSet<Chapter> Chapters { get; }
     DbSet<PhProvince> PhProvinces { get; }
     DbSet<PhCity> PhCities { get; }
     DbSet<SystemConfig> SystemConfigs { get; }

@@ -23,6 +23,36 @@ export interface ReleaseNote {
 
 export const releaseNotes: ReleaseNote[] = [
   {
+    version: '1.4.0',
+    date: '2026-10-21',
+    changes: [
+      {
+        type: 'Added',
+        description:
+          "A new Chapters page (Super Admin only) to add, rename, reorder and deactivate chapters, with search and an Active/Inactive filter. A chapter that members or events still use can't be deleted, only deactivated, and renaming one updates everyone on it.",
+      },
+      {
+        type: 'Added',
+        description:
+          'Events can be saved as a Draft with just a title and description. Dates, venue, capacity, fees and the rest can be filled in later; the start and end dates are only required to publish.',
+      },
+      {
+        type: 'Changed',
+        description:
+          'Chapter lists on member forms, the membership application, events and event filters now come from the Chapters page instead of a fixed list.',
+      },
+      {
+        type: 'Changed',
+        description: "The Venue field on the event form is a larger multi-line box. An event's description is now required.",
+      },
+      {
+        type: 'Fixed',
+        description:
+          'Saving an event with the start or end date left blank no longer freezes the form on Saving…; it now says what is missing.',
+      },
+    ],
+  },
+  {
     version: '1.3.0',
     date: '2026-10-12',
     changes: [

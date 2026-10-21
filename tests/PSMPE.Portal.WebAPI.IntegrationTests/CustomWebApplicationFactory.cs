@@ -56,6 +56,12 @@ public class CustomWebApplicationFactory : WebApplicationFactory<Program>
         using var scope = Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
         await db.Database.EnsureCreatedAsync();
+        // Some tests call InitializeAsync again themselves on top of xUnit's own call.
+        if (!await db.Chapters.AnyAsync())
+        {
+            db.Chapters.AddRange(TestSupport.TestChapters.BuildAll());
+            await db.SaveChangesAsync();
+        }
 
         var roleManager = scope.ServiceProvider.GetRequiredService<RoleManager<IdentityRole<Guid>>>();
         var userManager = scope.ServiceProvider.GetRequiredService<UserManager<ApplicationUser>>();

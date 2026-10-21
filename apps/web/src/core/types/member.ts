@@ -7,17 +7,6 @@ export const MembershipStatus = {
 
 export type MembershipStatusValue = (typeof MembershipStatus)[keyof typeof MembershipStatus]
 
-export const Chapters = {
-  Ncr: 'NCR',
-  Cebu: 'Cebu',
-  Davao: 'Davao',
-  Baguio: 'Baguio',
-  Cavite: 'Cavite',
-  QuezonCity: 'Quezon City Chapter',
-} as const
-
-export type ChapterValue = (typeof Chapters)[keyof typeof Chapters]
-
 /** Mirrors MemberTypes.cs. Regular stays first because every member predating the other three
  *  carries it - dropping it would leave those records showing a value the dropdown doesn't offer. */
 export const MemberTypes = {
@@ -110,6 +99,8 @@ export interface Member {
   pendingPrcValidUntilDate: string | null
   prcVerificationRejectedReason: string | null
   chapter: string
+  /** Null for a draft that hasn't picked a chapter. `chapter` is that chapter's current name. */
+  chapterId: string | null
   /** Optional chapter officer post - the year held and the role. Distinct from `position`, which
    *  is the member's employment position. */
   chapterYear: number | null

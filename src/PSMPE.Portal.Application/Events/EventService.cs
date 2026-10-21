@@ -10,13 +10,13 @@ namespace PSMPE.Portal.Application.Events;
 public partial class EventService(IApplicationDbContext db) : IEventService
 {
     public async Task<PagedResult<EventDto>> GetAllAsync(
-        int page, int pageSize, string? search, string? chapter, bool upcomingOnly,
+        int page, int pageSize, string? search, Guid? chapterId, bool upcomingOnly,
         Guid? currentUserId = null, bool includeDrafts = false, CancellationToken cancellationToken = default)
     {
         page = Math.Max(page, 1);
         pageSize = Math.Clamp(pageSize, 1, 100);
 
-        var query = db.Events.AsNoTracking().Include(e => e.Sessions).AsQueryable();
+        var query = db.Events.AsNoTracking().Include(e => e.Sessions).Include(e => e.Chapter).AsQueryable();
 
         if (!includeDrafts)
         {
@@ -34,20 +34,24 @@ public partial class EventService(IApplicationDbContext db) : IEventService
             query = query.Where(e => e.Title.ToLower().Contains(normalizedSearch));
         }
 
-        if (!string.IsNullOrWhiteSpace(chapter))
+        if (chapterId is not null)
         {
-            query = query.Where(e => e.Chapter == chapter);
+            query = query.Where(e => e.ChapterId == chapterId);
         }
 
         if (upcomingOnly)
         {
             var now = DateTimeOffset.UtcNow;
-            query = query.Where(e => e.EndsAt >= now);
+            // An undated event is always a Draft (see Event.StartsAt) - keep it in the staff list
+            // rather than letting the date comparison silently hide it.
+            query = query.Where(e => e.EndsAt == null || e.EndsAt >= now);
         }
 
         var totalCount = await query.CountAsync(cancellationToken);
         var events = await query
-            .OrderBy(e => e.StartsAt)
+            // Undated Drafts first so they're easy to find and finish; then soonest first.
+            .OrderBy(e => e.StartsAt == null ? 0 : 1)
+            .ThenBy(e => e.StartsAt)
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
             .ToListAsync(cancellationToken);
@@ -70,7 +74,7 @@ public partial class EventService(IApplicationDbContext db) : IEventService
     public async Task<EventDto?> GetByIdAsync(
         Guid id, Guid? currentUserId = null, bool includeDrafts = false, CancellationToken cancellationToken = default)
     {
-        var @event = await db.Events.AsNoTracking().Include(e => e.Sessions).FirstOrDefaultAsync(e => e.Id == id, cancellationToken);
+        var @event = await db.Events.AsNoTracking().Include(e => e.Sessions).Include(e => e.Chapter).FirstOrDefaultAsync(e => e.Id == id, cancellationToken);
         if (@event is null || (!includeDrafts && @event.Status != EventStatus.Published))
         {
             // A Draft event behaves as if it doesn't exist to a non-staff caller - same treatment
@@ -110,11 +114,17 @@ public partial class EventService(IApplicationDbContext db) : IEventService
     public async Task<Result<EventDto>> CreateAsync(CreateEventRequest request, CancellationToken cancellationToken = default)
     {
         var validation = ValidateCore(
-            request.Title, request.StartsAt, request.EndsAt, request.Capacity,
-            request.FeeOnsite, request.FeeOnline, request.Chapter, request.Type, request.Hours);
+            request.Title, request.Description, request.StartsAt, request.EndsAt, request.Status, request.Capacity,
+            request.FeeOnsite, request.FeeOnline, request.Type, request.Hours);
         if (validation is not null)
         {
             return Result<EventDto>.Failure(validation);
+        }
+
+        var (chapter, chapterError) = await ResolveChapterAsync(request.ChapterId, null, cancellationToken);
+        if (chapterError is not null)
+        {
+            return Result<EventDto>.Failure(chapterError);
         }
 
         var @event = new Event
@@ -123,7 +133,8 @@ public partial class EventService(IApplicationDbContext db) : IEventService
             Description = request.Description,
             Objectives = request.Objectives,
             Type = request.Type,
-            Chapter = request.Chapter,
+            ChapterId = request.ChapterId,
+            Chapter = chapter,
             Venue = request.Venue,
             StartsAt = request.StartsAt,
             EndsAt = request.EndsAt,
@@ -133,15 +144,19 @@ public partial class EventService(IApplicationDbContext db) : IEventService
             FeeOnline = request.FeeOnline,
             Status = request.Status,
         };
-        // Every event gets at least one session, even with no separate lectures - see
-        // Event.Sessions's doc comment. Admins split this into real lectures via UpdateAsync.
-        @event.Sessions.Add(new EventSession
+        // Every dated event gets at least one session, even with no separate lectures - see
+        // Event.Sessions's doc comment. Admins split this into real lectures via UpdateAsync. An
+        // undated Draft has nothing to span yet; UpdateAsync adds the session once dates are set.
+        if (request.StartsAt is { } startsAt && request.EndsAt is { } endsAt)
         {
-            Title = @event.Title,
-            StartsAt = @event.StartsAt,
-            EndsAt = @event.EndsAt,
-            Order = 1,
-        });
+            @event.Sessions.Add(new EventSession
+            {
+                Title = @event.Title,
+                StartsAt = startsAt,
+                EndsAt = endsAt,
+                Order = 1,
+            });
+        }
 
         db.Events.Add(@event);
         await db.SaveChangesAsync(cancellationToken);
@@ -152,8 +167,8 @@ public partial class EventService(IApplicationDbContext db) : IEventService
     public async Task<Result<EventDto>> UpdateAsync(Guid id, UpdateEventRequest request, CancellationToken cancellationToken = default)
     {
         var validation = ValidateCore(
-            request.Title, request.StartsAt, request.EndsAt, request.Capacity,
-            request.FeeOnsite, request.FeeOnline, request.Chapter, request.Type, request.Hours);
+            request.Title, request.Description, request.StartsAt, request.EndsAt, request.Status, request.Capacity,
+            request.FeeOnsite, request.FeeOnline, request.Type, request.Hours);
         if (validation is not null)
         {
             return Result<EventDto>.Failure(validation);
@@ -164,12 +179,16 @@ public partial class EventService(IApplicationDbContext db) : IEventService
             return Result<EventDto>.Failure("CPD units can't be negative.");
         }
 
-        if (request.Sessions.Count == 0)
+        // A dated event always has at least one session. Dates set but no sessions sent (e.g. an
+        // undated Draft that just got its dates) means "one session spanning the event", the same
+        // default CreateAsync makes. With no dates (Draft only - ValidateCore) there are none yet.
+        var requestedSessions = request.Sessions;
+        if (requestedSessions.Count == 0 && request.StartsAt is { } eventStart && request.EndsAt is { } eventEnd)
         {
-            return Result<EventDto>.Failure("An event needs at least one session.");
+            requestedSessions = [new EventSessionRequest(null, request.Title.Trim(), eventStart, eventEnd, 1)];
         }
 
-        foreach (var session in request.Sessions)
+        foreach (var session in requestedSessions)
         {
             if (string.IsNullOrWhiteSpace(session.Title))
             {
@@ -187,7 +206,21 @@ public partial class EventService(IApplicationDbContext db) : IEventService
             return Result<EventDto>.NotFound($"Event '{id}' was not found.");
         }
 
-        var requestedIds = request.Sessions.Where(s => s.Id.HasValue).Select(s => s.Id!.Value).ToHashSet();
+        var (chapter, chapterError) = await ResolveChapterAsync(request.ChapterId, @event.ChapterId, cancellationToken);
+        if (chapterError is not null)
+        {
+            return Result<EventDto>.Failure(chapterError);
+        }
+
+        // Registrations, attendance, CPD credit and certificates all read the event's dates, so
+        // once anyone has registered the dates can be changed but not cleared.
+        if ((request.StartsAt is null || request.EndsAt is null)
+            && await db.EventRegistrations.AnyAsync(r => r.EventId == id, cancellationToken))
+        {
+            return Result<EventDto>.Conflict("This event already has registrations, so its start and end dates can't be cleared.");
+        }
+
+        var requestedIds = requestedSessions.Where(s => s.Id.HasValue).Select(s => s.Id!.Value).ToHashSet();
 
         // Validate every referenced session Id actually belongs to this event before mutating
         // anything - a stale payload or an Id copy-pasted from another event's session must fail
@@ -214,7 +247,7 @@ public partial class EventService(IApplicationDbContext db) : IEventService
             }
         }
 
-        foreach (var sessionRequest in request.Sessions)
+        foreach (var sessionRequest in requestedSessions)
         {
             if (sessionRequest.Id is { } sessionId)
             {
@@ -250,7 +283,8 @@ public partial class EventService(IApplicationDbContext db) : IEventService
         @event.Description = request.Description;
         @event.Objectives = request.Objectives;
         @event.Type = request.Type;
-        @event.Chapter = request.Chapter;
+        @event.ChapterId = request.ChapterId;
+        @event.Chapter = chapter;
         @event.Venue = request.Venue;
         @event.StartsAt = request.StartsAt;
         @event.EndsAt = request.EndsAt;
@@ -271,15 +305,47 @@ public partial class EventService(IApplicationDbContext db) : IEventService
         return Result<EventDto>.Success(ToDto(@event, registeredCount));
     }
 
+    /// <summary>Null chapterId means a national event. A chapter can't be newly chosen once
+    /// inactive, but an event already on it (<paramref name="currentChapterId"/>) can be re-saved.</summary>
+    private async Task<(Chapter? Chapter, string? Error)> ResolveChapterAsync(
+        Guid? chapterId, Guid? currentChapterId, CancellationToken cancellationToken)
+    {
+        if (chapterId is null)
+        {
+            return (null, null);
+        }
+
+        var chapter = await db.Chapters.FirstOrDefaultAsync(c => c.Id == chapterId, cancellationToken);
+        if (chapter is null)
+        {
+            return (null, "The selected chapter was not found.");
+        }
+        if (!chapter.IsActive && chapterId != currentChapterId)
+        {
+            return (null, $"Chapter '{chapter.Name}' is no longer available.");
+        }
+        return (chapter, null);
+    }
+
     private static string? ValidateCore(
-        string title, DateTimeOffset startsAt, DateTimeOffset endsAt, int? capacity,
-        decimal feeOnsite, decimal feeOnline, string? chapter, string? type, decimal? hours)
+        string title, string? description, DateTimeOffset? startsAt, DateTimeOffset? endsAt, EventStatus status,
+        int? capacity, decimal feeOnsite, decimal feeOnline, string? type, decimal? hours)
     {
         if (string.IsNullOrWhiteSpace(title))
         {
             return "Title is required.";
         }
-        if (endsAt <= startsAt)
+        if (string.IsNullOrWhiteSpace(description))
+        {
+            return "Description is required.";
+        }
+        // Dates are optional only while the event is a Draft - everything downstream of
+        // publishing (registration, attendance, CPD, certificates) needs them.
+        if (status == EventStatus.Published && (startsAt is null || endsAt is null))
+        {
+            return "Starts At and Ends At are required to publish an event.";
+        }
+        if (startsAt is not null && endsAt is not null && endsAt <= startsAt)
         {
             return "End time must be after the start time.";
         }
@@ -290,10 +356,6 @@ public partial class EventService(IApplicationDbContext db) : IEventService
         if (feeOnsite < 0 || feeOnline < 0)
         {
             return "Fee can't be negative.";
-        }
-        if (chapter is not null && !Chapters.All.Contains(chapter))
-        {
-            return $"'{chapter}' is not a recognized chapter.";
         }
         if (type is not null && !EventTypes.All.Contains(type))
         {
@@ -307,7 +369,7 @@ public partial class EventService(IApplicationDbContext db) : IEventService
     }
 
     private static EventDto ToDto(Event e, int registeredCount, EventRegistration? myRegistration = null) =>
-        new(e.Id, e.Title, e.Description, e.Objectives, e.Type, e.Chapter, e.Venue, e.StartsAt, e.EndsAt,
+        new(e.Id, e.Title, e.Description, e.Objectives, e.Type, e.Chapter?.Name, e.ChapterId, e.Venue, e.StartsAt, e.EndsAt,
             e.Hours, e.Capacity, registeredCount, e.FeeOnsite, e.FeeOnline, e.CpdUnitsOnsite, e.CpdUnitsOnline,
             e.CpdCodeOnsite, e.CpdCodeOnline, e.PosterImageStorageKey is not null,
             e.Sessions.OrderBy(s => s.Order)

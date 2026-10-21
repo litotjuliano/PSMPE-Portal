@@ -1,3 +1,4 @@
+using PSMPE.Portal.WebAPI.IntegrationTests.TestSupport;
 using System.Security.Claims;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
@@ -68,7 +69,7 @@ public class PaymentsControllerTests : IClassFixture<CustomWebApplicationFactory
             UserId = user.Id,
             FirstName = "Juan",
             LastName = "Dela Cruz",
-            Chapter = Chapters.Ncr,
+            ChapterId = TestChapters.Ncr,
             MemberType = MemberTypes.Regular,
             Status = MembershipStatus.Active,
         };

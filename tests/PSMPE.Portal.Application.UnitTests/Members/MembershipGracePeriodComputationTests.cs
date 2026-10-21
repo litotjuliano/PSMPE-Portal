@@ -28,7 +28,7 @@ public class MembershipGracePeriodComputationTests
         User = new ApplicationUser { UserName = $"{Guid.NewGuid()}@example.com", Email = $"{Guid.NewGuid()}@example.com" },
         FirstName = "Juan",
         LastName = "Dela Cruz",
-        Chapter = Chapters.Ncr,
+        ChapterId = TestChapters.Ncr,
         MemberType = MemberTypes.Regular,
         Status = status,
         SubmittedAt = DateTimeOffset.UtcNow.AddYears(-1),

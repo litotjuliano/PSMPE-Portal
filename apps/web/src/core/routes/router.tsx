@@ -21,6 +21,7 @@ import { ForgotPasswordPage } from '../pages/ForgotPasswordPage'
 import { ResetPasswordPage } from '../pages/ResetPasswordPage'
 import { NotificationsPage } from '../pages/NotificationsPage'
 import { SystemLogsPage } from '../pages/SystemLogsPage'
+import { AdminChaptersPage } from '../pages/AdminChaptersPage'
 import { AdminLocationsPage } from '../pages/AdminLocationsPage'
 import { Roles } from '../types/auth'
 
@@ -74,6 +75,7 @@ export const router = createBrowserRouter([
                     children: [
                       { path: '/admin/system-logs', element: <SystemLogsPage /> },
                       { path: '/admin/locations', element: <AdminLocationsPage /> },
+                      { path: '/admin/chapters', element: <AdminChaptersPage /> },
                     ],
                   },
                 ],

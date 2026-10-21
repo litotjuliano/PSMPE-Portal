@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type ChangeEvent, type FormEvent } from 'react'
 import { LuEye, LuUpload, LuUserRound } from 'react-icons/lu'
-import { Chapters, CivilStatuses, EducationLevels, MemberTypes, SpecifiedProfessions } from '../../../core/types/member'
+import { CivilStatuses, EducationLevels, MemberTypes, SpecifiedProfessions } from '../../../core/types/member'
+import { useChapters } from '../../../core/utils/chapters'
 import {
   CHAPTER_YEAR_ERROR,
   CHAPTER_YEAR_MAX,
@@ -83,7 +84,8 @@ export interface MembershipApplicationState {
   birthdate: string
   gender: string
   civilStatus: string
-  chapter: string
+  /** Id of the chosen chapter, or '' when none is chosen yet. */
+  chapterId: string
   /** Held as a string like every other input; converted to a number (or null) at payload time,
    *  same as yearsOfPractice elsewhere. */
   chapterYear: string
@@ -175,6 +177,7 @@ export const MembershipApplicationWizardCard = ({
   submitting,
   navigating,
 }: MembershipApplicationWizardCardProps) => {
+  const chapters = useChapters(state.chapterId)
   const photoInputRef = useRef<HTMLInputElement>(null)
   const prcIdInputRef = useRef<HTMLInputElement>(null)
   const proofOfPaymentInputRef = useRef<HTMLInputElement>(null)
@@ -419,11 +422,12 @@ export const MembershipApplicationWizardCard = ({
                   </div>
                   <div>
                     <label className="block font-medium text-default-900 text-sm mb-2">Chapter</label>
-                    <select className="form-input" required value={state.chapter} onChange={(e) => onChange('chapter', e.target.value)}>
+                    <select className="form-input" required value={state.chapterId} onChange={(e) => onChange('chapterId', e.target.value)}>
                       <option value="">Select a chapter…</option>
-                      {Object.values(Chapters).map((c) => (
-                        <option key={c} value={c}>
-                          {c}
+                      {chapters.selectable.map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {c.name}
+                          {c.isActive ? '' : ' (inactive)'}
                         </option>
                       ))}
                     </select>
@@ -880,7 +884,7 @@ export const MembershipApplicationWizardCard = ({
                   </div>
                   <div>
                     <span className="text-default-500">Chapter</span>{' '}
-                    <span className="font-semibold text-default-800">{state.chapter}</span>
+                    <span className="font-semibold text-default-800">{chapters.all.find((c) => c.id === state.chapterId)?.name ?? ''}</span>
                   </div>
                   <div>
                     <span className="text-default-500">Birthdate</span>{' '}

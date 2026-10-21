@@ -1,7 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { LuEye, LuSquarePen, LuUserRound } from 'react-icons/lu'
+import { useChapters } from '../../../core/utils/chapters'
 import {
-  Chapters,
   CivilStatuses,
   EducationLevels,
   EmploymentStatuses,
@@ -73,7 +73,8 @@ export interface MemberFormState {
   ptrPlaceIssued: string
   ptrDateIssued: string
   tin: string
-  chapter: string
+  /** Id of the member's chapter, or '' when none is chosen yet. */
+  chapterId: string
   chapterYear: string
   chapterPosition: string
   employmentStatus: string
@@ -177,6 +178,7 @@ export const MemberFormCard = ({
   // what was submitted, not a raw editable form. isNew has nothing to view yet, so it always
   // starts in edit mode.
   const [editing, setEditing] = useState(isNew)
+  const chapters = useChapters(state.chapterId)
   const [photoPreviewUrl, setPhotoPreviewUrl] = useState<string | null>(null)
   const [previewOpen, setPreviewOpen] = useState<DocumentPreview | null>(null)
 
@@ -301,7 +303,7 @@ export const MemberFormCard = ({
           <ViewField label="PTR Place Issued" value={state.ptrPlaceIssued} />
           <ViewField label="PTR Date Issued" value={state.ptrDateIssued} />
           <ViewField label="TIN" value={state.tin} />
-          <ViewField label="Chapter" value={state.chapter} />
+          <ViewField label="Chapter" value={chapters.all.find((c) => c.id === state.chapterId)?.name ?? ''} />
           <ViewField label="Chapter Officer Year" value={state.chapterYear} />
           <ViewField label="Chapter Position" value={state.chapterPosition} />
 
@@ -566,11 +568,12 @@ export const MemberFormCard = ({
           </div>
           <div>
             <label className="block font-medium text-default-900 text-sm mb-2">Chapter</label>
-            <select className="form-input" required value={state.chapter} onChange={(e) => onChange('chapter', e.target.value)}>
+            <select className="form-input" required value={state.chapterId} onChange={(e) => onChange('chapterId', e.target.value)}>
               <option value="">Select a chapter…</option>
-              {Object.values(Chapters).map((c) => (
-                <option key={c} value={c}>
-                  {c}
+              {chapters.selectable.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                  {c.isActive ? '' : ' (inactive)'}
                 </option>
               ))}
             </select>

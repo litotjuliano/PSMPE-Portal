@@ -15,7 +15,7 @@ public class MemberServiceStatsTests
 {
     private static Member BuildMember(
         MembershipStatus status = MembershipStatus.Pending,
-        string chapter = Chapters.Ncr,
+        Guid? chapterId = null,
         string memberType = MemberTypes.Regular,
         DateTimeOffset? submittedAt = null,
         DateOnly? renewalDueDate = null,
@@ -28,7 +28,7 @@ public class MemberServiceStatsTests
         User = new ApplicationUser { UserName = $"{Guid.NewGuid()}@example.com", Email = $"{Guid.NewGuid()}@example.com" },
         FirstName = "Juan",
         LastName = "Dela Cruz",
-        Chapter = chapter,
+        ChapterId = chapterId ?? TestChapters.Ncr,
         MemberType = memberType,
         Status = status,
         SubmittedAt = submittedAt,
@@ -148,20 +148,50 @@ public class MemberServiceStatsTests
         using var db = TestDbContext.CreateInMemory();
         var service = new MemberService(db);
         db.Members.AddRange(
-            BuildMember(chapter: Chapters.Cebu, submittedAt: DateTimeOffset.UtcNow),
-            BuildMember(chapter: Chapters.Cebu, submittedAt: DateTimeOffset.UtcNow),
-            BuildMember(chapter: Chapters.Davao, submittedAt: DateTimeOffset.UtcNow));
+            BuildMember(chapterId: TestChapters.Cebu, submittedAt: DateTimeOffset.UtcNow),
+            BuildMember(chapterId: TestChapters.Cebu, submittedAt: DateTimeOffset.UtcNow),
+            BuildMember(chapterId: TestChapters.Davao, submittedAt: DateTimeOffset.UtcNow));
         await db.SaveChangesAsync();
 
         var stats = await service.GetStatsAsync(null);
 
-        Assert.Equal(Chapters.All, stats.ByChapter.Select(c => c.Name).ToArray());
-        Assert.Equal(0, stats.ByChapter.Single(c => c.Name == Chapters.Ncr).Count);
-        Assert.Equal(2, stats.ByChapter.Single(c => c.Name == Chapters.Cebu).Count);
-        Assert.Equal(1, stats.ByChapter.Single(c => c.Name == Chapters.Davao).Count);
-        Assert.Equal(0, stats.ByChapter.Single(c => c.Name == Chapters.Baguio).Count);
-        Assert.Equal(0, stats.ByChapter.Single(c => c.Name == Chapters.Cavite).Count);
-        Assert.Equal(0, stats.ByChapter.Single(c => c.Name == Chapters.QuezonCity).Count);
+        Assert.Equal(TestChapters.AllNames, stats.ByChapter.Select(c => c.Name).ToArray());
+        Assert.Equal(0, stats.ByChapter.Single(c => c.Name == TestChapters.NcrName).Count);
+        Assert.Equal(2, stats.ByChapter.Single(c => c.Name == TestChapters.CebuName).Count);
+        Assert.Equal(1, stats.ByChapter.Single(c => c.Name == TestChapters.DavaoName).Count);
+        Assert.Equal(0, stats.ByChapter.Single(c => c.Name == TestChapters.BaguioName).Count);
+        Assert.Equal(0, stats.ByChapter.Single(c => c.Name == TestChapters.CaviteName).Count);
+        Assert.Equal(0, stats.ByChapter.Single(c => c.Name == TestChapters.QuezonCityName).Count);
+    }
+
+    [Fact]
+    public async Task GetStatsAsync_ByChapter_HidesAnEmptyInactiveChapter_ButKeepsOneThatStillHasMembers()
+    {
+        using var db = TestDbContext.CreateInMemory();
+        var service = new MemberService(db);
+        (await db.Chapters.FindAsync(TestChapters.Baguio))!.IsActive = false;
+        (await db.Chapters.FindAsync(TestChapters.Cavite))!.IsActive = false;
+        db.Members.Add(BuildMember(chapterId: TestChapters.Cavite, submittedAt: DateTimeOffset.UtcNow));
+        await db.SaveChangesAsync();
+
+        var stats = await service.GetStatsAsync(null);
+
+        var names = stats.ByChapter.Select(c => c.Name).ToList();
+        Assert.DoesNotContain(TestChapters.BaguioName, names);
+        Assert.Equal(1, stats.ByChapter.Single(c => c.Name == TestChapters.CaviteName).Count);
+    }
+
+    [Fact]
+    public async Task GetStatsAsync_ByChapter_FollowsTheAdminSetSortOrder()
+    {
+        using var db = TestDbContext.CreateInMemory();
+        var service = new MemberService(db);
+        (await db.Chapters.FindAsync(TestChapters.QuezonCity))!.SortOrder = 0;
+        await db.SaveChangesAsync();
+
+        var stats = await service.GetStatsAsync(null);
+
+        Assert.Equal(TestChapters.QuezonCityName, stats.ByChapter.First().Name);
     }
 
     [Fact]

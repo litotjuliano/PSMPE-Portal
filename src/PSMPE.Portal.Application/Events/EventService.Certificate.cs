@@ -44,7 +44,7 @@ public partial class EventService
 
         return Result<CertificateDataDto>.Success(new CertificateDataDto(
             $"{registration.Member.FirstName} {registration.Member.LastName}", registration.Event.Title,
-            registration.Event.StartsAt, registration.Event.EndsAt, registration.Mode.ToString(),
+            registration.Event.StartsAt.GetValueOrDefault(), registration.Event.EndsAt.GetValueOrDefault(), registration.Mode.ToString(),
             attendedTitles, credit.Value, registration.Event.Type, registration.Event.Hours, cpdCode));
     }
 }

@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { Event } from '../api/endpoints/eventApi'
 import { eventApi } from '../api/endpoints/eventApi'
-import type { ChapterValue } from '../types/member'
 import { describeError } from '../utils/apiError'
 import { useAuth } from '../auth/useAuth'
 import { Roles } from '../types/auth'
@@ -22,7 +21,7 @@ export function EventsPage() {
 
   const [searchInput, setSearchInput] = useState('')
   const [search, setSearch] = useState('')
-  const [chapterFilter, setChapterFilter] = useState<ChapterValue | null>(null)
+  const [chapterFilter, setChapterFilter] = useState<string | null>(null)
   const [upcomingOnly, setUpcomingOnly] = useState(true)
 
   const [formEvent, setFormEvent] = useState<{ event: Event | null; mode: 'create' | 'edit' } | null>(null)
@@ -42,7 +41,7 @@ export function EventsPage() {
         page,
         pageSize: PAGE_SIZE,
         search: search || undefined,
-        chapter: chapterFilter ?? undefined,
+        chapterId: chapterFilter ?? undefined,
         upcomingOnly,
       })
       if (isStale()) return

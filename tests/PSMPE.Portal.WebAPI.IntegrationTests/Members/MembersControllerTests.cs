@@ -1,3 +1,4 @@
+using PSMPE.Portal.WebAPI.IntegrationTests.TestSupport;
 using System.Security.Claims;
 using System.Text;
 using Microsoft.AspNetCore.Http;
@@ -141,7 +142,7 @@ public class MembersControllerTests : IClassFixture<CustomWebApplicationFactory>
         PrcValidUntilDate: new DateOnly(2030, 1, 1),
         PtrNumber: "PTR-0012345", PtrPlaceIssued: null, PtrDateIssued: null,
         Tin: null,
-        Chapter: Chapters.QuezonCity, ChapterYear: null, ChapterPosition: null,
+        ChapterId: TestChapters.QuezonCity, ChapterYear: null, ChapterPosition: null,
         EmploymentStatus: null,
         Company: "JLA Plumbing Works Inc.",
         Position: null,
@@ -193,7 +194,7 @@ public class MembersControllerTests : IClassFixture<CustomWebApplicationFactory>
             HousePhone: null,
             PrcLicenseNo: dto.PrcLicenseNo, PrcRegistrationDate: dto.PrcRegistrationDate, PrcValidUntilDate: dto.PrcValidUntilDate,
             PtrNumber: "PTR-9999999", PtrPlaceIssued: null, PtrDateIssued: null, Tin: "123-456-789",
-            Chapter: dto.Chapter, ChapterYear: dto.ChapterYear, ChapterPosition: dto.ChapterPosition, EmploymentStatus: null, Company: dto.Company, Position: null, BusinessAddress: null,
+            ChapterId: dto.ChapterId, ChapterYear: dto.ChapterYear, ChapterPosition: dto.ChapterPosition, EmploymentStatus: null, Company: dto.Company, Position: null, BusinessAddress: null,
             YearsOfPractice: null, Specialization: null, Skills: null, MemberType: dto.MemberType, Status: dto.Status,
             RenewalDueDate: dto.RenewalDueDate, NationalDuesReferenceNo: dto.NationalDuesReferenceNo);
         await controller.Update(dto.Id, updateRequest, CancellationToken.None);
@@ -305,7 +306,7 @@ public class MembersControllerTests : IClassFixture<CustomWebApplicationFactory>
             HouseNo: null, Street: "Cebu City", Barangay: null, CityMunicipality: null, Province: null, ZipCode: null, Country: null,
             MailingHouseNo: null, MailingStreet: null, MailingBarangay: null, MailingCityMunicipality: null, MailingProvince: null, MailingZipCode: null, MailingCountry: null,
             HousePhone: null,
-            PrcLicenseNo: null, PrcRegistrationDate: null, PrcValidUntilDate: null, PtrNumber: null, PtrPlaceIssued: null, PtrDateIssued: null, Tin: null, Chapter: Chapters.Cebu, ChapterYear: null, ChapterPosition: null,
+            PrcLicenseNo: null, PrcRegistrationDate: null, PrcValidUntilDate: null, PtrNumber: null, PtrPlaceIssued: null, PtrDateIssued: null, Tin: null, ChapterId: TestChapters.Cebu, ChapterYear: null, ChapterPosition: null,
             EmploymentStatus: null, Company: null, Position: null, BusinessAddress: null, YearsOfPractice: null, Specialization: null, Skills: null,
             MemberType: MemberTypes.Regular);
 
@@ -334,7 +335,7 @@ public class MembersControllerTests : IClassFixture<CustomWebApplicationFactory>
             HouseNo: null, Street: null, Barangay: null, CityMunicipality: null, Province: null, ZipCode: null, Country: null,
             MailingHouseNo: null, MailingStreet: null, MailingBarangay: null, MailingCityMunicipality: null, MailingProvince: null, MailingZipCode: null, MailingCountry: null,
             HousePhone: null,
-            PrcLicenseNo: null, PrcRegistrationDate: null, PrcValidUntilDate: null, PtrNumber: null, PtrPlaceIssued: null, PtrDateIssued: null, Tin: null, Chapter: Chapters.Davao, ChapterYear: null, ChapterPosition: null,
+            PrcLicenseNo: null, PrcRegistrationDate: null, PrcValidUntilDate: null, PtrNumber: null, PtrPlaceIssued: null, PtrDateIssued: null, Tin: null, ChapterId: TestChapters.Davao, ChapterYear: null, ChapterPosition: null,
             EmploymentStatus: null, Company: null, Position: null, BusinessAddress: null, YearsOfPractice: null, Specialization: null, Skills: null,
             MemberType: MemberTypes.Regular);
 
@@ -363,7 +364,7 @@ public class MembersControllerTests : IClassFixture<CustomWebApplicationFactory>
             HousePhone: null,
             PrcLicenseNo: createdDto.PrcLicenseNo, PrcRegistrationDate: createdDto.PrcRegistrationDate, PrcValidUntilDate: createdDto.PrcValidUntilDate,
             PtrNumber: createdDto.PtrNumber, PtrPlaceIssued: createdDto.PtrPlaceIssued, PtrDateIssued: createdDto.PtrDateIssued, Tin: createdDto.Tin,
-            Chapter: createdDto.Chapter, ChapterYear: createdDto.ChapterYear, ChapterPosition: createdDto.ChapterPosition,
+            ChapterId: createdDto.ChapterId, ChapterYear: createdDto.ChapterYear, ChapterPosition: createdDto.ChapterPosition,
             EmploymentStatus: null, Company: createdDto.Company, Position: null, BusinessAddress: null,
             YearsOfPractice: null, Specialization: null, Skills: null,
             MemberType: createdDto.MemberType, Status: MembershipStatus.Active, RenewalDueDate: createdDto.RenewalDueDate,
@@ -389,7 +390,7 @@ public class MembersControllerTests : IClassFixture<CustomWebApplicationFactory>
             HouseNo: null, Street: null, Barangay: null, CityMunicipality: null, Province: null, ZipCode: null, Country: null,
             MailingHouseNo: null, MailingStreet: null, MailingBarangay: null, MailingCityMunicipality: null, MailingProvince: null, MailingZipCode: null, MailingCountry: null,
             HousePhone: null,
-            PrcLicenseNo: null, PrcRegistrationDate: null, PrcValidUntilDate: null, PtrNumber: null, PtrPlaceIssued: null, PtrDateIssued: null, Tin: null, Chapter: Chapters.Ncr, ChapterYear: null, ChapterPosition: null,
+            PrcLicenseNo: null, PrcRegistrationDate: null, PrcValidUntilDate: null, PtrNumber: null, PtrPlaceIssued: null, PtrDateIssued: null, Tin: null, ChapterId: TestChapters.Ncr, ChapterYear: null, ChapterPosition: null,
             EmploymentStatus: null, Company: null, Position: null, BusinessAddress: null,
             YearsOfPractice: null, Specialization: null, Skills: null,
             MemberType: MemberTypes.Regular, Status: MembershipStatus.Active, RenewalDueDate: null, NationalDuesReferenceNo: null);
@@ -804,7 +805,7 @@ public class MembersControllerTests : IClassFixture<CustomWebApplicationFactory>
             HousePhone: activeDto.HousePhone,
             PrcLicenseNo: activeDto.PrcLicenseNo, PrcRegistrationDate: activeDto.PrcRegistrationDate, PrcValidUntilDate: activeDto.PrcValidUntilDate,
             PtrNumber: activeDto.PtrNumber, PtrPlaceIssued: activeDto.PtrPlaceIssued, PtrDateIssued: activeDto.PtrDateIssued, Tin: activeDto.Tin,
-            Chapter: activeDto.Chapter, ChapterYear: activeDto.ChapterYear, ChapterPosition: activeDto.ChapterPosition, EmploymentStatus: activeDto.EmploymentStatus, Company: activeDto.Company, Position: activeDto.Position, BusinessAddress: activeDto.BusinessAddress,
+            ChapterId: activeDto.ChapterId, ChapterYear: activeDto.ChapterYear, ChapterPosition: activeDto.ChapterPosition, EmploymentStatus: activeDto.EmploymentStatus, Company: activeDto.Company, Position: activeDto.Position, BusinessAddress: activeDto.BusinessAddress,
             YearsOfPractice: activeDto.YearsOfPractice, Specialization: activeDto.Specialization, Skills: activeDto.Skills,
             MemberType: activeDto.MemberType, Status: MembershipStatus.Active,
             RenewalDueDate: activeDto.RenewalDueDate, NationalDuesReferenceNo: activeDto.NationalDuesReferenceNo);
@@ -864,7 +865,7 @@ public class MembersControllerTests : IClassFixture<CustomWebApplicationFactory>
             HousePhone: createdDto.HousePhone,
             PrcLicenseNo: createdDto.PrcLicenseNo, PrcRegistrationDate: createdDto.PrcRegistrationDate, PrcValidUntilDate: createdDto.PrcValidUntilDate,
             PtrNumber: createdDto.PtrNumber, PtrPlaceIssued: createdDto.PtrPlaceIssued, PtrDateIssued: createdDto.PtrDateIssued, Tin: createdDto.Tin,
-            Chapter: createdDto.Chapter, ChapterYear: createdDto.ChapterYear, ChapterPosition: createdDto.ChapterPosition, EmploymentStatus: createdDto.EmploymentStatus, Company: createdDto.Company, Position: createdDto.Position, BusinessAddress: createdDto.BusinessAddress,
+            ChapterId: createdDto.ChapterId, ChapterYear: createdDto.ChapterYear, ChapterPosition: createdDto.ChapterPosition, EmploymentStatus: createdDto.EmploymentStatus, Company: createdDto.Company, Position: createdDto.Position, BusinessAddress: createdDto.BusinessAddress,
             YearsOfPractice: createdDto.YearsOfPractice, Specialization: createdDto.Specialization, Skills: createdDto.Skills,
             MemberType: createdDto.MemberType, Status: MembershipStatus.Active,
             RenewalDueDate: dueDate, NationalDuesReferenceNo: createdDto.NationalDuesReferenceNo);
@@ -900,7 +901,7 @@ public class MembersControllerTests : IClassFixture<CustomWebApplicationFactory>
             HouseNo: null, Street: null, Barangay: null, CityMunicipality: null, Province: null, ZipCode: null, Country: null,
             MailingHouseNo: null, MailingStreet: null, MailingBarangay: null, MailingCityMunicipality: null, MailingProvince: null, MailingZipCode: null, MailingCountry: null,
             HousePhone: null,
-            PrcLicenseNo: null, PrcRegistrationDate: null, PrcValidUntilDate: null, PtrNumber: null, PtrPlaceIssued: null, PtrDateIssued: null, Tin: null, Chapter: "", ChapterYear: null, ChapterPosition: null,
+            PrcLicenseNo: null, PrcRegistrationDate: null, PrcValidUntilDate: null, PtrNumber: null, PtrPlaceIssued: null, PtrDateIssued: null, Tin: null, ChapterId: null, ChapterYear: null, ChapterPosition: null,
             EmploymentStatus: null, Company: null, Position: null, BusinessAddress: null, YearsOfPractice: null, Specialization: null, Skills: null,
             MemberType: "");
         await controller.UpdateMyProfile(request, CancellationToken.None);
@@ -920,7 +921,7 @@ public class MembersControllerTests : IClassFixture<CustomWebApplicationFactory>
         HousePhone: null,
         PrcLicenseNo: "MP 99999", PrcRegistrationDate: new DateOnly(2020, 1, 1), PrcValidUntilDate: new DateOnly(2030, 1, 1),
         PtrNumber: "PTR-0099999", PtrPlaceIssued: null, PtrDateIssued: null, Tin: null,
-        Chapter: Chapters.Ncr, ChapterYear: null, ChapterPosition: null,
+        ChapterId: TestChapters.Ncr, ChapterYear: null, ChapterPosition: null,
         EmploymentStatus: null, Company: null, Position: null, BusinessAddress: null, YearsOfPractice: null, Specialization: null, Skills: null,
         MemberType: MemberTypes.Regular);
 
@@ -1070,7 +1071,7 @@ public class MembersControllerTests : IClassFixture<CustomWebApplicationFactory>
             HouseNo: null, Street: null, Barangay: null, CityMunicipality: null, Province: null, ZipCode: null, Country: null,
             MailingHouseNo: null, MailingStreet: null, MailingBarangay: null, MailingCityMunicipality: null, MailingProvince: null, MailingZipCode: null, MailingCountry: null,
             HousePhone: null,
-            PrcLicenseNo: null, PrcRegistrationDate: null, PrcValidUntilDate: null, PtrNumber: null, PtrPlaceIssued: null, PtrDateIssued: null, Tin: null, Chapter: Chapters.Ncr, ChapterYear: null, ChapterPosition: null,
+            PrcLicenseNo: null, PrcRegistrationDate: null, PrcValidUntilDate: null, PtrNumber: null, PtrPlaceIssued: null, PtrDateIssued: null, Tin: null, ChapterId: TestChapters.Ncr, ChapterYear: null, ChapterPosition: null,
             EmploymentStatus: null, Company: null, Position: null, BusinessAddress: null, YearsOfPractice: null, Specialization: null, Skills: null,
             MemberType: MemberTypes.Regular);
         var draftResult = await draftController.UpdateMyProfile(draftRequest, CancellationToken.None);
@@ -1085,7 +1086,7 @@ public class MembersControllerTests : IClassFixture<CustomWebApplicationFactory>
     }
 
     private static UpdateMyProfileRequest BuildProfileRequest(
-        string chapter, string memberType, string? prcLicenseNo = null, bool prcIdReuploaded = false,
+        Guid chapterId, string memberType, string? prcLicenseNo = null, bool prcIdReuploaded = false,
         DateOnly? prcRegistrationDate = null, DateOnly? prcValidUntilDate = null) => new(
         FirstName: "Juan", MiddleName: null, LastName: "Dela Cruz", Suffix: null,
         Birthdate: new DateOnly(1990, 1, 1), Gender: "Male", CivilStatus: "Single",
@@ -1096,7 +1097,7 @@ public class MembersControllerTests : IClassFixture<CustomWebApplicationFactory>
         HousePhone: null,
         PrcLicenseNo: prcLicenseNo, PrcRegistrationDate: prcRegistrationDate ?? new DateOnly(2020, 1, 1), PrcValidUntilDate: prcValidUntilDate ?? new DateOnly(2030, 1, 1),
         PtrNumber: "PTR-0012345", PtrPlaceIssued: null, PtrDateIssued: null, Tin: null,
-        Chapter: chapter, ChapterYear: null, ChapterPosition: null,
+        ChapterId: chapterId, ChapterYear: null, ChapterPosition: null,
         EmploymentStatus: null, Company: null, Position: null, BusinessAddress: null, YearsOfPractice: null, Specialization: null, Skills: null,
         MemberType: memberType,
         PrcIdReuploaded: prcIdReuploaded);
@@ -1105,7 +1106,7 @@ public class MembersControllerTests : IClassFixture<CustomWebApplicationFactory>
     {
         var user = await CreateUserAsync();
         var controller = CreateController(user.Id);
-        await controller.UpdateMyProfile(BuildProfileRequest(Chapters.Ncr, MemberTypes.Regular, prcLicenseNo), CancellationToken.None);
+        await controller.UpdateMyProfile(BuildProfileRequest(TestChapters.Ncr, MemberTypes.Regular, prcLicenseNo), CancellationToken.None);
         await UploadFreshPrcIdAsync(user.Id);
         await UploadPhotoAsync(user.Id);
         await UploadProofOfPaymentAsync(user.Id);
@@ -1119,12 +1120,12 @@ public class MembersControllerTests : IClassFixture<CustomWebApplicationFactory>
         var userId = await CreateSubmittedApplicantAsync(prcLicenseNo: "MP-0001");
         var controller = CreateController(userId);
 
-        var result = await controller.UpdateMyProfile(BuildProfileRequest(Chapters.Cebu, MemberTypes.Regular), CancellationToken.None);
+        var result = await controller.UpdateMyProfile(BuildProfileRequest(TestChapters.Cebu, MemberTypes.Regular), CancellationToken.None);
 
         Assert.IsType<BadRequestObjectResult>(result.Result);
         var fetched = await controller.GetMyProfile(CancellationToken.None);
         var dto = Assert.IsType<MemberDto>(Assert.IsType<OkObjectResult>(fetched.Result).Value);
-        Assert.Equal(Chapters.Ncr, dto.Chapter);
+        Assert.Equal(TestChapters.NcrName, dto.Chapter);
     }
 
     [Fact]
@@ -1134,7 +1135,7 @@ public class MembersControllerTests : IClassFixture<CustomWebApplicationFactory>
         var controller = CreateController(userId);
 
         var result = await controller.UpdateMyProfile(
-            BuildProfileRequest(Chapters.Ncr, MemberTypes.Regular, prcLicenseNo: "MP-2", prcIdReuploaded: false), CancellationToken.None);
+            BuildProfileRequest(TestChapters.Ncr, MemberTypes.Regular, prcLicenseNo: "MP-2", prcIdReuploaded: false), CancellationToken.None);
 
         Assert.IsType<BadRequestObjectResult>(result.Result);
     }
@@ -1154,7 +1155,7 @@ public class MembersControllerTests : IClassFixture<CustomWebApplicationFactory>
         await UploadFreshPrcIdAsync(userId);
 
         var result = await controller.UpdateMyProfile(
-            BuildProfileRequest(Chapters.Ncr, MemberTypes.Regular, prcLicenseNo: "MP-2", prcIdReuploaded: true), CancellationToken.None);
+            BuildProfileRequest(TestChapters.Ncr, MemberTypes.Regular, prcLicenseNo: "MP-2", prcIdReuploaded: true), CancellationToken.None);
 
         // The old value stays current until an admin approves - nothing is overwritten yet.
         var dto = Assert.IsType<MemberDto>(Assert.IsType<OkObjectResult>(result.Result).Value);
@@ -1171,7 +1172,7 @@ public class MembersControllerTests : IClassFixture<CustomWebApplicationFactory>
         var memberController = CreateController(userId);
         await UploadFreshPrcIdAsync(userId);
         await memberController.UpdateMyProfile(
-            BuildProfileRequest(Chapters.Ncr, MemberTypes.Regular, prcLicenseNo: "MP-2", prcIdReuploaded: true), CancellationToken.None);
+            BuildProfileRequest(TestChapters.Ncr, MemberTypes.Regular, prcLicenseNo: "MP-2", prcIdReuploaded: true), CancellationToken.None);
 
         var adminController = CreateController();
         var result = await adminController.ApprovePrcVerification(memberId, CancellationToken.None);
@@ -1192,7 +1193,7 @@ public class MembersControllerTests : IClassFixture<CustomWebApplicationFactory>
         var memberController = CreateController(userId);
         await UploadFreshPrcIdAsync(userId);
         await memberController.UpdateMyProfile(
-            BuildProfileRequest(Chapters.Ncr, MemberTypes.Regular, prcLicenseNo: "MP-2", prcIdReuploaded: true), CancellationToken.None);
+            BuildProfileRequest(TestChapters.Ncr, MemberTypes.Regular, prcLicenseNo: "MP-2", prcIdReuploaded: true), CancellationToken.None);
 
         var adminController = CreateController();
         var result = await adminController.RejectPrcVerification(memberId, new RejectPrcVerificationRequest("Document is illegible"), CancellationToken.None);
@@ -1214,7 +1215,7 @@ public class MembersControllerTests : IClassFixture<CustomWebApplicationFactory>
         var pendingChangeController = CreateController(pendingChangeUserId);
         await UploadFreshPrcIdAsync(pendingChangeUserId);
         await pendingChangeController.UpdateMyProfile(
-            BuildProfileRequest(Chapters.Ncr, MemberTypes.Regular, prcLicenseNo: "MP-4", prcIdReuploaded: true), CancellationToken.None);
+            BuildProfileRequest(TestChapters.Ncr, MemberTypes.Regular, prcLicenseNo: "MP-4", prcIdReuploaded: true), CancellationToken.None);
 
         var adminController = CreateController();
         // A submitted member with no PRC License No. at all can no longer be created through *any*
@@ -1229,7 +1230,7 @@ public class MembersControllerTests : IClassFixture<CustomWebApplicationFactory>
             UserId = noPrcUser.Id,
             FirstName = "Legacy",
             LastName = "NoLicence",
-            Chapter = Chapters.Ncr,
+            ChapterId = TestChapters.Ncr,
             MemberType = MemberTypes.Regular,
             PrcLicenseNo = null,
             Status = MembershipStatus.Pending,
@@ -1319,7 +1320,7 @@ public class MembersControllerTests : IClassFixture<CustomWebApplicationFactory>
             HouseNo: null, Street: null, Barangay: null, CityMunicipality: null, Province: null, ZipCode: null, Country: null,
             MailingHouseNo: null, MailingStreet: null, MailingBarangay: null, MailingCityMunicipality: null, MailingProvince: null, MailingZipCode: null, MailingCountry: null,
             HousePhone: null,
-            PrcLicenseNo: null, PrcRegistrationDate: null, PrcValidUntilDate: null, PtrNumber: null, PtrPlaceIssued: null, PtrDateIssued: null, Tin: null, Chapter: Chapters.Ncr, ChapterYear: null, ChapterPosition: null,
+            PrcLicenseNo: null, PrcRegistrationDate: null, PrcValidUntilDate: null, PtrNumber: null, PtrPlaceIssued: null, PtrDateIssued: null, Tin: null, ChapterId: TestChapters.Ncr, ChapterYear: null, ChapterPosition: null,
             EmploymentStatus: null, Company: null, Position: null, BusinessAddress: null, YearsOfPractice: null, Specialization: null, Skills: null,
             MemberType: MemberTypes.Regular);
 
@@ -1342,7 +1343,7 @@ public class MembersControllerTests : IClassFixture<CustomWebApplicationFactory>
     {
         var user = await CreateUserAsync();
         var controller = CreateController(user.Id);
-        await controller.UpdateMyProfile(BuildProfileRequest(Chapters.Ncr, MemberTypes.Regular), CancellationToken.None);
+        await controller.UpdateMyProfile(BuildProfileRequest(TestChapters.Ncr, MemberTypes.Regular), CancellationToken.None);
 
         var result = await controller.GetMyProfileCompleteness(CancellationToken.None);
 

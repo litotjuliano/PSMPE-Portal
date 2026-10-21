@@ -78,7 +78,7 @@ public partial class EventService
     /// 6-7's attendance/evaluation methods).</summary>
     private static EventRegistrationDto ToRegistrationDto(
         EventRegistration r, Event e, Member m, int sessionsAttended, int totalSessions) =>
-        new(r.Id, r.EventId, e.Title, e.StartsAt, r.MemberId, $"{m.FirstName} {m.LastName}", m.MembershipNo,
+        new(r.Id, r.EventId, e.Title, e.StartsAt.GetValueOrDefault(), r.MemberId, $"{m.FirstName} {m.LastName}", m.MembershipNo,
             r.Mode.ToString(), r.Status.ToString(), sessionsAttended, totalSessions,
             r.EvaluationRating, r.EvaluationComments, r.EvaluationSubmittedAt,
             CpdCredit.For(r, e, sessionsAttended, totalSessions));

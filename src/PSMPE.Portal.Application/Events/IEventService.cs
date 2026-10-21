@@ -6,7 +6,7 @@ namespace PSMPE.Portal.Application.Events;
 public interface IEventService
 {
     Task<PagedResult<EventDto>> GetAllAsync(
-        int page, int pageSize, string? search, string? chapter, bool upcomingOnly,
+        int page, int pageSize, string? search, Guid? chapterId, bool upcomingOnly,
         Guid? currentUserId = null, bool includeDrafts = false, CancellationToken cancellationToken = default);
 
     Task<EventDto?> GetByIdAsync(

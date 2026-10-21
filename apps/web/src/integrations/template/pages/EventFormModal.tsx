@@ -2,8 +2,8 @@ import { useEffect, useRef, useState } from 'react'
 import { LuFile } from 'react-icons/lu'
 import type { Event, EventSessionInput, EventStatusValue } from '../../../core/api/endpoints/eventApi'
 import { EventStatus, EventTypes, eventApi } from '../../../core/api/endpoints/eventApi'
-import { Chapters } from '../../../core/types/member'
 import { describeError } from '../../../core/utils/apiError'
+import { useChapters } from '../../../core/utils/chapters'
 import { ConfirmationModal } from '../components/shared/ConfirmationModal'
 import { StandardButton } from '../components/shared/StandardButton'
 
@@ -26,10 +26,10 @@ export function EventFormModal({ event, mode, onClose, onSaved }: EventFormModal
   const [description, setDescription] = useState(event?.description ?? '')
   const [objectives, setObjectives] = useState(event?.objectives ?? '')
   const [type, setType] = useState(event?.type ?? '')
-  const [chapter, setChapter] = useState(event?.chapter ?? '')
+  const [chapterId, setChapterId] = useState(event?.chapterId ?? '')
   const [venue, setVenue] = useState(event?.venue ?? '')
-  const [startsAt, setStartsAt] = useState(event?.startsAt.slice(0, 16) ?? '')
-  const [endsAt, setEndsAt] = useState(event?.endsAt.slice(0, 16) ?? '')
+  const [startsAt, setStartsAt] = useState(event?.startsAt?.slice(0, 16) ?? '')
+  const [endsAt, setEndsAt] = useState(event?.endsAt?.slice(0, 16) ?? '')
   const [hours, setHours] = useState(event?.hours?.toString() ?? '')
   const [capacity, setCapacity] = useState(event?.capacity?.toString() ?? '')
   const [feeOnsite, setFeeOnsite] = useState(event?.feeOnsite.toString() ?? '0')
@@ -45,6 +45,7 @@ export function EventFormModal({ event, mode, onClose, onSaved }: EventFormModal
   const [error, setError] = useState<string | null>(null)
   const posterInputRef = useRef<HTMLInputElement>(null)
   const [confirmingFreePublish, setConfirmingFreePublish] = useState(false)
+  const chapters = useChapters(event?.chapterId)
 
   useEffect(() => {
     setSessions(toSessionInputs(event))
@@ -106,6 +107,12 @@ export function EventFormModal({ event, mode, onClose, onSaved }: EventFormModal
   // intentionally free event - catch it here rather than have it silently go live. Save Draft
   // skips this entirely since a Draft is never visible to members regardless of price.
   const handlePublishClick = () => {
+    // Validate first so a missing date isn't hidden behind the free-event prompt.
+    const problem = validate(EventStatus.Published)
+    if (problem) {
+      setError(problem)
+      return
+    }
     if (Number(feeOnsite) === 0 && Number(feeOnline) === 0) {
       setConfirmingFreePublish(true)
       return
@@ -113,17 +120,37 @@ export function EventFormModal({ event, mode, onClose, onSaved }: EventFormModal
     handleSubmit(EventStatus.Published)
   }
 
+  /** Title and Description are always required; the dates only to publish (a Draft can be saved
+   *  undated and finished later) - mirrors EventService.ValidateCore. Returns the message to show. */
+  const validate = (status: EventStatusValue): string | null => {
+    if (!title.trim()) return 'Title is required.'
+    if (!description.trim()) return 'Description is required.'
+    if (status === EventStatus.Published && (!startsAt || !endsAt)) {
+      return 'Starts At and Ends At are required to publish. Save as a Draft to finish them later.'
+    }
+    if (Boolean(startsAt) !== Boolean(endsAt)) return 'Set both Starts At and Ends At, or leave both blank.'
+    return null
+  }
+
   const handleSubmit = async (status: EventStatusValue) => {
+    // Validated before saving flips on: a failure here used to be an exception from
+    // new Date('').toISOString() that left `saving` stuck true with nothing sent.
+    const problem = validate(status)
+    if (problem) {
+      setError(problem)
+      return
+    }
+
     setSaving(true)
     setError(null)
 
     const basePayload = {
       title,
-      description: description || null,
-      chapter: chapter || null,
+      description: description.trim(),
+      chapterId: chapterId || null,
       venue: venue || null,
-      startsAt: new Date(startsAt).toISOString(),
-      endsAt: new Date(endsAt).toISOString(),
+      startsAt: startsAt ? new Date(startsAt).toISOString() : null,
+      endsAt: endsAt ? new Date(endsAt).toISOString() : null,
       capacity: capacity ? Number(capacity) : null,
       feeOnsite: Number(feeOnsite),
       feeOnline: Number(feeOnline),
@@ -193,13 +220,21 @@ export function EventFormModal({ event, mode, onClose, onSaved }: EventFormModal
           )}
         </div>
         <div className="card-body flex flex-col gap-3">
-          {error && <p className="text-sm text-danger">{error}</p>}
+          {error && (
+            <p ref={(el) => el?.scrollIntoView({ block: 'nearest' })} className="text-sm text-danger">
+              {error}
+            </p>
+          )}
           <div>
-            <label className="text-sm text-default-600 block mb-1">Title</label>
+            <label className="text-sm text-default-600 block mb-1">
+              Title <span className="text-danger">*</span>
+            </label>
             <input className="form-input" placeholder="Title" value={title} onChange={(e) => setTitle(e.target.value)} />
           </div>
           <div>
-            <label className="text-sm text-default-600 block mb-1">Description</label>
+            <label className="text-sm text-default-600 block mb-1">
+              Description <span className="text-danger">*</span>
+            </label>
             <textarea
               className="form-input"
               placeholder="Description"
@@ -243,18 +278,25 @@ export function EventFormModal({ event, mode, onClose, onSaved }: EventFormModal
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="text-sm text-default-600 block mb-1">Chapter</label>
-              <select className="form-input" value={chapter} onChange={(e) => setChapter(e.target.value)}>
+              <select className="form-input" value={chapterId} onChange={(e) => setChapterId(e.target.value)}>
                 <option value="">National (all chapters)</option>
-                {Object.values(Chapters).map((c) => (
-                  <option key={c} value={c}>
-                    {c}
+                {chapters.selectable.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                    {c.isActive ? '' : ' (inactive)'}
                   </option>
                 ))}
               </select>
             </div>
             <div>
               <label className="text-sm text-default-600 block mb-1">Venue</label>
-              <input className="form-input" placeholder="Venue" value={venue} onChange={(e) => setVenue(e.target.value)} />
+              <textarea
+                className="form-input"
+                rows={3}
+                placeholder="Venue"
+                value={venue}
+                onChange={(e) => setVenue(e.target.value)}
+              />
             </div>
           </div>
           <div className="grid grid-cols-2 gap-3">
@@ -370,10 +412,13 @@ export function EventFormModal({ event, mode, onClose, onSaved }: EventFormModal
               <div className="border-t border-default-200 pt-3">
                 <div className="flex items-center justify-between mb-2">
                   <h6 className="text-sm font-semibold">Sessions / Lectures</h6>
-                  <StandardButton variant="secondary" size="sm" onClick={addSession}>
+                  <StandardButton variant="secondary" size="sm" onClick={addSession} disabled={!startsAt || !endsAt}>
                     Add session
                   </StandardButton>
                 </div>
+                {(!startsAt || !endsAt) && (
+                  <p className="text-xs text-default-500 mb-2">Set Starts At and Ends At to add sessions.</p>
+                )}
                 {sessions.map((session, index) => (
                   <div key={session.id ?? `new-${index}`} className="border border-default-200 rounded-md p-3 mb-2 flex flex-col gap-2">
                     <div className="flex items-end gap-2">

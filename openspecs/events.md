@@ -36,10 +36,10 @@ of any permission they hold.
 
 | Endpoint | Auth | Purpose | Errors |
 |---|---|---|---|
-| `GET /api/events` | Any authenticated; `[AllowExpiredMember]` | Paged event list — `search`, `chapter`, `upcomingOnly` filters | — |
+| `GET /api/events` | Any authenticated; `[AllowExpiredMember]` | Paged event list — `search`, `chapterId`, `upcomingOnly` filters (an undated Draft is always kept in the staff list, listed first) | — |
 | `GET /api/events/{id}` | Any authenticated; `[AllowExpiredMember]` | One event's detail, including its sessions | `404` unknown event |
-| `POST /api/events` | `events:manage` | Create an event (`CpdUnitsOnsite`/`CpdUnitsOnline` start null) | `400` invalid (blank title, `EndsAt` before `StartsAt`); `403` without the permission |
-| `PUT /api/events/{id}` | `events:manage` | Edit event details, set/correct either CPD unit value, add/remove/reorder sessions | `404` unknown event; `400` invalid (no sessions left, `EndsAt` before `StartsAt`, a session id not belonging to this event); `409` removing a session that already has recorded attendance |
+| `POST /api/events` | `events:manage` | Create an event (`CpdUnitsOnsite`/`CpdUnitsOnline` start null) | `400` invalid (blank title or description, publishing without both dates, `EndsAt` before `StartsAt`, unknown/inactive chapter); `403` without the permission |
+| `PUT /api/events/{id}` | `events:manage` | Edit event details, set/correct either CPD unit value, add/remove/reorder sessions | `404` unknown event; `400` invalid (same as create, plus a session id not belonging to this event); `409` removing a session that already has recorded attendance, or clearing the dates of an event that already has registrations |
 | `POST /api/events/{id}/poster` | `events:manage` | Upload/replace the event's poster/banner image (multipart) | `404` unknown event; `400` not a JPG/PNG, over 8 MB, or unreadable; `403` without the permission |
 | `GET /api/events/{id}/poster` | Any authenticated; `[AllowExpiredMember]` | Stream the poster image | `404` unknown event or no poster uploaded yet |
 | `POST /api/events/{id}/register` | Any authenticated (Member) | Create an `EventRegistration` with a chosen `Mode` (→ `Registered`) | `404` unknown event; `400` unrecognized `Mode`; `409` already holds a non-cancelled registration for this event |
@@ -72,8 +72,9 @@ portal access).
 
 - **`Event`** — `Title`, `Description`, `Objectives` (same shape as `Description`), `Type` (free text
   against `EventTypes.All` — Conference, Seminar, Technoforum, Convention, Symposium, Expo, mirroring
-  `Member.MemberType`/`MemberTypes`), `Chapter` (null for a national/all-chapters event), `Venue`,
-  `StartsAt`/`EndsAt`, `Hours` (a single PRC-declared hour count shared across both modalities),
+  `Member.MemberType`/`MemberTypes`), `ChapterId` (a `Chapters` row — see `chapters.md`; null for a national/all-chapters event), `Venue`
+  (multi-line text), `StartsAt`/`EndsAt` (null only while the event is a Draft — publishing requires both;
+  `Title` and `Description` are always required), `Hours` (a single PRC-declared hour count shared across both modalities),
   `Capacity` (informational planning target only — never enforced, never blocks registration), the
   independently-settable `FeeOnsite`/`FeeOnline`, the two independently-nullable `CpdUnitsOnsite`/
   `CpdUnitsOnline`, their PRC accreditation references `CpdCodeOnsite`/`CpdCodeOnline` (also
