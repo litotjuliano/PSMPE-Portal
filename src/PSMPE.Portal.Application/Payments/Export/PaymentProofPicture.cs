@@ -41,26 +41,23 @@ public static class PaymentProofPicture
     }
 
     /// <summary>
-    /// Render DPI for a page of the given size in points: 150 normally, lowered so the long side
-    /// comes out near <see cref="MaxLongSide"/> pixels. Stored PDFs are unvalidated, so without
-    /// this a tiny file declaring a huge page would be rasterised at full size first.
+    /// Pixel size to rasterise a PDF page of the given size in points: 150 DPI at most, and never
+    /// more than <see cref="MaxLongSide"/> on the long side. Stored PDFs are unvalidated, so the
+    /// render size is capped by computing pixels from the page size, whatever the PDF declares.
     /// </summary>
-    public static int PdfDpiFor(double pageWidthPoints, double pageHeightPoints)
+    internal static (int Width, int Height) PdfPixelSizeFor(double pageWidthPoints, double pageHeightPoints)
     {
-        var longestSide = Math.Max(pageWidthPoints, pageHeightPoints);
-        if (longestSide <= 0)
-        {
-            return PdfRenderDpi;
-        }
-
-        var dpi = (int)Math.Ceiling(Math.Min(PdfRenderDpi, MaxLongSide * 72d / longestSide));
-        return Math.Max(1, dpi);
+        var scale = Math.Min(PdfRenderDpi / 72d, MaxLongSide / Math.Max(pageWidthPoints, pageHeightPoints));
+        var width = Math.Max(1, (int)Math.Round(pageWidthPoints * scale));
+        var height = Math.Max(1, (int)Math.Round(pageHeightPoints * scale));
+        return (width, height);
     }
 
     private static SKBitmap RenderPdfFirstPage(byte[] pdf)
     {
         var size = Conversion.GetPageSize(pdf, page: new Index(0));
-        return Conversion.ToImage(pdf, page: new Index(0), options: new RenderOptions(Dpi: PdfDpiFor(size.Width, size.Height)));
+        var (width, height) = PdfPixelSizeFor(size.Width, size.Height);
+        return Conversion.ToImage(pdf, page: new Index(0), options: new RenderOptions(Width: width, Height: height));
     }
 
     private static ProofPicture Encode(SKBitmap source)

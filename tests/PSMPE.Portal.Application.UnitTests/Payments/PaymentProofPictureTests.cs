@@ -50,11 +50,11 @@ public class PaymentProofPictureTests
 
         Assert.True(hasInk, "rendered page is blank");
     }
-
+    // The memory bound is guarded by the PdfPixelSizeFor tests below; Encode gives this size regardless.
     [Fact]
-    public void TryCreate_HugePdfPage_IsRenderedAtBoundedResolution()
+    public void TryCreate_HugePdfPage_ReturnsResizedPicture()
     {
-        var picture = Create(ProofFixtures.PdfWithPageSize(14400, 7200), "application/pdf");
+        var picture = Create(ProofFixtures.PdfWithPageSize(1000000, 500000), "application/pdf");
 
         Assert.NotNull(picture);
         Assert.Equal(1000, picture.Width);
@@ -62,22 +62,15 @@ public class PaymentProofPictureTests
     }
 
     [Theory]
-    [InlineData(612, 612, 118)]
-    [InlineData(14400, 7200, 5)]
-    [InlineData(100, 100, 150)]
-    [InlineData(0, 0, 150)]
-    public void PdfDpiFor_ScalesDownLargePagesOnly(double width, double height, int expected)
+    [InlineData(1000000, 1000000, 1000, 1000)]
+    [InlineData(1600000, 800000, 1000, 500)]
+    [InlineData(14400, 7200, 1000, 500)]
+    [InlineData(595, 842, 707, 1000)]
+    [InlineData(300, 200, 625, 417)]
+    [InlineData(0, 0, 1, 1)]
+    public void PdfPixelSizeFor_CapsLongSideAndNeverExceeds150Dpi(double w, double h, int expectedWidth, int expectedHeight)
     {
-        Assert.Equal(expected, PaymentProofPicture.PdfDpiFor(width, height));
-    }
-
-    [Fact]
-    public void PdfDpiFor_A4_StaysUnderMaxAndStillReaches1000()
-    {
-        var dpi = PaymentProofPicture.PdfDpiFor(595, 842);
-
-        Assert.InRange(dpi, 1, 149);
-        Assert.True(842 * dpi / 72d >= 1000);
+        Assert.Equal((expectedWidth, expectedHeight), PaymentProofPicture.PdfPixelSizeFor(w, h));
     }
 
     [Theory]
