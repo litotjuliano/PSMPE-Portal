@@ -6,6 +6,7 @@ using PSMPE.Portal.Application.Layouts;
 using PSMPE.Portal.Application.Locations;
 using PSMPE.Portal.Application.Members;
 using PSMPE.Portal.Application.Payments;
+using PSMPE.Portal.Application.Payments.Export;
 
 namespace PSMPE.Portal.Application;
 
@@ -21,6 +22,7 @@ public static class DependencyInjection
         services.AddScoped<IMemberUploadService, MemberUploadService>();
         services.AddScoped<IMemberCertificateService, MemberCertificateService>();
         services.AddScoped<IPaymentService, PaymentService>();
+        services.AddScoped<IPaymentExportService, PaymentExportService>();
         services.AddScoped<IEventService, EventService>();
         services.AddScoped<IEventPosterService, EventPosterService>();
         return services;

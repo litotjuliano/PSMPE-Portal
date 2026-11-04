@@ -1,10 +1,13 @@
 using System.Security.Claims;
+using System.Text.Json;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using PSMPE.Portal.Application.Common.Interfaces;
 using PSMPE.Portal.Application.Common.Models;
 using PSMPE.Portal.Application.Members;
 using PSMPE.Portal.Application.Payments;
 using PSMPE.Portal.Application.Payments.Dtos;
+using PSMPE.Portal.Application.Payments.Export;
 using PSMPE.Portal.Domain.Enums;
 using PSMPE.Portal.Infrastructure.Authorization;
 
@@ -21,7 +24,9 @@ namespace PSMPE.Portal.WebAPI.Controllers;
 public class PaymentsController(
     IPaymentService paymentService,
     IMemberService memberService,
-    IMemberUploadService memberUploadService) : ControllerBase
+    IMemberUploadService memberUploadService,
+    IPaymentExportService paymentExportService,
+    IAuditLogService auditLogService) : ControllerBase
 {
     /// <summary>Admin queue. Defaults to Submitted, which is the only status that needs action.</summary>
     [HttpGet]
@@ -237,6 +242,25 @@ public class PaymentsController(
     [RequirePermission(Permissions.Members.Manage)]
     public async Task<IActionResult> DeletePromotion(Guid id, CancellationToken cancellationToken) =>
         ToActionResult(await paymentService.DeletePromotionAsync(id, cancellationToken));
+
+    /// <summary>The queue as an Excel workbook with proofs embedded. members:view, the same access
+    /// the queue and GET /{id}/proof already give. Audited because the file carries personal data
+    /// out of the portal.</summary>
+    [HttpGet("export")]
+    [RequirePermission(Permissions.Members.View)]
+    public async Task<IActionResult> Export(CancellationToken cancellationToken)
+    {
+        var export = await paymentExportService.BuildQueueExportAsync(cancellationToken);
+
+        await auditLogService.RecordAsync(
+            "payments.exported", CurrentUserId, HttpContext.Connection.RemoteIpAddress?.ToString(),
+            targetType: null, targetId: null, JsonSerializer.Serialize(new { rows = export.RowCount }), cancellationToken);
+
+        return File(
+            export.Content,
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            "PSMPE-Payments-Awaiting-Verification.xlsx");
+    }
 
     /// <summary>Admin Payments tab's reporting panel - aggregate figures only, no line-item
     /// drill-down (see proposal.md's "Not Built"). Verified NewMembership/Renewal payments only;

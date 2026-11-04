@@ -41,6 +41,7 @@ All under `/api/payments`, all authenticated.
 - `GET /fees/promotions`, `POST /fees/promotions`, `DELETE /fees/promotions/{id}` — `members:manage`.
   See "Promotional pricing" below.
 - `GET /reports/summary?startDate=&endDate=` — `members:view`. See "Payment reporting" below.
+- `GET /export` — `members:view`. The queue as an `.xlsx`. See "Queue export" below.
 
 ## Approval and payment are one act
 
@@ -288,6 +289,27 @@ An inverted range (`startDate > endDate`) is rejected as a `Result.Failure` in t
 rather than at the controller, so the rule is unit-testable. Admin UI: `PaymentsSummaryPanel.tsx` on
 the Payments tab, with a month quick-pick (this month / last month / last 3 / last 6 months / this
 year) plus a custom date range, rendered above `PaymentsQueueTable.tsx`.
+
+## Queue export
+
+`GET /api/payments/export` returns every `Submitted` payment, oldest first and unpaged, as a list sheet:
+Full Name, Email, Address, CP Number, Amount, Reference, Paid On, Proof of Payment, For. Each payment
+then gets its own sheet with the proof at full size, because Excel can't enlarge a picture on click.
+**Proof link** and the name in the list open that sheet, and **Back to list** returns to the row. The
+**Export to Excel** button on `PaymentsQueueTable.tsx` calls it.
+
+- **Proofs are embedded, not linked**, so the file stands alone. The stored file is only read: payment sheets get a
+  smaller copy, at most 800px on the long side; a PDF proof has page 1 rendered to a picture (`PaymentProofPicture`).
+- **PDF render size is capped.** Pixels are computed from the declared page size, so a tiny PDF declaring a huge page can't exhaust memory.
+- **One bad proof never fails the export.** The cell says why instead: no proof attached, file missing
+  from storage, or file unreadable. A missing native library does fail it, since that is a broken
+  deployment rather than a bad file.
+- **Member text can't become a formula**, including after a re-save as CSV: text starting with =, +, -, @ gets a leading apostrophe, which is visible in the cell. Plain phone numbers are left alone.
+- **Audited** as `payments.exported`, because the file carries personal data out of the portal.
+- **PDFtoImage is pinned to 4.1.0.** Later versions need SkiaSharp 4.x. See
+  `openspec/changes/add-payments-queue-export/proposal.md` for the trade-off.
+- `PaymentExportWorkbook` is a pure renderer, like `ReceiptGenerator`. Storage keys stay inside
+  `PaymentExportService`.
 
 ## Event registration payments (`Kind.EventRegistration`)
 

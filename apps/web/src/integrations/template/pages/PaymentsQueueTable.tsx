@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { LuCheck, LuEye, LuTriangleAlert, LuX } from 'react-icons/lu'
+import { LuCheck, LuDownload, LuEye, LuTriangleAlert, LuX } from 'react-icons/lu'
 import { paymentApi, type MembershipFees, type Payment } from '../../../core/api/endpoints/paymentApi'
+import { describeError } from '../../../core/utils/apiError'
 import { ConfirmationModal } from '../components/shared/ConfirmationModal'
 import { FilePreviewModal } from '../components/shared/FilePreviewModal'
 import { StandardButton } from '../components/shared/StandardButton'
@@ -63,6 +64,28 @@ export const PaymentsQueueTable = ({
     setRejectingId(null)
   }
 
+  const [exporting, setExporting] = useState(false)
+  const [exportError, setExportError] = useState<string | null>(null)
+
+  const handleExport = async () => {
+    setExporting(true)
+    setExportError(null)
+    try {
+      const blob = await paymentApi.exportQueue()
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      // en-CA formats as YYYY-MM-DD in the viewer's local time zone.
+      link.download = `PSMPE-Payments-Awaiting-Verification-${new Date().toLocaleDateString('en-CA')}.xlsx`
+      link.click()
+      URL.revokeObjectURL(url)
+    } catch (err) {
+      setExportError(describeError(err, 'Could not export the queue. Please try again.'))
+    } finally {
+      setExporting(false)
+    }
+  }
+
   // Soft visibility only, matching the codebase's stance that Amount is never hard-validated
   // against configured fees - just something for the admin to notice before clicking Verify.
   // NewMembership compares against the registration totals, Renewal against the renewal totals,
@@ -80,9 +103,22 @@ export const PaymentsQueueTable = ({
 
   return (
     <div className="card">
-      <div className="card-header">
+      <div className="card-header flex items-center justify-between gap-3">
         <h6 className="card-title">Payments Awaiting Verification</h6>
+        <StandardButton
+          variant="on-primary"
+          size="sm"
+          icon={LuDownload}
+          loading={exporting}
+          loadingLabel="Exporting…"
+          disabled={totalCount === 0}
+          onClick={() => void handleExport()}
+        >
+          Export to Excel
+        </StandardButton>
       </div>
+
+      {exportError && <p className="text-sm text-danger px-5 pt-4">{exportError}</p>}
 
       <div className="flex flex-col">
         <div className="overflow-x-auto">

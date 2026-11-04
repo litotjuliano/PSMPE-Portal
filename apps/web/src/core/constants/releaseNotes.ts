@@ -23,6 +23,17 @@ export interface ReleaseNote {
 
 export const releaseNotes: ReleaseNote[] = [
   {
+    version: '1.5.0',
+    date: '2026-11-04',
+    changes: [
+      {
+        type: 'Added',
+        description:
+          "An Export to Excel button on Members > Payments downloads every payment awaiting verification, with each member's name, email, address and mobile number, the payment details, and a Proof link that opens that payment's own sheet with the proof shown large. PDF proofs show their first page. Each export is recorded in the system logs.",
+      },
+    ],
+  },
+  {
     version: '1.4.0',
     date: '2026-10-21',
     changes: [
