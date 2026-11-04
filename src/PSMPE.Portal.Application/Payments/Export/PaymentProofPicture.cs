@@ -29,7 +29,7 @@ public static class PaymentProofPicture
             var bytes = buffer.ToArray();
 
             using var bitmap = contentType == "application/pdf"
-                ? Conversion.ToImage(bytes, page: new Index(0), options: new RenderOptions(Dpi: PdfRenderDpi))
+                ? RenderPdfFirstPage(bytes)
                 : SKBitmap.Decode(bytes);
 
             return bitmap is null ? null : Encode(bitmap);
@@ -40,6 +40,29 @@ public static class PaymentProofPicture
         }
     }
 
+    /// <summary>
+    /// Render DPI for a page of the given size in points: 150 normally, lowered so the long side
+    /// comes out near <see cref="MaxLongSide"/> pixels. Stored PDFs are unvalidated, so without
+    /// this a tiny file declaring a huge page would be rasterised at full size first.
+    /// </summary>
+    public static int PdfDpiFor(double pageWidthPoints, double pageHeightPoints)
+    {
+        var longestSide = Math.Max(pageWidthPoints, pageHeightPoints);
+        if (longestSide <= 0)
+        {
+            return PdfRenderDpi;
+        }
+
+        var dpi = (int)Math.Ceiling(Math.Min(PdfRenderDpi, MaxLongSide * 72d / longestSide));
+        return Math.Max(1, dpi);
+    }
+
+    private static SKBitmap RenderPdfFirstPage(byte[] pdf)
+    {
+        var size = Conversion.GetPageSize(pdf, page: new Index(0));
+        return Conversion.ToImage(pdf, page: new Index(0), options: new RenderOptions(Dpi: PdfDpiFor(size.Width, size.Height)));
+    }
+
     private static ProofPicture Encode(SKBitmap source)
     {
         var scale = Math.Min(1d, (double)MaxLongSide / Math.Max(source.Width, source.Height));
@@ -48,7 +71,7 @@ public static class PaymentProofPicture
 
         using var target = new SKBitmap(width, height);
         using (var canvas = new SKCanvas(target))
-        using (var paint = new SKPaint { FilterQuality = SKFilterQuality.Medium })
+        using (var paint = new SKPaint { FilterQuality = SKFilterQuality.High })
         {
             canvas.Clear(SKColors.White);
             canvas.DrawBitmap(source, new SKRect(0, 0, width, height), paint);

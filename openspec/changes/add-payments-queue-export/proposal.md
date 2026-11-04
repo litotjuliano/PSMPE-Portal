@@ -67,7 +67,7 @@ The file is the one **View proof** opens: `Payment.ProofStorageKey`, not the mem
 | Image or PDF that can't be decoded or rendered | `Could not read file – open it in the portal` |
 
 1000px keeps a deposit slip legible if the reader enlarges the picture, while keeping the workbook
-small. Only page 1 of a multi-page PDF appears; the full PDF stays in the portal.
+small. Only page 1 of a multi-page PDF appears; the full PDF stays in the portal. Render resolution is lowered for oversized pages, so a tiny PDF declaring a huge page can't exhaust the server's memory.
 
 One bad proof never fails the export. A missing native library does, with a visible error: that is a
 broken deployment, and labelling every PDF unreadable would hide it.
