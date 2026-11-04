@@ -2,7 +2,7 @@
 
 ## Status
 
-**Proposed** 2026-11-04. Design agreed with a mockup. Not implemented.
+**Implemented** 2026-11-04. Not yet verified on staging.
 
 ## Why
 

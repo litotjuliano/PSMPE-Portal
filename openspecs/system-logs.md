@@ -83,12 +83,14 @@ to be useful for debugging. Mixing them would force one retention policy on both
 - **`membership.approved`** — written by `MemberService.ApproveAsync` alongside the existing
   receipt/email side effects, once per application (idempotent, matching `ApproveAsync` itself —
   see `members.md`'s "RMP verification gates approval").
+- **`payments.exported`** — written by `PaymentsController.Export` each time the payments queue is
+  downloaded as Excel, with the actor, IP and row count in `Metadata`. No member data is stored.
 - **Not audited (out of scope for this iteration)**: role/permission changes (`roles.md` already
   flags this as an open TODO there — unresolved, not superseded by this feature), member
   profile/status edits (`members.md` flags the same), login successes/failures short of a lockout,
-  content/layout CRUD. This table only covers the four event types above; it is not a general
+  content/layout CRUD. This table only covers the five event types above; it is not a general
   activity log for the whole application.
-- All four event types share the `auth.*` or `membership.*` `EventType` prefix convention
+- All five event types share the `auth.*`, `membership.*` or `payments.*` `EventType` prefix convention
   deliberately — `LogRetentionService` uses the `auth.` prefix specifically to select which rows are
   subject to the 90-day cutoff (see Retention below), so a future event type must pick its prefix
   with that in mind.
