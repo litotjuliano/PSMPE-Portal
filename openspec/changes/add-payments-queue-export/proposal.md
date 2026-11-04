@@ -69,8 +69,12 @@ The file is the one **View proof** opens: `Payment.ProofStorageKey`, not the mem
 1000px keeps a deposit slip legible if the reader enlarges the picture, while keeping the workbook
 small. Only page 1 of a multi-page PDF appears; the full PDF stays in the portal.
 
-One bad proof never fails the export. Each file is opened, converted and released in turn, so memory
-use does not grow with the size of the queue.
+One bad proof never fails the export. A missing native library does, with a visible error: that is a
+broken deployment, and labelling every PDF unreadable would hide it.
+
+Each original file is opened, converted and released in turn. The resized pictures stay in memory
+until the workbook is saved, because ClosedXML holds them. At roughly 100–200 KB each this is a few
+MB for today's queue, and it grows with the queue.
 
 ## Code structure
 
