@@ -18,7 +18,7 @@
 - [x] Service: name and address skip blank parts; event payment shows the event title
 - [x] Service: each proof outcome (image, PDF, none, missing file, unreadable file); one bad file doesn't fail the export
 - [x] Workbook: reopen the file and assert column order, cell types, leading `0` and `+` kept, a value starting with `=` stays text, picture count
-- [ ] Controller: refused without `members:view`; audit event recorded; no storage key in the output
+- [x] Controller: refused without `members:view`; audit event recorded; no storage key in the output
 - [x] Frontend type-check and build
 
 ## Docs
