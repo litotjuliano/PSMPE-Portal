@@ -22,7 +22,7 @@ to be useful for debugging. Mixing them would force one retention policy on both
     already Super-Admin-only in `AdminController`
   - Query: `page`, `pageSize` (default 20), `search` (optional), `eventType` (optional, exact match
     against values like `auth.rate_limit.rejected`, `auth.account.locked_out`,
-    `auth.email_throttle.blocked`, `membership.approved`), `from`/`to` (optional `DateTimeOffset`
+    `auth.email_throttle.blocked`, `membership.approved`, `payments.exported`), `from`/`to` (optional `DateTimeOffset`
     range on `CreatedAt`)
   - Response: `PagedResult<AuditLogEntryDto>` — `{ id, eventType, actorUserId, actorEmail, actorIp,
     targetType, targetId, metadata, createdAt }`. `actorEmail` is resolved server-side with a single
@@ -103,9 +103,8 @@ is exactly one job at exactly one interval). It runs once immediately on startup
 24h, so a restart-heavy deployment doesn't wait a full day for its first prune.
 
 - **`AuditLog`**: rows whose `EventType` starts with `"auth."` are deleted once older than 90 days.
-  `"membership.approved"` rows are *not* matched by that prefix and are therefore kept forever —
-  membership approval is a durable business record (parallel to `PrcVerificationHistory`), not a
-  security event with a natural expiry.
+  `"membership.approved"` and `"payments.exported"` rows are *not* matched by that prefix and are therefore kept forever —
+  membership approval is a durable business record (parallel to `PrcVerificationHistory`) and an export is a record of personal data leaving the portal, not a security event with a natural expiry.
 - **`ErrorLog`**: every row, `Backend` or `Frontend`, is deleted once older than 30 days. No
   exemptions — unlike `AuditLog`, nothing in this table is a record worth keeping indefinitely.
 
