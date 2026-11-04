@@ -56,16 +56,19 @@ public class PaymentExportWorkbookTests
     }
 
     [Theory]
-    [InlineData("=1+1")]
-    [InlineData("+1+1")]
-    [InlineData("-1+1")]
-    [InlineData("@SUM(A1)")]
-    public void Build_NeverTurnsMemberTextIntoAFormula(string value)
+    [InlineData("=1+1", "'=1+1")]
+    [InlineData("+1+1", "'+1+1")]
+    [InlineData("-1+1", "'-1+1")]
+    [InlineData("@SUM(A1)", "'@SUM(A1)")]
+    [InlineData("'=1+1", "'=1+1")]
+    [InlineData("'Tis", "'Tis")]
+    [InlineData(" =1+1", "' =1+1")]
+    public void Build_NeverTurnsMemberTextIntoAFormula(string value, string expected)
     {
         var cell = Open(Row(fullName: value)).Cell(2, 1);
 
         Assert.False(cell.HasFormula);
-        Assert.Equal("'" + value, cell.GetString());
+        Assert.Equal(expected, cell.GetString());
     }
 
     [Fact]
@@ -94,7 +97,6 @@ public class PaymentExportWorkbookTests
 
         Assert.True(Assert.Single(sheet.Pictures).Height > 0);
     }
-
 
     [Fact]
     public void Build_EmbedsPictureInTheProofColumnOfItsRow()

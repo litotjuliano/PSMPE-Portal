@@ -87,7 +87,7 @@ public static partial class PaymentExportWorkbook
         paidOn.Value = row.PaidOn.ToDateTime(TimeOnly.MinValue);
         paidOn.Style.NumberFormat.Format = "mm/dd/yyyy";
 
-        sheet.Cell(rowNumber, 9).Value = row.For;
+        sheet.Cell(rowNumber, 9).Value = NeutraliseFormula(row.For);
 
         if (row.Picture is not null)
         {
@@ -99,7 +99,7 @@ public static partial class PaymentExportWorkbook
         }
     }
 
-    private static readonly char[] FormulaTriggers = ['=', '+', '-', '@', '\t', '\r'];
+    private static readonly char[] FormulaTriggers = ['=', '+', '-', '@'];
 
     /// <summary>
     /// Prefixes an apostrophe to text a spreadsheet would read as a formula. The cell type protects
@@ -107,7 +107,14 @@ public static partial class PaymentExportWorkbook
     /// </summary>
     private static string NeutraliseFormula(string value)
     {
-        if (value.Length < 2 || Array.IndexOf(FormulaTriggers, value[0]) < 0 || PlainNumber().IsMatch(value))
+        // ClosedXML strips one leading apostrophe, so double it to keep the member's text exact.
+        if (value.StartsWith('\''))
+        {
+            return "'" + value;
+        }
+
+        var trimmed = value.TrimStart();
+        if (value.Length < 2 || trimmed.Length == 0 || Array.IndexOf(FormulaTriggers, trimmed[0]) < 0 || PlainNumber().IsMatch(value))
         {
             return value;
         }
