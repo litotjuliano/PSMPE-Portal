@@ -2,7 +2,7 @@ import { useState } from 'react'
 import type { AuditLogEntry } from '../../../core/api/endpoints/systemLogsApi'
 import { LogDetailsModal } from '../components/shared/LogDetailsModal'
 
-const EVENT_TYPES = ['auth.rate_limit.rejected', 'auth.account.locked_out', 'auth.email_throttle.blocked', 'membership.approved']
+const EVENT_TYPES = ['auth.rate_limit.rejected', 'auth.account.locked_out', 'auth.email_throttle.blocked', 'membership.approved', 'payments.exported']
 
 interface AuditLogTableProps {
   entries: AuditLogEntry[]

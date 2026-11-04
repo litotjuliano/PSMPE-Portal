@@ -142,6 +142,12 @@ export const paymentApi = {
     }
   },
 
+  /** Fetched as a blob so the request carries the bearer token, same as fetchProofUrl. */
+  exportQueue: async (): Promise<Blob> => {
+    const response = await apiClient.get('/api/payments/export', { responseType: 'blob' })
+    return response.data
+  },
+
   verifyPayment: (id: string) => apiClient.post(`/api/payments/${id}/verify`).then((res) => res.data),
 
   rejectPayment: (id: string, reason: string) =>

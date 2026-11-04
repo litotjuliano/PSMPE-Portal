@@ -50,7 +50,10 @@ public class PaymentsControllerTests : IClassFixture<CustomWebApplicationFactory
     {
         var claims = new List<Claim> { new(ClaimTypes.NameIdentifier, callerId.ToString()) };
         var httpContext = new DefaultHttpContext { User = new ClaimsPrincipal(new ClaimsIdentity(claims, "TestAuth")) };
-        return new PaymentsController(_paymentService, _memberService, _memberUploadService)
+        return new PaymentsController(
+            _paymentService, _memberService, _memberUploadService,
+            _scope.ServiceProvider.GetRequiredService<PSMPE.Portal.Application.Payments.Export.IPaymentExportService>(),
+            _scope.ServiceProvider.GetRequiredService<PSMPE.Portal.Application.Common.Interfaces.IAuditLogService>())
         {
             ControllerContext = new ControllerContext { HttpContext = httpContext }
         };
