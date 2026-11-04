@@ -15,6 +15,7 @@ public class PaymentExportServiceTests
     private const string PdfKey = "proof.pdf";
     private const string CorruptKey = "corrupt.jpg";
     private const string GoneKey = "gone.jpg";
+    private const string BrokenStorageKey = "broken.jpg";
 
     private static IMemberUploadService Uploads()
     {
@@ -37,6 +38,8 @@ public class PaymentExportServiceTests
 
                 return Task.FromResult(file);
             });
+        uploads.Setup(u => u.OpenByKeyAsync(BrokenStorageKey, It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new UnauthorizedAccessException());
         return uploads.Object;
     }
 
@@ -228,9 +231,25 @@ public class PaymentExportServiceTests
 
         Assert.Equal(5, rowCount);
         Assert.Equal(2, sheet.Pictures.Count);
+        Assert.Equal([2, 3], sheet.Pictures.Select(p => p.TopLeftCell.Address.RowNumber).Order());
         Assert.Equal("No proof on file", sheet.Cell(4, 8).GetString());
         Assert.Equal("File missing – ask member to resubmit", sheet.Cell(5, 8).GetString());
         Assert.Equal("Could not read file – open it in the portal", sheet.Cell(6, 8).GetString());
+    }
+
+    [Fact]
+    public async Task Export_ATransientStorageErrorOnOneProofDoesNotFailTheExport()
+    {
+        using var db = TestDbContext.CreateInMemory();
+        var member = await SeedMemberAsync(db);
+        await SeedPaymentAsync(db, member, BrokenStorageKey, createdAt: new DateTimeOffset(2026, 8, 1, 0, 0, 0, TimeSpan.Zero));
+        await SeedPaymentAsync(db, member, ImageKey, createdAt: new DateTimeOffset(2026, 8, 2, 0, 0, 0, TimeSpan.Zero));
+
+        var (sheet, rowCount) = await ExportAsync(db);
+
+        Assert.Equal(2, rowCount);
+        Assert.Equal("Could not read file – open it in the portal", sheet.Cell(2, 8).GetString());
+        Assert.Single(sheet.Pictures);
     }
 
     [Fact]

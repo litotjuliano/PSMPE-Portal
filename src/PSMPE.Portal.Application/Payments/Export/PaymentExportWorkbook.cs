@@ -1,5 +1,6 @@
 using ClosedXML.Excel;
 using ClosedXML.Excel.Drawings;
+using System.Text.RegularExpressions;
 
 namespace PSMPE.Portal.Application.Payments.Export;
 
@@ -10,10 +11,11 @@ public sealed record PaymentExportRow(
 
 /// <summary>
 /// Pure renderer from rows to xlsx bytes, with no database or storage dependency, like
-/// ReceiptGenerator. Text always goes in as a cell value, never as a formula, so member-entered
+/// ReceiptGenerator. Text always goes in as a cell value, never as a formula, and text a spreadsheet
+/// would read as one gets a leading apostrophe, so member-entered
 /// text starting with "=" can't execute in Excel.
 /// </summary>
-public static class PaymentExportWorkbook
+public static partial class PaymentExportWorkbook
 {
     private const string SheetName = "Awaiting Verification";
     private const string HeaderColor = "#0E4C92";
@@ -67,19 +69,19 @@ public static class PaymentExportWorkbook
         sheetRow.Style.Alignment.Vertical = XLAlignmentVerticalValues.Top;
         sheetRow.Style.Alignment.WrapText = true;
 
-        sheet.Cell(rowNumber, 1).Value = row.FullName;
-        sheet.Cell(rowNumber, 2).Value = row.Email ?? string.Empty;
-        sheet.Cell(rowNumber, 3).Value = row.Address;
+        sheet.Cell(rowNumber, 1).Value = NeutraliseFormula(row.FullName);
+        sheet.Cell(rowNumber, 2).Value = NeutraliseFormula(row.Email ?? string.Empty);
+        sheet.Cell(rowNumber, 3).Value = NeutraliseFormula(row.Address);
 
         var mobile = sheet.Cell(rowNumber, 4);
         mobile.Style.NumberFormat.Format = "@";
-        mobile.Value = row.MobileNumber ?? string.Empty;
+        mobile.Value = NeutraliseFormula(row.MobileNumber ?? string.Empty);
 
         var amount = sheet.Cell(rowNumber, 5);
         amount.Value = row.Amount;
         amount.Style.NumberFormat.Format = "\"₱\"#,##0.00";
 
-        sheet.Cell(rowNumber, 6).Value = row.ReferenceNo ?? string.Empty;
+        sheet.Cell(rowNumber, 6).Value = NeutraliseFormula(row.ReferenceNo ?? string.Empty);
 
         var paidOn = sheet.Cell(rowNumber, 7);
         paidOn.Value = row.PaidOn.ToDateTime(TimeOnly.MinValue);
@@ -97,12 +99,33 @@ public static class PaymentExportWorkbook
         }
     }
 
+    private static readonly char[] FormulaTriggers = ['=', '+', '-', '@', '\t', '\r'];
+
+    /// <summary>
+    /// Prefixes an apostrophe to text a spreadsheet would read as a formula. The cell type protects
+    /// the xlsx, but not a CSV re-save. Plain phone numbers and single characters are left alone.
+    /// </summary>
+    private static string NeutraliseFormula(string value)
+    {
+        if (value.Length < 2 || Array.IndexOf(FormulaTriggers, value[0]) < 0 || PlainNumber().IsMatch(value))
+        {
+            return value;
+        }
+
+        // ClosedXML treats one leading apostrophe as Excel's hidden quote prefix and drops it, so
+        // a second one is needed for the apostrophe to be real cell text that survives a CSV save.
+        return "''" + value;
+    }
+
+    [GeneratedRegex(@"^\+?\d+$")]
+    private static partial Regex PlainNumber();
+
     private static void AddPicture(IXLWorksheet sheet, int rowNumber, ProofPicture picture)
     {
         var scale = Math.Min((double)PictureBoxWidthPx / picture.Width, (double)PictureBoxHeightPx / picture.Height);
 
         sheet.AddPicture(new MemoryStream(picture.Jpeg), XLPictureFormat.Jpeg, $"Proof{rowNumber}")
             .MoveTo(sheet.Cell(rowNumber, ProofColumn), PictureOffsetPx, PictureOffsetPx)
-            .WithSize((int)(picture.Width * scale), (int)(picture.Height * scale));
+            .WithSize(Math.Max(1, (int)(picture.Width * scale)), Math.Max(1, (int)(picture.Height * scale)));
     }
 }

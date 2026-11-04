@@ -48,7 +48,7 @@ One sheet named `Awaiting Verification`. Row 1 is a frozen header row. Columns, 
 | I | For | Same labels as the queue; event payments include the event title | Text, wrapped |
 
 All member-entered values are written as cell values, never as formulas, so a value starting with
-`=` cannot execute in Excel.
+`=` cannot execute in Excel. Text starting with `=`, `+`, `-` or `@` also gets a leading apostrophe, because the cell type does not survive a re-save as CSV. Plain phone numbers are left as they are.
 
 Every data row has the same height, tall enough for the proof picture. The picture is scaled to fit
 inside column H and keeps its aspect ratio.
@@ -73,8 +73,7 @@ One bad proof never fails the export. A missing native library does, with a visi
 broken deployment, and labelling every PDF unreadable would hide it.
 
 Each original file is opened, converted and released in turn. The resized pictures stay in memory
-until the workbook is saved, because ClosedXML holds them. At roughly 100–200 KB each this is a few
-MB for today's queue, and it grows with the queue.
+until the workbook is saved, because ClosedXML holds them. Measured at about 1 MB of peak memory per row at larger sizes: about 120 MB at 50 rows, about 550 MB and 46 seconds at 500 rows on a desktop. That is fine for today's queue of tens of rows. If the queue ever reaches hundreds, add a row cap.
 
 ## Code structure
 
