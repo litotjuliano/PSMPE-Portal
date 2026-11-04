@@ -6,13 +6,13 @@ namespace PSMPE.Portal.Application.Payments.Export;
 public sealed record ProofPicture(byte[] Jpeg, int Width, int Height);
 
 /// <summary>
-/// Turns a stored proof into the picture embedded in the export. Proofs are JPEG or PDF - see
+/// Makes a smaller copy of a stored proof to embed in the export; the stored file is only read. Proofs are JPEG or PDF - see
 /// MemberUploadService.StoreFileAsync. Only page 1 of a PDF is rendered.
 /// </summary>
 public static class PaymentProofPicture
 {
-    private const int MaxLongSide = 1000;
-    private const int JpegQuality = 80;
+    private const int MaxLongSide = 800;
+    private const int JpegQuality = 70;
     private const int PdfRenderDpi = 150;
 
     /// <summary>

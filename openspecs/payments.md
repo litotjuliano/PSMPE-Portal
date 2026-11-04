@@ -292,12 +292,14 @@ year) plus a custom date range, rendered above `PaymentsQueueTable.tsx`.
 
 ## Queue export
 
-`GET /api/payments/export` returns every `Submitted` payment, oldest first and unpaged, as one sheet:
-Full Name, Email, Address, CP Number, Amount, Reference, Paid On, Proof of Payment, For. The
+`GET /api/payments/export` returns every `Submitted` payment, oldest first and unpaged, as a list sheet:
+Full Name, Email, Address, CP Number, Amount, Reference, Paid On, Proof of Payment, For. Each payment
+then gets its own sheet with the proof at full size, because Excel can't enlarge a picture on click.
+**Proof link** and the name in the list open that sheet, and **Back to list** returns to the row. The
 **Export to Excel** button on `PaymentsQueueTable.tsx` calls it.
 
-- **Proofs are embedded, not linked**, so the file stands alone. Images are resized to at most 1000px
-  on the long side; a PDF proof has page 1 rendered to a picture (`PaymentProofPicture`).
+- **Proofs are embedded, not linked**, so the file stands alone. The stored file is only read: payment sheets get a
+  smaller copy, at most 800px on the long side; a PDF proof has page 1 rendered to a picture (`PaymentProofPicture`).
 - **PDF render size is capped.** Pixels are computed from the declared page size, so a tiny PDF declaring a huge page can't exhaust memory.
 - **One bad proof never fails the export.** The cell says why instead: no proof attached, file missing
   from storage, or file unreadable. A missing native library does fail it, since that is a broken

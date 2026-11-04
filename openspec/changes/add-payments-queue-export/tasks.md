@@ -2,9 +2,10 @@
 
 ## Backend
 - [x] Add ClosedXML 0.105.1 and PDFtoImage 4.1.0 to `PSMPE.Portal.Application`; confirm SkiaSharp stays at 2.88.8
-- [x] `PaymentProofPicture`: image and PDF page 1 to JPEG, at most 1000px on the long side; reports failure instead of throwing
-- [x] `PaymentExportWorkbook`: nine columns in the agreed order, frozen header, typed cells, values never written as formulas, pictures scaled to fit column H
+- [x] `PaymentProofPicture`: image and PDF page 1 to a smaller JPEG copy, at most 800px on the long side; reports failure instead of throwing
+- [x] `PaymentExportWorkbook`: nine columns in the agreed order, frozen header, typed cells, values never written as formulas, **Proof link** in column H
 - [x] `PaymentExportService`: all `Submitted` payments oldest first, full name, address, email from `Member.User`, the five proof outcomes, each original file released after conversion
+- [x] One sheet per payment with the proof at full size, linked both ways with the list
 - [x] Register the service in `DependencyInjection`
 - [x] `GET /api/payments/export` on `PaymentsController`, `members:view`, records `payments.exported` with actor, IP and row count
 

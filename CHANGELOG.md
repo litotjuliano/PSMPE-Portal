@@ -13,8 +13,9 @@ running app's own footer/"What's New" card get their copy from (`apps/web/src/co
 ### Added
 
 - An Export to Excel button on Members > Payments downloads every payment awaiting verification, with each
-  member's name, email, address and mobile number, the payment details, and the proof of payment as a picture
-  in the row. PDF proofs show their first page. Each export is recorded in the system logs.
+  member's name, email, address and mobile number, the payment details, and a Proof link
+  that opens that payment's own sheet with the proof shown large. PDF proofs show
+  their first page. Each export is recorded in the system logs.
 
 ## [1.4.0] - 2026-10-21
 

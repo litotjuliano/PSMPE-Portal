@@ -230,8 +230,9 @@ public class PaymentExportServiceTests
         var (sheet, rowCount) = await ExportAsync(db);
 
         Assert.Equal(5, rowCount);
-        Assert.Equal(2, sheet.Pictures.Count);
-        Assert.Equal([2, 3], sheet.Pictures.Select(p => p.TopLeftCell.Address.RowNumber).Order());
+        Assert.Equal(2, sheet.Workbook.Worksheets.Sum(s => s.Pictures.Count));
+        Assert.Equal("Proof link", sheet.Cell(2, 8).GetString());
+        Assert.Equal("Proof link", sheet.Cell(3, 8).GetString());
         Assert.Equal("No proof on file", sheet.Cell(4, 8).GetString());
         Assert.Equal("File missing – ask member to resubmit", sheet.Cell(5, 8).GetString());
         Assert.Equal("Could not read file – open it in the portal", sheet.Cell(6, 8).GetString());
@@ -249,7 +250,7 @@ public class PaymentExportServiceTests
 
         Assert.Equal(2, rowCount);
         Assert.Equal("Could not read file – open it in the portal", sheet.Cell(2, 8).GetString());
-        Assert.Single(sheet.Pictures);
+        Assert.Equal(1, sheet.Workbook.Worksheets.Sum(s => s.Pictures.Count));
     }
 
     [Fact]

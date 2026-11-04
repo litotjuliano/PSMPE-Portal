@@ -10,13 +10,13 @@ public class PaymentProofPictureTests
         PaymentProofPicture.TryCreate(new MemoryStream(bytes), contentType);
 
     [Fact]
-    public void TryCreate_LargeImage_ShrinksLongSideTo1000AndKeepsShape()
+    public void TryCreate_LargeImage_ShrinksLongSideTo800AndKeepsShape()
     {
         var picture = Create(ProofFixtures.Jpeg(1600, 800), "image/jpeg");
 
         Assert.NotNull(picture);
-        Assert.Equal(1000, picture.Width);
-        Assert.Equal(500, picture.Height);
+        Assert.Equal(800, picture.Width);
+        Assert.Equal(400, picture.Height);
         Assert.NotEmpty(picture.Jpeg);
     }
 
@@ -36,8 +36,8 @@ public class PaymentProofPictureTests
         var picture = Create(ProofFixtures.Pdf(), "application/pdf");
 
         Assert.NotNull(picture);
-        Assert.Equal(1000, Math.Max(picture.Width, picture.Height));
-        Assert.InRange(Math.Min(picture.Width, picture.Height), 700, 714);
+        Assert.Equal(800, Math.Max(picture.Width, picture.Height));
+        Assert.InRange(Math.Min(picture.Width, picture.Height), 560, 572);
 
         using var decoded = SKBitmap.Decode(picture.Jpeg);
         var hasInk = false;
@@ -57,15 +57,15 @@ public class PaymentProofPictureTests
         var picture = Create(ProofFixtures.PdfWithPageSize(1000000, 500000), "application/pdf");
 
         Assert.NotNull(picture);
-        Assert.Equal(1000, picture.Width);
-        Assert.Equal(500, picture.Height);
+        Assert.Equal(800, picture.Width);
+        Assert.Equal(400, picture.Height);
     }
 
     [Theory]
-    [InlineData(1000000, 1000000, 1000, 1000)]
-    [InlineData(1600000, 800000, 1000, 500)]
-    [InlineData(14400, 7200, 1000, 500)]
-    [InlineData(595, 842, 707, 1000)]
+    [InlineData(1000000, 1000000, 800, 800)]
+    [InlineData(1600000, 800000, 800, 400)]
+    [InlineData(14400, 7200, 800, 400)]
+    [InlineData(595, 842, 565, 800)]
     [InlineData(300, 200, 625, 417)]
     [InlineData(0, 0, 1, 1)]
     public void PdfPixelSizeFor_CapsLongSideAndNeverExceeds150Dpi(double w, double h, int expectedWidth, int expectedHeight)
