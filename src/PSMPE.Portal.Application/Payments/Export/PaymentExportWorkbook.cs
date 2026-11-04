@@ -11,7 +11,8 @@ public sealed record PaymentExportRow(
 
 /// <summary>
 /// Pure renderer from rows to xlsx bytes, with no database or storage dependency, like
-/// ReceiptGenerator. Text always goes in as a cell value, never as a formula, and text a spreadsheet
+/// ReceiptGenerator. The first sheet lists every payment with a link to its proof; each payment
+/// then gets its own sheet showing the proof large, linked both ways. Text always goes in as a cell value, never as a formula, and text a spreadsheet
 /// would read as one gets a leading apostrophe, so member-entered
 /// text starting with "=" can't execute in Excel.
 /// </summary>
@@ -20,15 +21,19 @@ public static partial class PaymentExportWorkbook
     private const string SheetName = "Awaiting Verification";
     private const string HeaderColor = "#0E4C92";
     private const int ProofColumn = 8;
-    private const double DataRowHeightPoints = 90;
-    private const int PictureBoxWidthPx = 160;
-    private const int PictureBoxHeightPx = 110;
-    private const int PictureOffsetPx = 4;
+    private const double DataRowHeightPoints = 48;
+    private const string ProofLinkText = "Proof link";
+    private const string AmountFormat = "\"₱\"#,##0.00";
+    private const string DateFormat = "mm/dd/yyyy";
+    private const int MaxSheetNameLength = 31;
+    private const int RecordFirstDetailRow = 3;
+    private const int RecordPictureColumn = 4;
+    private const double RecordWrappedRowHeightPoints = 48;
 
     private static readonly (string Header, double Width)[] Columns =
     [
         ("Full Name", 26), ("Email", 30), ("Address", 40), ("CP Number", 16), ("Amount", 13),
-        ("Reference", 16), ("Paid On", 12), ("Proof of Payment", 25), ("For", 26),
+        ("Reference", 16), ("Paid On", 12), ("Proof of Payment", 18), ("For", 26),
     ];
 
     public static byte[] Build(IReadOnlyList<PaymentExportRow> rows)
@@ -39,7 +44,16 @@ public static partial class PaymentExportWorkbook
         WriteHeader(sheet);
         for (var index = 0; index < rows.Count; index++)
         {
-            WriteRow(sheet, index + 2, rows[index]);
+            var rowNumber = index + 2;
+            WriteRow(sheet, rowNumber, rows[index]);
+
+            var record = workbook.Worksheets.Add(RecordSheetName(index + 1, rows[index].FullName));
+            WriteRecordSheet(record, rowNumber, rows[index]);
+            LinkTo(sheet.Cell(rowNumber, 1), record.Name, "A1");
+            if (rows[index].Picture is not null)
+            {
+                LinkTo(sheet.Cell(rowNumber, ProofColumn), record.Name, "A1");
+            }
         }
 
         using var output = new MemoryStream();
@@ -79,24 +93,91 @@ public static partial class PaymentExportWorkbook
 
         var amount = sheet.Cell(rowNumber, 5);
         amount.Value = row.Amount;
-        amount.Style.NumberFormat.Format = "\"₱\"#,##0.00";
+        amount.Style.NumberFormat.Format = AmountFormat;
 
         sheet.Cell(rowNumber, 6).Value = NeutraliseFormula(row.ReferenceNo ?? string.Empty);
 
         var paidOn = sheet.Cell(rowNumber, 7);
         paidOn.Value = row.PaidOn.ToDateTime(TimeOnly.MinValue);
-        paidOn.Style.NumberFormat.Format = "mm/dd/yyyy";
+        paidOn.Style.NumberFormat.Format = DateFormat;
 
         sheet.Cell(rowNumber, 9).Value = NeutraliseFormula(row.For);
 
+        sheet.Cell(rowNumber, ProofColumn).Value = row.Picture is null ? row.ProofNote ?? string.Empty : ProofLinkText;
+    }
+
+    /// <summary>
+    /// The sequence number keeps names unique, including for a member with two payments, and non-empty
+    /// when nothing in the name survives. Names are member-entered, so only known-safe characters
+    /// stay, which also means the name never needs escaping inside a link.
+    /// </summary>
+    private static string RecordSheetName(int sequence, string fullName)
+    {
+        var name = $"{sequence} {UnsafeSheetNameCharacters().Replace(fullName, string.Empty)}";
+        return name[..Math.Min(name.Length, MaxSheetNameLength)].Trim();
+    }
+
+    [GeneratedRegex(@"[^\p{L}\p{M}\p{N} .\-]")]
+    private static partial Regex UnsafeSheetNameCharacters();
+
+    private static void LinkTo(IXLCell cell, string sheetName, string address) =>
+        cell.SetHyperlink(new XLHyperlink($"'{sheetName}'!{address}"));
+
+    private static void WriteRecordSheet(IXLWorksheet sheet, int listRowNumber, PaymentExportRow row)
+    {
+        sheet.Column(1).Width = 18;
+        sheet.Column(2).Width = 45;
+        sheet.Column(3).Width = 3;
+
+        var back = sheet.Cell(1, 1);
+        back.Value = "Back to list";
+        LinkTo(back, SheetName, $"A{listRowNumber}");
+
+        var rowNumber = RecordFirstDetailRow;
+        WriteDetail(sheet, rowNumber++, "Full Name", NeutraliseFormula(row.FullName));
+        WriteDetail(sheet, rowNumber++, "Email", NeutraliseFormula(row.Email ?? string.Empty));
+        WriteDetail(sheet, rowNumber, "Address", NeutraliseFormula(row.Address));
+        sheet.Row(rowNumber++).Height = RecordWrappedRowHeightPoints;
+
+        WriteDetail(sheet, rowNumber, "CP Number", string.Empty);
+        sheet.Cell(rowNumber, 2).Style.NumberFormat.Format = "@";
+        sheet.Cell(rowNumber++, 2).Value = NeutraliseFormula(row.MobileNumber ?? string.Empty);
+
+        WriteDetail(sheet, rowNumber, "Amount", row.Amount);
+        sheet.Cell(rowNumber++, 2).Style.NumberFormat.Format = AmountFormat;
+
+        WriteDetail(sheet, rowNumber++, "Reference", NeutraliseFormula(row.ReferenceNo ?? string.Empty));
+
+        WriteDetail(sheet, rowNumber, "Paid On", row.PaidOn.ToDateTime(TimeOnly.MinValue));
+        sheet.Cell(rowNumber++, 2).Style.NumberFormat.Format = DateFormat;
+
+        WriteDetail(sheet, rowNumber, "For", NeutraliseFormula(row.For));
+        sheet.Row(rowNumber++).Height = RecordWrappedRowHeightPoints;
+
         if (row.Picture is not null)
         {
-            AddPicture(sheet, rowNumber, row.Picture);
+            sheet.AddPicture(new MemoryStream(row.Picture.Jpeg), XLPictureFormat.Jpeg, "Proof")
+                .MoveTo(sheet.Cell(RecordFirstDetailRow, RecordPictureColumn))
+                .WithSize(row.Picture.Width, row.Picture.Height);
         }
         else
         {
-            sheet.Cell(rowNumber, ProofColumn).Value = row.ProofNote ?? string.Empty;
+            WriteDetail(sheet, rowNumber, "Proof of Payment", row.ProofNote ?? string.Empty);
         }
+    }
+
+    private static void WriteDetail(IXLWorksheet sheet, int rowNumber, string label, XLCellValue value)
+    {
+        var labelCell = sheet.Cell(rowNumber, 1);
+        labelCell.Value = label;
+        labelCell.Style.Font.Bold = true;
+        labelCell.Style.Alignment.Vertical = XLAlignmentVerticalValues.Top;
+
+        var valueCell = sheet.Cell(rowNumber, 2);
+        valueCell.Value = value;
+        valueCell.Style.Alignment.Vertical = XLAlignmentVerticalValues.Top;
+        valueCell.Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Left;
+        valueCell.Style.Alignment.WrapText = true;
     }
 
     private static readonly char[] FormulaTriggers = ['=', '+', '-', '@'];
@@ -126,13 +207,4 @@ public static partial class PaymentExportWorkbook
 
     [GeneratedRegex(@"^\+?\d+$")]
     private static partial Regex PlainNumber();
-
-    private static void AddPicture(IXLWorksheet sheet, int rowNumber, ProofPicture picture)
-    {
-        var scale = Math.Min((double)PictureBoxWidthPx / picture.Width, (double)PictureBoxHeightPx / picture.Height);
-
-        sheet.AddPicture(new MemoryStream(picture.Jpeg), XLPictureFormat.Jpeg, $"Proof{rowNumber}")
-            .MoveTo(sheet.Cell(rowNumber, ProofColumn), PictureOffsetPx, PictureOffsetPx)
-            .WithSize(Math.Max(1, (int)(picture.Width * scale)), Math.Max(1, (int)(picture.Height * scale)));
-    }
 }
