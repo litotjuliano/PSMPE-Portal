@@ -23,6 +23,17 @@ export interface ReleaseNote {
 
 export const releaseNotes: ReleaseNote[] = [
   {
+    version: '1.5.1',
+    date: '2026-11-13',
+    changes: [
+      {
+        type: 'Fixed',
+        description:
+          "The Add chapter button on the Chapters page, and the Add region, province and city buttons on Locations, were white on a light background and couldn't be seen. They now show as solid buttons.",
+      },
+    ],
+  },
+  {
     version: '1.5.0',
     date: '2026-11-04',
     changes: [
