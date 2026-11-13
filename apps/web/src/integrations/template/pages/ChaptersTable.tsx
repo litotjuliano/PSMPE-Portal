@@ -48,7 +48,7 @@ export const ChaptersTable = ({
         <option value="inactive">Inactive</option>
       </select>
       <div className="ms-auto">
-        <StandardButton size="sm" variant="on-primary" icon={LuPlus} onClick={onAdd}>
+        <StandardButton size="sm" variant="primary" icon={LuPlus} onClick={onAdd}>
           Add chapter
         </StandardButton>
       </div>
