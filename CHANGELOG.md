@@ -8,6 +8,8 @@ running app's own footer/"What's New" card get their copy from (`apps/web/src/co
 
 ## [Unreleased]
 
+## [1.5.2] - 2026-11-27
+
 ### Fixed
 
 - The server could fail to start, taking the whole portal offline, when an administrative account had a
