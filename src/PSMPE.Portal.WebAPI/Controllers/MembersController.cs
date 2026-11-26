@@ -558,6 +558,12 @@ public class MembersController(
             }
         }
 
+        // Someone who is Admin AND Member is a real member who also has admin access.
+        foreach (var user in await userManager.GetUsersInRoleAsync(RoleNames.Member))
+        {
+            ids.Remove(user.Id);
+        }
+
         return ids;
     }
 
@@ -570,7 +576,7 @@ public class MembersController(
         }
 
         var roles = await userManager.GetRolesAsync(user);
-        return roles.Any(r => r != RoleNames.Member);
+        return RoleNames.IsStaffOnly(roles);
     }
 
     /// <summary>

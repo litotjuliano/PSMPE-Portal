@@ -406,12 +406,14 @@ export function MyProfilePage() {
 
   const isDraft = existing === null || existing.submittedAt === null
 
-  // Mirrors MembersController.IsSystemAccountAsync (any role other than Member). Such accounts
-  // have no Member row by design, so PUT /api/members/me returns 403 ADMIN_ACCOUNT_NO_PROFILE -
-  // showing them the wizard offered a save that could never succeed. The `existing === null`
-  // half matters: it keeps a genuine member who was later granted a staff role on their own
-  // profile rather than swapping it for the admin view.
-  const isAdministrativeAccount = (user?.roles ?? []).some((role) => role !== Roles.Member)
+  // Mirrors MembersController.IsSystemAccountAsync / RoleNames.IsStaffOnly: an administrative role
+  // and NO Member role. Such staff-only accounts have no Member row by design, so PUT
+  // /api/members/me returns 403 ADMIN_ACCOUNT_NO_PROFILE - showing them the wizard offered a save
+  // that could never succeed. Someone who is Admin AND Member is a real member with admin access
+  // and gets the normal application. The `existing === null` half matters too: it keeps a
+  // genuine member who was later granted a staff role on their own profile.
+  const roles = user?.roles ?? []
+  const isAdministrativeAccount = roles.some((role) => role !== Roles.Member) && !roles.includes(Roles.Member)
   const hasNoMembershipProfile = existing === null
 
   // Blank while loading, so the heading doesn't flash a name-less title and then reflow.
