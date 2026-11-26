@@ -42,14 +42,40 @@ public static class SystemAccountMemberCleanup
             return;
         }
 
+        // A profile that already has payments is a financial record: deleting it violates
+        // FK_Payments_Members_MemberId and, because this runs at startup, crash-loops the whole API.
+        // Keep it and flag it for an admin to resolve instead of failing boot.
+        var badMemberIds = badMembers.Select(m => m.Id).ToList();
+        var memberIdsWithPayments = (await db.Payments
+                .Where(p => badMemberIds.Contains(p.MemberId))
+                .Select(p => p.MemberId)
+                .Distinct()
+                .ToListAsync())
+            .ToHashSet();
+
+        var removable = new List<Member>();
         foreach (var member in badMembers)
         {
+            if (memberIdsWithPayments.Contains(member.Id))
+            {
+                logger.LogWarning(
+                    "Keeping Member profile '{MembershipNo}' on administrative account {Email} - it has payments and cannot be removed automatically. Review it manually.",
+                    member.MembershipNo, member.User.Email);
+                continue;
+            }
+
             logger.LogWarning(
                 "Removing Member profile '{MembershipNo}' from administrative account {Email} - administrative accounts do not have membership profiles.",
                 member.MembershipNo, member.User.Email);
+            removable.Add(member);
         }
 
-        db.Members.RemoveRange(badMembers);
+        if (removable.Count == 0)
+        {
+            return;
+        }
+
+        db.Members.RemoveRange(removable);
         await db.SaveChangesAsync();
     }
 }
