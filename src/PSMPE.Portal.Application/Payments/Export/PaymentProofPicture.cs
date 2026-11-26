@@ -53,12 +53,16 @@ public static class PaymentProofPicture
         return (width, height);
     }
 
+    // PDFtoImage is annotated as Android 31+/Linux/macOS/Windows only, so CA1416 fires on any
+    // "all platforms" caller. We only run on Windows (dev) and Linux (the droplet), both supported.
+#pragma warning disable CA1416
     private static SKBitmap RenderPdfFirstPage(byte[] pdf)
     {
         var size = Conversion.GetPageSize(pdf, page: new Index(0));
         var (width, height) = PdfPixelSizeFor(size.Width, size.Height);
         return Conversion.ToImage(pdf, page: new Index(0), options: new RenderOptions(Width: width, Height: height));
     }
+#pragma warning restore CA1416
 
     private static ProofPicture Encode(SKBitmap source)
     {

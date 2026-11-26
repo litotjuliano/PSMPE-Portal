@@ -8,6 +8,13 @@ running app's own footer/"What's New" card get their copy from (`apps/web/src/co
 
 ## [Unreleased]
 
+## [1.5.1] - 2026-11-13
+
+### Fixed
+
+- The Add chapter button on the Chapters page, and the Add region, province and city buttons on Locations,
+  were white on a light background and couldn't be seen. They now show as solid buttons.
+
 ## [1.5.0] - 2026-11-04
 
 ### Added
