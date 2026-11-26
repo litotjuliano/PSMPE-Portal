@@ -33,5 +33,5 @@ jobs:
             git reset --hard origin/staging
             git fetch origin --tags --force
             export VITE_APP_VERSION=$(git describe --tags --always)
-            docker compose -p psmpe-staging -f docker-compose.yml -f docker-compose.ports.yml up -d --build
+            docker compose -p psmpe-staging -f docker-compose.yml -f docker-compose.ports.yml up -d --build --wait --wait-timeout 240
             docker image prune -f
