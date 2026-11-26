@@ -7,8 +7,8 @@ using PSMPE.Portal.Domain.Enums;
 namespace PSMPE.Portal.Infrastructure.Persistence.Seed;
 
 /// <summary>
-/// Removes any Member row owned by an administrative account (Super Admin, Admin, Manager, or
-/// Accounts) - these roles don't have membership profiles (see MembersController), so any such
+/// Removes any Member row owned by a staff-only account (an administrative role - Super Admin, Admin, Manager, or
+/// Accounts - and no Member role). Staff-only accounts do not have membership profiles (see MembersController), so any such
 /// row is leftover data from a since-fixed bug where PUT /api/members/me had no role check and
 /// let any authenticated account self-register as a Member. Runs unconditionally on every
 /// startup (not gated by Seed:Enabled) so it self-heals any environment, including one where the
@@ -25,6 +25,12 @@ public static class SystemAccountMemberCleanup
             {
                 systemAccountUserIds.Add(user.Id);
             }
+        }
+
+        // Admin + Member is a real member who also has admin access, not leftover data.
+        foreach (var user in await userManager.GetUsersInRoleAsync(RoleNames.Member))
+        {
+            systemAccountUserIds.Remove(user.Id);
         }
 
         if (systemAccountUserIds.Count == 0)
