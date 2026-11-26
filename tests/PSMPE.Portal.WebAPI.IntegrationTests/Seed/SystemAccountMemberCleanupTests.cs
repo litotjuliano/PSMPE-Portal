@@ -82,6 +82,33 @@ public class SystemAccountMemberCleanupTests : IClassFixture<CustomWebApplicatio
         Assert.True(await _db.Members.AsNoTracking().AnyAsync(m => m.Id == goodMember.Id));
     }
 
+    // Regression: production crash-looped at startup because an Admin account had a Member row with a
+    // Payment; removing it violated FK_Payments_Members_MemberId and took the whole API down. Money
+    // records are never deleted by a self-healing startup job - the row is kept and left for an admin.
+    [Fact]
+    public async Task CleanupAsync_KeepsAdministrativeMemberThatHasPayments_AndDoesNotThrow()
+    {
+        var memberWithPayment = await SeedMemberForRoleAsync(RoleNames.Admin);
+        _db.Payments.Add(new Payment
+        {
+            MemberId = memberWithPayment.Id,
+            Kind = PaymentKind.NewMembership,
+            Amount = 100m,
+            PaidOn = DateOnly.FromDateTime(DateTime.UtcNow),
+            Status = PaymentStatus.Submitted
+        });
+        await _db.SaveChangesAsync();
+        var memberWithoutPayment = await SeedMemberForRoleAsync(RoleNames.Admin);
+
+        var exception = await Record.ExceptionAsync(() =>
+            SystemAccountMemberCleanup.CleanupAsync(_db, _userManager, NullLogger.Instance));
+
+        Assert.Null(exception);
+        Assert.True(await _db.Members.AsNoTracking().AnyAsync(m => m.Id == memberWithPayment.Id));
+        Assert.True(await _db.Payments.AsNoTracking().AnyAsync(p => p.MemberId == memberWithPayment.Id));
+        Assert.False(await _db.Members.AsNoTracking().AnyAsync(m => m.Id == memberWithoutPayment.Id));
+    }
+
     [Fact]
     public async Task CleanupAsync_RunTwice_IsIdempotent()
     {
