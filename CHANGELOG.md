@@ -13,6 +13,10 @@ running app's own footer/"What's New" card get their copy from (`apps/web/src/co
 - The server could fail to start, taking the whole portal offline, when an administrative account had a
   membership profile with payments recorded against it. Startup now leaves such a profile in place and logs a
   warning for an admin to review, instead of trying to delete it.
+- An account that is both an Admin and a Member is now treated as a real member who also has admin access. They
+  can fill in and submit a membership application, appear in the member list once they have a profile, and keep
+  their profile across server restarts. Only accounts with an administrative role and no Member role are
+  treated as staff-only, with no membership profile.
 
 ## [1.5.1] - 2026-11-13
 

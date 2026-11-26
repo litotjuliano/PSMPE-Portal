@@ -109,6 +109,21 @@ public class SystemAccountMemberCleanupTests : IClassFixture<CustomWebApplicatio
         Assert.False(await _db.Members.AsNoTracking().AnyAsync(m => m.Id == memberWithoutPayment.Id));
     }
 
+    // Admin + Member is a real member who also has admin access (they apply, pay and get approved
+    // like anyone else), not leftover data - their profile must survive every restart even when it
+    // has no payments yet.
+    [Fact]
+    public async Task CleanupAsync_KeepsMemberRowOfAdminWhoAlsoHoldsMemberRole()
+    {
+        var dualRoleMember = await SeedMemberForRoleAsync(RoleNames.Admin);
+        var dualRoleUser = await _userManager.FindByIdAsync(dualRoleMember.UserId.ToString());
+        await _userManager.AddToRoleAsync(dualRoleUser!, RoleNames.Member);
+
+        await SystemAccountMemberCleanup.CleanupAsync(_db, _userManager, NullLogger.Instance);
+
+        Assert.True(await _db.Members.AsNoTracking().AnyAsync(m => m.Id == dualRoleMember.Id));
+    }
+
     [Fact]
     public async Task CleanupAsync_RunTwice_IsIdempotent()
     {
