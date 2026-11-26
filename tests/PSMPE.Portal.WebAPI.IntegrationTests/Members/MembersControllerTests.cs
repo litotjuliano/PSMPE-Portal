@@ -1338,6 +1338,66 @@ public class MembersControllerTests : IClassFixture<CustomWebApplicationFactory>
         Assert.Null(await _memberService.GetByUserIdAsync(adminUser.Id));
     }
 
+    // An administrative role does not by itself mean "not a member": someone who is both Admin and
+    // Member is a real member (they apply, pay and get approved like anyone else) who also has admin
+    // access. Only accounts with an administrative role and NO Member role are staff-only.
+    private async Task<ApplicationUser> CreateAdminWhoIsAlsoMemberAsync(string administrativeRole = RoleNames.Admin)
+    {
+        var user = await CreateUserAsync(administrativeRole);
+        await _userManager.AddToRoleAsync(user, RoleNames.Member);
+        return user;
+    }
+
+    [Fact]
+    public async Task GetAll_IncludesMemberRowOwnedByAdminWhoAlsoHoldsMemberRole()
+    {
+        var controller = CreateController();
+        var dualRoleUser = await CreateAdminWhoIsAlsoMemberAsync();
+        var created = await controller.Create(BuildCreateRequest(dualRoleUser.Id), CancellationToken.None);
+        var createdDto = Assert.IsType<MemberDto>(Assert.IsType<OkObjectResult>(created.Result).Value);
+
+        var result = await controller.GetAll(page: 1, pageSize: 1000, cancellationToken: CancellationToken.None);
+        var paged = Assert.IsType<PagedResult<MemberDto>>(Assert.IsType<OkObjectResult>(result.Result).Value);
+
+        Assert.Contains(paged.Items, m => m.Id == createdDto.Id);
+    }
+
+    [Fact]
+    public async Task GetById_MemberRowOwnedByAdminWhoAlsoHoldsMemberRole_ReturnsTheMember()
+    {
+        var controller = CreateController();
+        var dualRoleUser = await CreateAdminWhoIsAlsoMemberAsync();
+        var created = await controller.Create(BuildCreateRequest(dualRoleUser.Id), CancellationToken.None);
+        var createdDto = Assert.IsType<MemberDto>(Assert.IsType<OkObjectResult>(created.Result).Value);
+
+        var result = await controller.GetById(createdDto.Id, CancellationToken.None);
+
+        Assert.IsType<OkObjectResult>(result.Result);
+    }
+
+    [Fact]
+    public async Task UpdateMyProfile_AdminWhoAlsoHoldsMemberRole_CanCreateTheirMemberProfile()
+    {
+        var dualRoleUser = await CreateAdminWhoIsAlsoMemberAsync();
+        var controller = CreateController(dualRoleUser.Id);
+        var request = new UpdateMyProfileRequest(
+            FirstName: "Dual", MiddleName: null, LastName: "Role", Suffix: null,
+            Birthdate: null, Gender: null, CivilStatus: null,
+            EducationLevel: null, SchoolName: null, CourseYearGraduated: null, SpecifiedProfession: null,
+            MobileNumber: null,
+            HouseNo: null, Street: null, Barangay: null, CityMunicipality: null, Province: null, ZipCode: null, Country: null,
+            MailingHouseNo: null, MailingStreet: null, MailingBarangay: null, MailingCityMunicipality: null, MailingProvince: null, MailingZipCode: null, MailingCountry: null,
+            HousePhone: null,
+            PrcLicenseNo: null, PrcRegistrationDate: null, PrcValidUntilDate: null, PtrNumber: null, PtrPlaceIssued: null, PtrDateIssued: null, Tin: null, ChapterId: TestChapters.Ncr, ChapterYear: null, ChapterPosition: null,
+            EmploymentStatus: null, Company: null, Position: null, BusinessAddress: null, YearsOfPractice: null, Specialization: null, Skills: null,
+            MemberType: MemberTypes.Regular);
+
+        var result = await controller.UpdateMyProfile(request, CancellationToken.None);
+
+        Assert.IsType<OkObjectResult>(result.Result);
+        Assert.NotNull(await _memberService.GetByUserIdAsync(dualRoleUser.Id));
+    }
+
     [Fact]
     public async Task GetMyProfileCompleteness_BeforeSubmit_ReturnsZeroPercent()
     {
