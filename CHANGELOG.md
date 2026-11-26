@@ -8,6 +8,12 @@ running app's own footer/"What's New" card get their copy from (`apps/web/src/co
 
 ## [Unreleased]
 
+### Fixed
+
+- The server could fail to start, taking the whole portal offline, when an administrative account had a
+  membership profile with payments recorded against it. Startup now leaves such a profile in place and logs a
+  warning for an admin to review, instead of trying to delete it.
+
 ## [1.5.1] - 2026-11-13
 
 ### Fixed
