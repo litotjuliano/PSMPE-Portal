@@ -23,6 +23,17 @@ export interface ReleaseNote {
 
 export const releaseNotes: ReleaseNote[] = [
   {
+    version: '1.5.3',
+    date: '2026-11-27',
+    changes: [
+      {
+        type: 'Changed',
+        description:
+          'Portal updates are now checked after they go live: if the server does not start properly, the update is undone automatically and the previous version keeps running, so a bad update no longer takes the portal offline. Nothing changes in how you use the portal.',
+      },
+    ],
+  },
+  {
     version: '1.5.2',
     date: '2026-11-27',
     changes: [
