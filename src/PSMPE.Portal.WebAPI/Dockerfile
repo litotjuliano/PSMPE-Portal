@@ -40,4 +40,5 @@ RUN mkdir -p wwwroot/uploads && chown -R app:app /app
 USER app
 
 EXPOSE 8080
-ENTRYPOINT ["dotnet", "PSMPE.Portal.WebAPI.dll"]
+# DELIBERATE TEST BREAK - reverted right after; proves the deploy rolls back
+ENTRYPOINT ["dotnet", "DoesNotExist.dll"]
