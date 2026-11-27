@@ -8,6 +8,14 @@ running app's own footer/"What's New" card get their copy from (`apps/web/src/co
 
 ## [Unreleased]
 
+## [1.5.3] - 2026-11-27
+
+### Changed
+
+- Portal updates are now checked after they go live: if the server does not start properly, the update is
+  undone automatically and the previous version keeps running, so a bad update no longer takes the portal
+  offline. Nothing changes in how you use the portal.
+
 ## [1.5.2] - 2026-11-27
 
 ### Fixed
