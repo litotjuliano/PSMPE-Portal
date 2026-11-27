@@ -28,10 +28,21 @@ jobs:
           script: |
             set -euo pipefail
             cd "${{ secrets.DEPLOY_PATH }}"
+            # Remember what is running now, so a deploy that never turns healthy can be undone.
+            PREV=$(git rev-parse HEAD)
             git fetch origin staging
             git checkout staging
             git reset --hard origin/staging
             git fetch origin --tags --force
             export VITE_APP_VERSION=$(git describe --tags --always)
-            docker compose -p psmpe-staging -f docker-compose.yml -f docker-compose.ports.yml up -d --build
+            DC="docker compose -p psmpe-staging -f docker-compose.yml -f docker-compose.ports.yml"
+            if ! $DC up -d --build --wait --wait-timeout 240; then
+              echo "::error::New version never became healthy - rolling back to $PREV"
+              $DC logs --tail=60 backend || true
+              git reset --hard "$PREV"
+              export VITE_APP_VERSION=$(git describe --tags --always)
+              $DC up -d --build --wait --wait-timeout 240
+              echo "::error::Rolled back to $PREV (the failed deploy is NOT live)"
+              exit 1
+            fi
             docker image prune -f
