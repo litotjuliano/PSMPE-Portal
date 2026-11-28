@@ -1,3 +1,4 @@
+import { SEARCH_DEBOUNCE_MS } from '../constants/searchDebounce'
 import { useCallback, useEffect, useState } from 'react'
 import { chaptersAdminApi, type Chapter } from '../api/endpoints/chaptersApi'
 import { describeError } from '../utils/apiError'
@@ -31,7 +32,7 @@ export function AdminChaptersPage() {
 
   // Debounced like AdminLocationsPage: one fetch per pause in typing, not per keystroke.
   useEffect(() => {
-    const timer = setTimeout(() => setSearch(searchInput), 350)
+    const timer = setTimeout(() => setSearch(searchInput), SEARCH_DEBOUNCE_MS)
     return () => clearTimeout(timer)
   }, [searchInput])
 

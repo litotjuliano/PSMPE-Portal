@@ -1,3 +1,4 @@
+import { SEARCH_DEBOUNCE_MS } from '../constants/searchDebounce'
 import { useCallback, useEffect, useState } from 'react'
 import {
   locationsAdminApi,
@@ -56,7 +57,7 @@ export function AdminLocationsPage() {
     const timer = setTimeout(() => {
       setSearch(searchInput)
       setPage(1)
-    }, 350)
+    }, SEARCH_DEBOUNCE_MS)
     return () => clearTimeout(timer)
   }, [searchInput])
 

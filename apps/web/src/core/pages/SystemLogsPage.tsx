@@ -1,3 +1,4 @@
+import { SEARCH_DEBOUNCE_MS } from '../constants/searchDebounce'
 import { useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { systemLogsApi, type AuditLogEntry, type ErrorLogEntry } from '../api/endpoints/systemLogsApi'
@@ -32,7 +33,7 @@ export function SystemLogsPage() {
     const timer = setTimeout(() => {
       setSearch(searchInput)
       setPage(1)
-    }, 350)
+    }, SEARCH_DEBOUNCE_MS)
     return () => clearTimeout(timer)
   }, [searchInput])
 
