@@ -1,3 +1,4 @@
+import { SEARCH_DEBOUNCE_MS } from '../constants/searchDebounce'
 import { useCallback, useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { memberApi, type GetMembersParams } from '../api/endpoints/memberApi'
@@ -87,7 +88,7 @@ export function MembersPage() {
     const timer = setTimeout(() => {
       setSearch(searchInput)
       setPage(1)
-    }, 350)
+    }, SEARCH_DEBOUNCE_MS)
     return () => clearTimeout(timer)
   }, [searchInput])
 
