@@ -17,7 +17,7 @@ to be useful for debugging. Mixing them would force one retention policy on both
 ## Endpoints
 
 - `GET /api/admin/audit-log` — paged list of audit events
-  - Auth: `RequireSuperAdmin` policy — stricter than the general `RequireAdminOrApproval` gate used
+  - Auth: `RequireSuperAdmin` policy — stricter than the general `RequireAdmin` gate used
     by most of `/api/admin/*` (see `roles.md`), matching how role assignment and user deletion are
     already Super-Admin-only in `AdminController`
   - Query: `page`, `pageSize` (default 20), `search` (optional), `eventType` (optional, exact match
@@ -56,7 +56,7 @@ to be useful for debugging. Mixing them would force one retention policy on both
 
 ## Authorization rules
 
-- Both GET endpoints require the `RequireSuperAdmin` policy, not `RequireAdminOrApproval`. A
+- Both GET endpoints require the `RequireSuperAdmin` policy, not `RequireAdmin`. A
   regular Admin can manage users, content, and members but cannot see the audit trail or error log
   — this mirrors the existing Super-Admin-only gate on user edit/delete and role assignment
   (`roles.md`), on the theory that "who did what, and what broke" is itself sensitive.

@@ -18,7 +18,16 @@ export interface AuthResponse {
   email: string
   displayName: string
   roles: Role[]
+  permissions: string[]
 }
+
+/** Permissions that make the CMS Content area meaningful to a user (any one is enough). */
+export const ContentPermissions = [
+  'content:create',
+  'content:update',
+  'content:delete',
+  'content:manage-others',
+] as const
 
 export interface LoginRequest {
   email: string
@@ -91,4 +100,6 @@ export interface AuthUser {
   email: string
   displayName: string
   roles: Role[]
+  /** Snapshot from login. Absent on a session cached before this field existed - treat as none. */
+  permissions?: string[]
 }

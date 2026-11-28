@@ -29,7 +29,7 @@ function formatDateRange(startsAt: string | null, endsAt: string | null) {
  */
 export function UpcomingEventsWidget() {
   const { user } = useAuth()
-  const canManageEvents = user?.roles.includes(Roles.Admin) || user?.roles.includes(Roles.SuperAdmin) || false
+  const canManageEvents = user?.roles.includes(Roles.Admin) || user?.roles.includes(Roles.SuperAdmin) || user?.roles.includes(Roles.Approval) || false
   const isMember = user?.roles.includes(Roles.Member) || false
 
   const [events, setEvents] = useState<Event[]>([])

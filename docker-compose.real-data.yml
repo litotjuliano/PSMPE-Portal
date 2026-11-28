@@ -1,0 +1,55 @@
+# Normal hot-reload dev stack (docker-compose.yml + docker-compose.override.yml) running on a
+# RESTORED COPY of production: database psmpe_prod_restore + the psmpe-prod-restore_uploads volume.
+# Your own dev database (psmpe_portal) is not touched.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.override.yml -f docker-compose.real-data.yml -p psmpe-realdata up -d --build
+#   -> web (vite, hot reload): http://localhost:5173     api (dotnet watch): http://localhost:5100
+#   ... same command with `down` instead of `up -d --build` to stop it.
+#
+# Reuses the already-running dev Postgres container (service "postgres" on the psmpe-portal_default
+# network). Do not run it together with docker-compose.prod-copy.yml (same ports).
+#
+# PREREQUISITES (one-time): the database `psmpe_prod_restore` must exist in the dev Postgres and the
+# Docker volume `psmpe-prod-restore_uploads` must exist, both restored from a backup set made by
+# scripts/backup-production.sh (restore outline: docs/backup-sop.md). Without them this file does not start.
+#
+# SAFETY: the data is real member PII. Email is pointed at a dead address so nothing can reach
+# real members. Ports are bound to loopback. Never push this data or the volume anywhere.
+name: psmpe-realdata
+
+services:
+  backend:
+    depends_on: !reset []
+    networks: [default, devdb]
+    environment:
+      ConnectionStrings__DefaultConnection: Host=postgres;Port=5432;Database=psmpe_prod_restore;Username=${POSTGRES_USER:-psmpe_user};Password=${POSTGRES_PASSWORD:-change-me-locally}
+      Smtp__Host: 127.0.0.1
+      Smtp__Port: "9"
+      Smtp__Username: ""
+      Smtp__Password: ""
+      OpenAI__ApiKey: ""
+      Frontend__BaseUrl: http://localhost:5173
+    ports: !override
+      - "127.0.0.1:5100:8080"
+    # dotnet watch runs from /src with the project dir as content root, so uploads live under its wwwroot.
+    volumes: !override
+      - ./src:/src
+      - prod_restore_uploads:/src/PSMPE.Portal.WebAPI/wwwroot/uploads
+
+  frontend:
+    ports: !override
+      - "127.0.0.1:5173:5173"
+
+  # The base file's own postgres is not started for this project.
+  postgres:
+    profiles: ["unused"]
+
+networks:
+  devdb:
+    name: psmpe-portal_default
+    external: true
+
+volumes:
+  prod_restore_uploads:
+    name: psmpe-prod-restore_uploads
+    external: true

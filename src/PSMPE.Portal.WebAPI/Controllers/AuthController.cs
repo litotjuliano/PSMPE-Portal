@@ -182,10 +182,10 @@ public class AuthController(
         var roles = await userManager.GetRolesAsync(user);
         var permissions = await GetPermissionsAsync(roles);
         var (token, expiresAt) = jwtTokenGenerator.GenerateToken(user, roles, permissions);
-        return Ok(new AuthResponse(token, expiresAt, user.Email!, user.DisplayName, roles.ToList()));
+        return Ok(new AuthResponse(token, expiresAt, user.Email!, user.DisplayName, roles.ToList(), permissions.ToList()));
     }
 
-    [HttpPost("resend-verification-email")]
+[HttpPost("resend-verification-email")]
     [EnableRateLimiting(RateLimitingServiceExtensions.AuthEmailSendPolicy)]
     public async Task<ActionResult<ResendVerificationEmailResponse>> ResendVerificationEmail(ResendVerificationEmailRequest request)
     {
@@ -441,6 +441,6 @@ public class AuthController(
         var roles = await userManager.GetRolesAsync(user);
         var permissions = await GetPermissionsAsync(roles);
         var (token, expiresAt) = jwtTokenGenerator.GenerateToken(user, roles, permissions);
-        return Ok(new AuthResponse(token, expiresAt, user.Email!, user.DisplayName, roles.ToList()));
+        return Ok(new AuthResponse(token, expiresAt, user.Email!, user.DisplayName, roles.ToList(), permissions.ToList()));
     }
 }

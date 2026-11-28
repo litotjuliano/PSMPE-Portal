@@ -76,8 +76,6 @@ public static class DependencyInjection
         services.AddAuthorizationBuilder()
             .AddPolicy(PolicyNames.RequireAdmin, policy =>
                 policy.RequireRole(Domain.Enums.RoleNames.Admin, Domain.Enums.RoleNames.SuperAdmin))
-            .AddPolicy(PolicyNames.RequireAdminOrApproval, policy =>
-                policy.RequireRole(Domain.Enums.RoleNames.Admin, Domain.Enums.RoleNames.SuperAdmin, Domain.Enums.RoleNames.Approval))
             .AddPolicy(PolicyNames.RequireSuperAdmin, policy =>
                 policy.RequireRole(Domain.Enums.RoleNames.SuperAdmin))
             .AddPolicy(PolicyNames.ContentOwnerOrAdmin, policy =>

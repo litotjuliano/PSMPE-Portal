@@ -27,6 +27,8 @@ export type MenuItemType = {
   isDisabled?: boolean
   /** Only rendered for these roles; omit to show to everyone. */
   requiredRoles?: string[]
+  /** Only rendered if the user holds at least one of these permissions; omit for no permission check. */
+  requiredPermissions?: readonly string[]
 }
 
 // Trimmed to PSMPE Portal's actual feature set. The full Tailwick demo menu
@@ -106,20 +108,21 @@ export const menuItemsData: MenuItemType[] = [
     label: 'Content',
     icon: LuFileText,
     href: '/content',
+    requiredPermissions: ['content:create', 'content:update', 'content:delete', 'content:manage-others'],
   },
   {
     key: 'Users',
     label: 'Users',
     icon: LuSquareUserRound,
     href: '/admin/users',
-    requiredRoles: ['Admin', 'Super Admin', 'Approval'],
+    requiredRoles: ['Admin', 'Super Admin'],
   },
   {
     key: 'Roles',
     label: 'Roles & Permissions',
     icon: LuShieldCheck,
     href: '/admin/roles',
-    requiredRoles: ['Admin', 'Super Admin', 'Approval'],
+    requiredRoles: ['Admin', 'Super Admin'],
   },
   {
     key: 'SystemLogs',
