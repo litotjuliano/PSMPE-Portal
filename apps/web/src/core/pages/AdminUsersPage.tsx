@@ -1,3 +1,4 @@
+import { SEARCH_DEBOUNCE_MS } from '../constants/searchDebounce'
 import { useEffect, useState } from 'react'
 import { isAxiosError } from 'axios'
 import { adminApi, type GetUsersParams, type UserSummary } from '../api/endpoints/adminApi'
@@ -36,7 +37,7 @@ export function AdminUsersPage() {
     const timer = setTimeout(() => {
       setSearch(searchInput)
       setPage(1)
-    }, 350)
+    }, SEARCH_DEBOUNCE_MS)
     return () => clearTimeout(timer)
   }, [searchInput])
 

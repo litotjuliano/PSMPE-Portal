@@ -1,3 +1,4 @@
+import { SEARCH_DEBOUNCE_MS } from '../constants/searchDebounce'
 import { useCallback, useEffect, useState } from 'react'
 import type { Event } from '../api/endpoints/eventApi'
 import { eventApi } from '../api/endpoints/eventApi'
@@ -31,7 +32,7 @@ export function EventsPage() {
     const timer = setTimeout(() => {
       setSearch(searchInput)
       setPage(1)
-    }, 350)
+    }, SEARCH_DEBOUNCE_MS)
     return () => clearTimeout(timer)
   }, [searchInput])
 
