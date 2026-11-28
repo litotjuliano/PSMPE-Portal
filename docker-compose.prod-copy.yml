@@ -1,0 +1,57 @@
+# Runs the app against a RESTORED COPY of production (database psmpe_prod_restore + the
+# psmpe-prod-restore_uploads volume), without touching your normal dev database or uploads.
+#
+# Use it on its own - do NOT combine with docker-compose.override.yml:
+#   docker compose -p psmpe-prodcopy -f docker-compose.yml -f docker-compose.prod-copy.yml up -d --build
+#   -> web:  http://localhost:5173     api: http://localhost:5100
+#   docker compose -p psmpe-prodcopy -f docker-compose.yml -f docker-compose.prod-copy.yml down
+#
+# It reuses the already-running dev Postgres container (service name "postgres" on the
+# psmpe-portal_default network) instead of starting a second one.
+#
+# PREREQUISITES (one-time): the database `psmpe_prod_restore` must exist in the dev Postgres and the
+# Docker volume `psmpe-prod-restore_uploads` must exist, both restored from a backup set made by
+# scripts/backup-production.sh (restore outline: docs/backup-sop.md). Without them this file does not start.
+#
+# SAFETY: the data is real member PII. Email is pointed at a dead address so nothing can be sent
+# to real members (renewal reminders, verification mails, etc.). Ports are bound to loopback.
+name: psmpe-prodcopy
+
+services:
+  backend:
+    depends_on: !reset []
+    networks: [default, devdb]
+    environment:
+      ConnectionStrings__DefaultConnection: Host=postgres;Port=5432;Database=psmpe_prod_restore;Username=${POSTGRES_USER:-psmpe_user};Password=${POSTGRES_PASSWORD:-change-me-locally}
+      Smtp__Host: 127.0.0.1
+      Smtp__Port: "9"
+      Smtp__Username: ""
+      Smtp__Password: ""
+      OpenAI__ApiKey: ""
+      Frontend__BaseUrl: http://localhost:5173
+    ports: !override
+      - "127.0.0.1:5100:8080"
+    volumes: !override
+      - prod_restore_uploads:/app/wwwroot/uploads
+
+  frontend:
+    build:
+      args:
+        VITE_API_BASE_URL: http://localhost:5100
+        VITE_APP_VERSION: prod-copy
+    ports: !override
+      - "127.0.0.1:5173:80"
+
+  # The base file's own postgres is not started for this project.
+  postgres:
+    profiles: ["unused"]
+
+networks:
+  devdb:
+    name: psmpe-portal_default
+    external: true
+
+volumes:
+  prod_restore_uploads:
+    name: psmpe-prod-restore_uploads
+    external: true
