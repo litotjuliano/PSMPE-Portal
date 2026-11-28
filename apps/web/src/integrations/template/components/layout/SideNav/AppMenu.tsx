@@ -59,10 +59,19 @@ const MenuItem = ({ item }: { item: MenuItemType }) => {
   )
 }
 
-const filterByRole = (items: MenuItemType[], roles: readonly string[]): MenuItemType[] =>
-  items
+const filterByAccess = (
+  items: MenuItemType[],
+  roles: readonly string[],
+  permissions: readonly string[],
+): MenuItemType[] => {
+  const visible = items
     .filter((item) => !item.requiredRoles || item.requiredRoles.some((r) => roles.includes(r)))
-    .map((item) => (item.children ? { ...item, children: filterByRole(item.children, roles) } : item))
+    .filter((item) => !item.requiredPermissions || item.requiredPermissions.some((p) => permissions.includes(p)))
+    .map((item) => (item.children ? { ...item, children: filterByAccess(item.children, roles, permissions) } : item))
+
+  // Drop a section title left with nothing under it (e.g. "CMS" when every item below is hidden).
+  return visible.filter((item, i) => !item.isTitle || (visible[i + 1] !== undefined && !visible[i + 1].isTitle))
+}
 
 const AppMenu = () => {
   const { user } = useAuth()
@@ -70,7 +79,7 @@ const AppMenu = () => {
   // lacking portal access, no profile yet) - a restricted member still sees every item their role
   // grants; MembershipAccessMiddleware/ExpiredMembershipGate are what actually gate the pages and
   // actions behind them (e.g. EventRegisterModal disabling Register), not the sidebar.
-  const items = filterByRole(menuItemsData, user?.roles ?? [])
+  const items = filterByAccess(menuItemsData, user?.roles ?? [], user?.permissions ?? [])
 
   return (
     <ul className="side-nav py-3 hs-accordion-group">

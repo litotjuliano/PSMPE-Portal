@@ -45,6 +45,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         email: response.email,
         displayName: response.displayName,
         roles: response.roles,
+        permissions: response.permissions,
       })
     },
     [persist],
@@ -62,6 +63,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         email: response.email,
         displayName: response.displayName,
         roles: response.roles,
+        permissions: response.permissions,
       })
     },
     [persist],

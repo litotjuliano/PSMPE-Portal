@@ -38,6 +38,13 @@ public static class Permissions
         public const string Approve = "members:approve";
     }
 
+    public static class Payments
+    {
+        /// <summary>Verify/reject a submitted payment proof (membership or event) without
+        /// needing the broader members:manage.</summary>
+        public const string Verify = "payments:verify";
+    }
+
     public static class Events
     {
         public const string View = "events:view";
@@ -51,6 +58,7 @@ public static class Permissions
         Admin.ManageUsers, Admin.ManageRoles,
         Ai.UsePrompt,
         Members.View, Members.Manage, Members.Approve,
-        Events.View, Events.Manage
+        Events.View, Events.Manage,
+        Payments.Verify
     ];
 }

@@ -20,7 +20,8 @@ public record AuthResponse(
     DateTimeOffset ExpiresAt,
     string Email,
     string DisplayName,
-    IReadOnlyList<string> Roles);
+    IReadOnlyList<string> Roles,
+    IReadOnlyList<string> Permissions);
 
 /// <summary>
 /// Registration no longer returns a usable token - the account can't be used until the email is
