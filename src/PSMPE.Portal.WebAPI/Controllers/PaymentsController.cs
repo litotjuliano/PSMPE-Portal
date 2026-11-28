@@ -180,7 +180,7 @@ public class PaymentsController(
     }
 
     [HttpPost("{id:guid}/verify")]
-    [RequirePermission(Permissions.Members.Manage)]
+    [RequirePermission(Permissions.Members.Manage, Permissions.Payments.Verify)]
     public async Task<IActionResult> Verify(Guid id, CancellationToken cancellationToken)
     {
         var decidedBy = CurrentUserId;
@@ -193,7 +193,7 @@ public class PaymentsController(
     }
 
     [HttpPost("{id:guid}/reject")]
-    [RequirePermission(Permissions.Members.Manage)]
+    [RequirePermission(Permissions.Members.Manage, Permissions.Payments.Verify)]
     public async Task<IActionResult> Reject(Guid id, RejectPaymentRequest request, CancellationToken cancellationToken)
     {
         var decidedBy = CurrentUserId;

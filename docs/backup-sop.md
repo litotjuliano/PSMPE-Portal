@@ -27,17 +27,28 @@ From Git Bash on the machine with SSH access to the server:
 
 ```bash
 BACKUP_SSH_HOST=<ssh host or alias> \
-BACKUP_LOCAL_DIR="<folder for the local copy>" \
+BACKUP_LOCAL_DIRS="<folder on drive 1>;<folder on drive 2>" \
   scripts/backup-production.sh            # production; pass a compose project name for another env
+```
+
+**Always give at least two local folders on different drives**, separated by `;`. The script warns
+if you give only one. For this project's machine:
+
+```bash
+BACKUP_SSH_HOST=139.59.224.32 \
+BACKUP_LOCAL_DIRS="/e/LitXus System Backup/PSPME Portal/production-db;/d/PSMPE-Production-Backups" \
+  scripts/backup-production.sh
 ```
 
 The script dumps the database, archives the uploads volume, verifies both (the dump must list its
 table data; the archive must hold as many files as the volume), checksums them, copies the set to
-`BACKUP_LOCAL_DIR/<timestamp>/` and re-checks the checksums there. It stops on the first failure and
-prints `OK` for both copies only when everything passed. It only reads from the running site, so it
-is safe to run at any time.
+`<folder>/<timestamp>/` in every destination and re-checks the checksums in each one. It stops on the
+first failure and prints `OK` for each copy only when everything passed. It only reads from the
+running site, so it is safe to run at any time.
 
-A copy also stays on the server under `/root/backups/<project>/<timestamp>/`.
+A copy also stays on the server under `/root/backups/<project>/<timestamp>/`, so a normal backup
+exists in three places: the server and two drives. `BACKUP_LOCAL_DIR` (a single folder) still works
+for old habits, but gives only one local copy.
 
 ## Restore (outline)
 

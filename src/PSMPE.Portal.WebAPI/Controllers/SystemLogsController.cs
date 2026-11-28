@@ -12,7 +12,7 @@ namespace PSMPE.Portal.WebAPI.Controllers;
 
 /// <summary>
 /// Read-only views over AuditLog/ErrorLog, restricted to Super Admin - stricter than the general
-/// RequireAdminOrApproval gate on the rest of /api/admin, matching how role assignment and user
+/// RequireAdmin gate on the rest of /api/admin, matching how role assignment and user
 /// deletion are already Super-Admin-only in AdminController.
 /// </summary>
 [ApiController]

@@ -39,6 +39,13 @@ if not defined POSTGRES_PORT set POSTGRES_PORT=5432
 REM Local dev backend listens on 5100, not 5000: 5000 is commonly taken by other Docker apps and
 REM the frontend would silently talk to the wrong server. Overrides the compose-oriented .env value.
 set "VITE_API_BASE_URL=http://localhost:5100"
+REM Optional: run against another database in the same Postgres container without editing .env
+REM (the .env loop above would overwrite a POSTGRES_DB set in your shell). Example, to use the
+REM restored production copy:   set PSMPE_DB=psmpe_prod_restore ^& run.bat
+if defined PSMPE_DB (
+    set "POSTGRES_DB=%PSMPE_DB%"
+    echo Using database %PSMPE_DB% ^(PSMPE_DB override^)
+)
 set "ConnectionStrings__DefaultConnection=Host=localhost;Port=%POSTGRES_PORT%;Database=%POSTGRES_DB%;Username=%POSTGRES_USER%;Password=%POSTGRES_PASSWORD%"
 
 echo.
@@ -145,10 +152,26 @@ goto :eof
 
 :killport
 set PORT=%1
-for /f "tokens=5" %%a in ('netstat -aon ^| findstr ":%PORT% " ^| findstr "LISTENING"') do (
-    echo Killing process on port %PORT% (PID %%a)
-    taskkill /F /PID %%a >nul 2>&1
+for /f "tokens=5" %%a in ('netstat -aon ^| findstr ":%PORT% " ^| findstr "LISTENING"') do call :killpid %%a %PORT%
+goto :eof
+
+REM Kills one PID holding a dev port - unless it is Docker Desktop. When a container publishes a
+REM port (e.g. the psmpe-realdata stack on 5100/5173), the LISTENING owner is Docker's own proxy
+REM (com.docker.backend.exe / wslrelay.exe), not a stray dev server. Killing that can take Docker
+REM Desktop down, and the container would still hold the port. Stop the container instead.
+:killpid
+set "_pid=%1"
+set "_image="
+for /f "tokens=1 delims=," %%n in ('tasklist /FI "PID eq %_pid%" /NH /FO CSV 2^>nul') do set "_image=%%~n"
+if /i "%_image:~0,5%"=="INFO:" set "_image=unknown"
+echo %_image% | findstr /i /b /c:"com.docker" /c:"wslrelay" /c:"vpnkit" /c:"Docker Desktop" >nul
+if not errorlevel 1 (
+    echo Port %2 is published by Docker ^(%_image%, PID %_pid%^) - NOT killing it.
+    echo   Stop the container using it first, e.g.: docker compose -p psmpe-realdata down
+    goto :eof
 )
+echo Killing process on port %2 ^(PID %_pid% %_image%^)
+taskkill /F /PID %_pid% >nul 2>&1
 goto :eof
 
 :waitforweb

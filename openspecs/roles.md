@@ -19,8 +19,8 @@ via `[RequirePermission]`.
 ## Endpoints
 
 - `GET /api/admin/users` — list users with their roles (unchanged, documented in `auth.md`/here for completeness)
-  - Auth: `RequireAdminOrApproval` policy (Admin, Super Admin, or Approval role — Approval is
-    view-only here, since every write endpoint below stays on `RequireAdmin`/`RequireSuperAdmin`)
+  - Auth: `RequireAdmin` policy (Admin or Super Admin). The `Approval` role has no access to any
+    `/api/admin/users` or `/api/admin/roles` endpoint — it only works the membership-approval queue.
   - Query: `search` (optional — case-insensitive substring match against display name or email),
     `roles` (optional, repeatable query key, e.g. `?roles=Admin&roles=Manager` — returns the union
     of matching roles, not an intersection). `roles` is bound with an explicit `[FromQuery]` on the
@@ -30,7 +30,7 @@ via `[RequirePermission]`.
     repeated bare keys (`roles=a&roles=b`) rather than axios's bracket-notation default
     (`roles[]=a&roles[]=b`), which this endpoint's binder does not accept.
 - `GET /api/admin/users/{id}` — get one user
-  - Auth: `RequireAdminOrApproval` policy
+  - Auth: `RequireAdmin` policy
 - `POST /api/admin/users` — create a login account (the admin "New user" form)
   - Auth: `admin:manage-users` permission — the one action in this whole family still gated by a
     configurable permission claim rather than a hard role check (see the narrowed-scope note
@@ -70,13 +70,13 @@ via `[RequirePermission]`.
   - Request: `{ role }` (body-based, mirrors the `POST` shape — avoids URL-encoding role names with spaces)
   - Refuses to remove `Super Admin` from the last remaining Super Admin account (`400`)
 - `GET /api/admin/roles` — list all roles with their current permission claims
-  - Auth: `RequireAdminOrApproval` policy
+  - Auth: `RequireAdmin` policy
   - Response: `[{ id, name, permissions }]`
 - `PUT /api/admin/roles/{roleId}/permissions` — replace a role's permission set
   - Auth: `RequireSuperAdmin` policy
   - Request: `{ permissions }` — diffed against current claims; unknown permission values return `400`
 - `GET /api/admin/permissions` — list every defined permission constant
-  - Auth: `RequireAdminOrApproval` policy
+  - Auth: `RequireAdmin` policy
   - Lets the frontend render permission checkboxes without hardcoding the list
 
 ## Authorization rules
@@ -87,7 +87,10 @@ via `[RequirePermission]`.
   `content:update`, `content:delete`, `content:manage-others`, `layout:create`,
   `layout:delete`, `layout:delete-system`, `admin:manage-users`, `admin:manage-roles`,
   `ai:use-prompt`, `members:view`, `members:manage`, `members:approve`, `events:view`,
-  `events:manage` (see `openspecs/events.md`).
+  `events:manage` (see `openspecs/events.md`), `payments:verify`.
+- `payments:verify` gates `POST /api/payments/{id}/verify` and `/reject` for *every* payment kind
+  (membership and event-registration alike), as an OR with `members:manage`. It lets `Approval`
+  work payment proofs without member create/update/delete or fee editing.
 - `members:approve` covers exactly the membership-approval pipeline: RMP/PRC verification
   approve/reject, the Membership ID availability check, the final approve call, and uploading a
   walk-in's payment proof during approval. It is granted *in addition to* `members:manage` on
@@ -117,10 +120,10 @@ via `[RequirePermission]`.
 | Role | Grants |
 |---|---|
 | Super Admin | All permissions |
-| Admin | Content: create/update/delete/manage-others; Layout: create/delete; Admin: manage-users; Ai: use-prompt; Members: view, manage; Events: view, manage |
+| Admin | Content: create/update/delete/manage-others; Layout: create/delete; Admin: manage-users; Ai: use-prompt; Members: view, manage; Events: view, manage; Payments: verify |
 | Manager | Content: create/update/delete; Layout: create; Ai: use-prompt; Members: view; Events: view |
 | Accounts | Content: update; Ai: use-prompt; Members: view |
-| Approval | Members: view, approve |
+| Approval | Members: view, approve; Events: view, manage; Payments: verify |
 | Member | Content: create/update |
 
 Grants are applied by `IdentitySeeder` **only** the first time a role is created — re-running

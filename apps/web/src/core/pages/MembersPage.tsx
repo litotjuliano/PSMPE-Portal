@@ -54,6 +54,8 @@ export function MembersPage() {
   // 'all' member list and the payments queue are read-only for them (Members.Manage-gated
   // server side, which they don't hold).
   const canManageMembers = user?.roles.includes(Roles.Admin) || user?.roles.includes(Roles.SuperAdmin) || false
+  // Approval can verify/reject payment proofs (payments:verify) without member CRUD.
+  const canVerifyPayments = canManageMembers || user?.roles.includes(Roles.Approval) || false
 
   // The active tab lives in the URL so it is linkable - the redirects from the old
   // /membership-approvals and /prc-verifications routes and the notification bell all rely on it.
@@ -264,7 +266,7 @@ export function MembersPage() {
             <PaymentsSummaryPanel />
             <PaymentsQueueTable
               payments={payments}
-              canManagePayments={canManageMembers}
+              canManagePayments={canVerifyPayments}
               onVerify={handleVerifyPayment}
               onReject={handleRejectPayment}
               page={page}

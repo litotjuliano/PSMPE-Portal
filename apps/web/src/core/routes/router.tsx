@@ -23,7 +23,7 @@ import { NotificationsPage } from '../pages/NotificationsPage'
 import { SystemLogsPage } from '../pages/SystemLogsPage'
 import { AdminChaptersPage } from '../pages/AdminChaptersPage'
 import { AdminLocationsPage } from '../pages/AdminLocationsPage'
-import { Roles } from '../types/auth'
+import { ContentPermissions, Roles } from '../types/auth'
 
 export const router = createBrowserRouter([
   { path: '/login', element: <LoginPage /> },
@@ -48,17 +48,27 @@ export const router = createBrowserRouter([
                 element: <AppShell />,
                 children: [
                   { path: '/', element: <DashboardPage /> },
-                  { path: '/content', element: <ContentListPage /> },
-                  { path: '/content/:id', element: <ContentEditPage /> },
+                  {
+                    element: <ProtectedRoute requiredPermissions={ContentPermissions} />,
+                    children: [
+                      { path: '/content', element: <ContentListPage /> },
+                      { path: '/content/:id', element: <ContentEditPage /> },
+                    ],
+                  },
                   { path: '/profile', element: <MyProfilePage /> },
                   { path: '/events', element: <EventsPage /> },
                   { path: '/my-cpd', element: <MyCpdPage /> },
                   {
-                    element: <ProtectedRoute requiredRoles={[Roles.Admin, Roles.SuperAdmin, Roles.Approval]} />,
+                    element: <ProtectedRoute requiredRoles={[Roles.Admin, Roles.SuperAdmin]} />,
                     children: [
                       { path: '/admin/users', element: <AdminUsersPage /> },
                       { path: '/admin/users/:id', element: <AdminUserFormPage /> },
                       { path: '/admin/roles', element: <AdminRolesPage /> },
+                    ],
+                  },
+                  {
+                    element: <ProtectedRoute requiredRoles={[Roles.Admin, Roles.SuperAdmin, Roles.Approval]} />,
+                    children: [
                       { path: '/members', element: <MembersPage /> },
                       { path: '/members/:id', element: <MemberFormPage /> },
                       { path: '/events/:id/roster', element: <EventRosterPage /> },

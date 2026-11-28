@@ -16,8 +16,8 @@ using PSMPE.Portal.WebAPI.Extensions;
 namespace PSMPE.Portal.WebAPI.Controllers;
 
 /// <summary>
-/// System-wide administrative actions. Listing users/roles requires Admin, Super Admin, or
-/// Approval (view-only); creating a user requires the admin:manage-users permission;
+/// System-wide administrative actions. Listing users/roles requires Admin or Super Admin
+/// (Approval has no access); creating a user requires the admin:manage-users permission;
 /// editing/deleting a user, changing role assignments, and role permissions all require Super
 /// Admin (an Admin's only remaining action on another user's row is VerifyEmail). Super Admin is
 /// never assignable/visible through this API,
@@ -74,7 +74,7 @@ public class AdminController(
         Ok(new { clientIp = HttpContext.Connection.RemoteIpAddress?.ToString() });
 
     [HttpGet("users")]
-    [Authorize(Policy = PolicyNames.RequireAdminOrApproval)]
+    [Authorize(Policy = PolicyNames.RequireAdmin)]
     public async Task<ActionResult<PagedResult<UserSummaryDto>>> GetUsers(
         int page = 1,
         int pageSize = 20,
@@ -167,7 +167,7 @@ public class AdminController(
     // TODO: add audit logging once the admin UI needs it.
 
     [HttpGet("users/{id:guid}")]
-    [Authorize(Policy = PolicyNames.RequireAdminOrApproval)]
+    [Authorize(Policy = PolicyNames.RequireAdmin)]
     public async Task<ActionResult<UserSummaryDto>> GetUserById(Guid id)
     {
         var user = await userManager.FindByIdAsync(id.ToString());
@@ -630,7 +630,7 @@ public class AdminController(
     }
 
     [HttpGet("roles")]
-    [Authorize(Policy = PolicyNames.RequireAdminOrApproval)]
+    [Authorize(Policy = PolicyNames.RequireAdmin)]
     public async Task<ActionResult<IReadOnlyList<RoleSummaryDto>>> GetRoles()
     {
         // Super Admin's role (and its full permission claim set) never leaves the server -
@@ -686,7 +686,7 @@ public class AdminController(
     }
 
     [HttpGet("permissions")]
-    [Authorize(Policy = PolicyNames.RequireAdminOrApproval)]
+    [Authorize(Policy = PolicyNames.RequireAdmin)]
     public ActionResult<IReadOnlyList<string>> GetPermissions() => Ok(Permissions.All);
 
     private Guid? CurrentUserId =>

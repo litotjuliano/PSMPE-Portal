@@ -33,7 +33,8 @@ public static class IdentitySeeder
             Permissions.Admin.ManageUsers,
             Permissions.Ai.UsePrompt,
             Permissions.Members.View, Permissions.Members.Manage,
-            Permissions.Events.View, Permissions.Events.Manage
+            Permissions.Events.View, Permissions.Events.Manage,
+            Permissions.Payments.Verify
         ],
         [RoleNames.Manager] =
         [
@@ -52,7 +53,9 @@ public static class IdentitySeeder
         [RoleNames.Approval] =
         [
             Permissions.Members.View,
-            Permissions.Members.Approve
+            Permissions.Members.Approve,
+            Permissions.Payments.Verify,
+            Permissions.Events.View, Permissions.Events.Manage
         ],
         [RoleNames.Member] =
         [
